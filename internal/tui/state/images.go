@@ -118,7 +118,7 @@ func (s *State) withImages(text string) string {
 // as Codex does; ok is false for any other suggestion.
 func (s *State) acceptImage(draft string, picked Suggestion) ([]Effect, bool) {
 	at, ok := mentionAt(draft)
-	if !ok || !images.IsImagePath(picked.Label) {
+	if !ok || picked.Resource || !images.IsImagePath(picked.Label) {
 		return nil, false
 	}
 	path := picked.Label

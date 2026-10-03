@@ -10,7 +10,17 @@
 // server receives, before it handles it, and "<pid> closed" when its input
 // ends, so a test can count connections. MCPSERVER_LEGACY=1 refuses
 // server/discover, so a client falls back to initialize, as with a server
-// from before the 2026-07-28 protocol.
+// from before the 2026-07-28 protocol. MCPSERVER_FAIL_FILE (a path) makes
+// the server exit with status 4 as it starts while that file exists, so a
+// test can make restarts fail.
+//
+// Resources: test://greeting (text), test://pixel (a PNG blob), and the
+// template test://items/{id}; add_resource adds test://<text>, so the
+// server sends notifications/resources/list_changed. Prompts: review
+// (arguments file, required, and focus) returns a user message with the
+// arguments and an embedded resource, then an assistant message; add_prompt
+// adds a prompt named by the text, so the server sends
+// notifications/prompts/list_changed.
 package main
 
 import (
@@ -27,8 +37,15 @@ import (
 )
 
 // png is a 1x1 PNG.
-var png = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89" +
-	"\x00\x00\x00\rIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82")
+var png = []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\b\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x11IDATx\x9c" +
+	"\x00\x04\x00\xfb\xff\x02\xff\x00\x00\x03\x00\x03\t\x01\x02\xf9?c\xe3\x00\x00\x00\x00IEND\xaeB`\x82")
+
+// MIME types and the user role.
+const (
+	mimePNG  = "image/png"
+	mimeText = "text/plain"
+	roleUser = "user"
+)
 
 type args struct {
 	Text string `json:"text"`
@@ -49,6 +66,12 @@ func main() {
 	if d, err := time.ParseDuration(os.Getenv("MCPSERVER_START_DELAY")); err == nil {
 		time.Sleep(d)
 	}
+	if f := os.Getenv("MCPSERVER_FAIL_FILE"); f != "" {
+		if _, err := os.Stat(f); err == nil {
+			fmt.Fprintln(os.Stderr, "failing as asked")
+			os.Exit(4)
+		}
+	}
 	s := sdk.NewServer(&sdk.Implementation{Name: "mcpserver", Version: "1"}, nil)
 	logTo, legacy := os.Getenv("MCPSERVER_LOG"), os.Getenv("MCPSERVER_LEGACY") == "1"
 	s.AddReceivingMiddleware(func(next sdk.MethodHandler) sdk.MethodHandler {
@@ -67,7 +90,7 @@ func main() {
 		return text("echo: " + a.Text + " env=" + os.Getenv("MCPSERVER_GREETING"))
 	})
 	add(s, "image", "Return a 1x1 image.", func(args) *sdk.CallToolResult {
-		return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "a pixel"}, &sdk.ImageContent{Data: png, MIMEType: "image/png"}}}
+		return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "a pixel"}, &sdk.ImageContent{Data: png, MIMEType: mimePNG}}}
 	})
 	add(s, "structured", "Return structured content.", func(args) *sdk.CallToolResult {
 		return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: "ignored"}}, StructuredContent: map[string]any{"n": 42}}
@@ -124,6 +147,19 @@ func main() {
 
 		return text("added")
 	})
+	add(s, "add_resource", "Add a resource test://<text>.", func(a args) *sdk.CallToolResult {
+		s.AddResource(&sdk.Resource{URI: "test://" + a.Text, Name: a.Text, MIMEType: mimeText}, textResource("added "+a.Text))
+
+		return text("added")
+	})
+	add(s, "add_prompt", "Add a prompt named by the text.", func(a args) *sdk.CallToolResult {
+		s.AddPrompt(&sdk.Prompt{Name: a.Text, Description: "Added at run time."}, func(context.Context, *sdk.GetPromptRequest) (*sdk.GetPromptResult, error) {
+			return &sdk.GetPromptResult{Messages: []*sdk.PromptMessage{{Role: roleUser, Content: &sdk.TextContent{Text: "added prompt"}}}}, nil
+		})
+
+		return text("added")
+	})
+	resources(s)
 	extra, _ := strconv.Atoi(os.Getenv("MCPSERVER_EXTRA_TOOLS"))
 	for i := range extra {
 		add(s, fmt.Sprintf("tool_%04d", i), "An extra tool.", func(args) *sdk.CallToolResult { return text("extra") })
@@ -169,4 +205,35 @@ func add(s *sdk.Server, name, description string, fn func(args) *sdk.CallToolRes
 
 func text(s string) *sdk.CallToolResult {
 	return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: s}}}
+}
+
+// resources adds the test resources, the template, and the review prompt.
+func resources(s *sdk.Server) {
+	s.AddResource(&sdk.Resource{URI: "test://greeting", Name: "greeting", Title: "Greeting", Description: "A friendly greeting.", MIMEType: mimeText},
+		textResource("hello from the resource"))
+	s.AddResource(&sdk.Resource{URI: "test://pixel", Name: "pixel", MIMEType: mimePNG},
+		func(_ context.Context, req *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
+			return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, MIMEType: mimePNG, Blob: png}}}, nil
+		})
+	s.AddResourceTemplate(&sdk.ResourceTemplate{URITemplate: "test://items/{id}", Name: "item", Description: "An item by ID."},
+		func(_ context.Context, req *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
+			return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, MIMEType: mimeText, Text: "item " + strings.TrimPrefix(req.Params.URI, "test://items/")}}}, nil
+		})
+	s.AddPrompt(&sdk.Prompt{
+		Name: "review", Description: "Review a file.",
+		Arguments: []*sdk.PromptArgument{{Name: "file", Description: "The file to review.", Required: true}, {Name: "focus", Description: "What to look at."}},
+	}, func(_ context.Context, req *sdk.GetPromptRequest) (*sdk.GetPromptResult, error) {
+		a := req.Params.Arguments
+		return &sdk.GetPromptResult{Description: "A review", Messages: []*sdk.PromptMessage{
+			{Role: roleUser, Content: &sdk.TextContent{Text: "Review " + a["file"] + " for " + a["focus"] + "."}},
+			{Role: roleUser, Content: &sdk.EmbeddedResource{Resource: &sdk.ResourceContents{URI: "test://greeting", MIMEType: mimeText, Text: "hello from the resource"}}},
+			{Role: "assistant", Content: &sdk.TextContent{Text: "I will review it."}},
+		}}, nil
+	})
+}
+
+func textResource(body string) sdk.ResourceHandler {
+	return func(_ context.Context, req *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
+		return &sdk.ReadResourceResult{Contents: []*sdk.ResourceContents{{URI: req.Params.URI, MIMEType: mimeText, Text: body}}}, nil
+	}
 }

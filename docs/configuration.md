@@ -298,11 +298,13 @@ Three ways set these keys without editing by hand, each in the file that configu
 - `uah mcp approve <name> [tool] --mode approve|prompt|writes|auto` sets the server's default, or one tool's mode. Without `--mode`, it prints the current modes.
 - "Yes, and don't ask again for this tool" in the TUI's approval prompt writes `approval_mode = "approve"` for that tool, as Codex's "Allow and don't ask me again" does. The session stops asking at once.
 
-OAuth for streamable HTTP servers, with Codex's keys. A server that answers 401 and advertises OAuth, at startup or on a later call, needs `uah mcp login <name>`; until then it shows "needs login" in `/mcp` and `uah doctor`, and its calls fail with that instruction. A server with `bearer_token_env_var` or an `Authorization` header never uses OAuth.
+A server that stops on its own restarts after 1, 2, 4, 8, and 16 s, at most 5 times in a row (a server that ran for a minute starts the count again); `startup_timeout_sec` bounds each attempt, and a call made meanwhile waits within its `tool_timeout_sec`. There are no keys for this.
+
+OAuth for streamable HTTP servers, with Codex's keys. A server that answers 401 and advertises OAuth, at startup, on a later call, or on its background stream, needs `uah mcp login <name>`; until then it shows "needs login" in `/mcp` and `uah doctor`, and its calls fail with that instruction. A running session reconnects it at the next message (or `/mcp`) once a new login is stored. A server with `bearer_token_env_var` or an `Authorization` header never uses OAuth.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `auth` | string | `oauth` | How uah authorizes; only `oauth` is supported (Codex's `chatgpt` and `ema_auth` need a Codex account). A server with another value does not start: it shows as failed with the reason, and the other servers start |
+| `auth` | string | `oauth` | How uah authorizes; only `oauth` is supported (Codex's `chatgpt` and `ema_auth` need a Codex account). A server with another value does not start: it shows as failed with the reason, and the other servers start. `uah mcp list` and `get` show it with the reason, and `uah mcp login` refuses only it |
 | `scopes` | list of strings | the scopes the server advertises | The scopes `uah mcp login` asks for; `--scopes` replaces them |
 | `oauth_resource` | string | the server's own | The RFC 8707 resource sent with the authorization and token requests |
 | `oauth.client_id` | string | none: uah registers a client dynamically | A client registered with the authorization server ahead of time, in `[mcp_servers.<name>.oauth]` |

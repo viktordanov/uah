@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -16,6 +17,9 @@ type MCPEntry struct {
 	Name   string
 	Config mcp.ServerConfig
 	Auth   mcp.AuthStatus
+	// Error says why the server cannot start: an auth uah does not
+	// support. Such a server is listed, not refused with the whole file.
+	Error string
 }
 
 // MCPServers lists the servers a session in the workspace would use (the
@@ -32,6 +36,11 @@ func MCPServers(ctx context.Context, configPath, workspace string) ([]MCPEntry, 
 	var wg sync.WaitGroup
 	for i, name := range names {
 		out[i] = MCPEntry{Name: name, Config: cfg.MCPServers[name]}
+		if err := out[i].Config.Validate(); err != nil { // only ErrUnsupportedAuth gets here
+			out[i].Auth, out[i].Error = mcp.AuthUnsupported, err.Error()
+
+			continue
+		}
 		wg.Go(func() { out[i].Auth = mcp.AuthStatusOf(ctx, name, out[i].Config, store, nil) })
 	}
 	wg.Wait()
@@ -49,6 +58,9 @@ func MCPLogin(ctx context.Context, configPath, workspace, name string, opts mcp.
 	server, err := findServer(cfg, name)
 	if err != nil {
 		return err
+	}
+	if err := server.Validate(); err != nil { // an auth uah does not support
+		return usage(fmt.Errorf("mcp_servers.%s: %w", name, err))
 	}
 	opts.Store = store
 	opts.Settings = mcp.OAuthSettings{CallbackPort: cfg.MCPOAuthCallbackPort, CallbackURL: cfg.MCPOAuthCallbackURL}
@@ -76,7 +88,9 @@ func loadMCP(configPath, workspace string) (config.Config, mcp.CredentialStore, 
 		return config.Config{}, nil, usage(err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(cfg.MCPServers)) {
-		if err := cfg.MCPServers[name].Validate(); err != nil {
+		// A server with an auth uah does not support is listed with the
+		// reason, as the session fails only that server.
+		if err := cfg.MCPServers[name].Validate(); err != nil && !errors.Is(err, mcp.ErrUnsupportedAuth) {
 			return config.Config{}, nil, usage(fmt.Errorf("mcp_servers.%s: %w", name, err))
 		}
 	}

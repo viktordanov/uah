@@ -99,6 +99,9 @@ func isCommand(text string) bool { _, _, ok := commandLine(text); return ok }
 func (s *State) command(text string) (State, []Effect) {
 	name, args, _ := commandLine(text)
 	cmd, ok := FindCommand(name)
+	if p, isPrompt := s.findPrompt(name); !ok && isPrompt {
+		return *s, s.runPrompt(p, args)
+	}
 	if !ok {
 		s.notice(session.LevelError, fmt.Sprintf("unknown command /%s (see /help)", name))
 
@@ -232,6 +235,13 @@ func cmdHelp(s *State, _ string) []Effect {
 			name += " " + c.Args
 		}
 		fmt.Fprintf(&b, "%-18s %s\n", name, c.Help)
+	}
+	for _, p := range s.Menu.Prompts {
+		name := "/" + p.Command
+		if usage := p.Usage(); usage != "" {
+			name += " " + usage
+		}
+		fmt.Fprintf(&b, "%-18s %s (MCP prompt)\n", name, p.Description)
 	}
 	b.WriteString("\n" + s.Keys.sendHelp() + "\n")
 	b.WriteString("esc esc interrupt, or while idle on an empty prompt go back to an earlier message (esc/↑ earlier, ↓ later, enter edit) · ↑ edit the last queued message, else earlier prompts (↓ later) · ctrl+r search earlier prompts · shift+tab permission mode · alt+, alt+. effort · alt+e adaptive effort · ctrl+s sessions · ctrl+n new · ctrl+g edit the prompt in $VISUAL or $EDITOR · ctrl+t details · wheel, shift+↑↓, pgup/pgdn scroll (end: bottom) · drag, double or triple click select and copy · ctrl+c ctrl+c quit")

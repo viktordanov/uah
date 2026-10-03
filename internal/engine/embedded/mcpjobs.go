@@ -87,6 +87,20 @@ func (j *mcpJobs) run(ctx context.Context, op operation.Operation, state operati
 
 		return
 	}
+	if plan.Op != "" {
+		text, err := resourceJob(ctx, j.manager, plan)
+		switch {
+		case ctx.Err() != nil && j.ctx.Err() == nil: // canceled by the coordinator
+			j.finish(operation.CancelRemoteJob(op))
+		case err != nil:
+			j.finish(operation.FailRemoteJob(op, err))
+		default:
+			state.TerminalResult = text
+			j.finish(operation.UpdateRemoteJob(op, state, operation.StatusCompleted))
+		}
+
+		return
+	}
 	r, err := j.manager.Call(ctx, plan.Server, plan.Tool, plan.Arguments)
 	switch {
 	case ctx.Err() != nil && j.ctx.Err() == nil: // canceled by the coordinator

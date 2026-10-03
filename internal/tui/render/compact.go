@@ -13,6 +13,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/tui/state"
 )
 
@@ -113,7 +114,7 @@ func toolLabel(name string) string {
 	if l, ok := toolLabels[name]; ok {
 		return l
 	}
-	if strings.HasPrefix(name, "mcp__") {
+	if strings.HasPrefix(name, mcp.Prefix) || mcp.IsResourceTool(name) {
 		return "MCP"
 	}
 	name, _, _ = strings.Cut(name, "_")

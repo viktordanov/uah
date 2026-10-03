@@ -173,6 +173,10 @@ func (e *Engine) MCPServers() []mcp.ServerStatus {
 	return e.cfg.MCP.Status()
 }
 
+// MCP is the engine's MCP servers (engine.MCPClient); nil when none are
+// configured.
+func (e *Engine) MCP() *mcp.Manager { return e.cfg.MCP }
+
 // StartMCP connects the MCP servers before the first run
 // (engine.MCPStarter); runs then use the same connections.
 func (e *Engine) StartMCP(ctx context.Context) []mcp.ServerStatus {

@@ -320,7 +320,9 @@ uah mcp login linear                                     # OAuth in the browser,
 uah mcp list                                             # every server, its status, and its auth
 ```
 
-`uah mcp add` writes Codex's `[mcp_servers.<name>]` format into your user file, so a Codex configuration copies over. `/mcp` in the TUI shows each server and its tools; `/new` picks up a server added or logged in while the TUI runs.
+`uah mcp add` writes Codex's `[mcp_servers.<name>]` format into your user file, so a Codex configuration copies over. `/mcp` in the TUI shows each server and its tools; `/new` picks up a server added while the TUI runs, and a `uah mcp login` in another terminal takes effect at your next message.
+
+In the TUI, a server's prompts are commands (`/mcp__docs__review main.go`, quoted arguments kept together), and its resources come after `@` with your files: `@docs:docs://index` adds the resource to the message. The agent can list and read resources itself, with Codex's `list_mcp_resources` and `read_mcp_resource` tools.
 
 To stop a server's tools from asking for approval:
 
@@ -556,12 +558,13 @@ Read more: [hooks](internal/hooks/README.md), with every event and its payload.
 ### MCP servers
 
 <!-- memoria:import src="internal/mcp/README.md#summary" -->
-uah runs the MCP servers in `[mcp_servers]` (Codex's format) on the embedded engine through the official Go SDK: stdio and streamable HTTP servers, their tools offered as `mcp__<server>__<tool>` and called without blocking the agent, Codex's approval modes, OAuth logins with `uah mcp login` kept in the OS keyring, and `uah mcp` to list, add, remove, and approve servers.
+uah runs the MCP servers in `[mcp_servers]` (Codex's format) on the embedded engine through the official Go SDK: stdio and streamable HTTP servers, their tools offered as `mcp__<server>__<tool>` and called without blocking the agent, Codex's resource tools, prompts as `/mcp__<server>__<prompt>` and resources as `@server:uri` in the composer (Claude Code's), restarts with backoff, tool list changes applied at the next run, Codex's approval modes, OAuth logins with `uah mcp login` kept in the OS keyring and picked up by a running session, and `uah mcp` to list, add, remove, and approve servers.
 <!-- /memoria:import -->
 
 - Servers connect when a TUI session opens, before any message (`uah exec` connects them on its first run), and stop with the session; `/clear` keeps them, and `/new` and `/resume` reconnect them once. One that fails to start is shown then and left out; with `required = true`, every message fails until the server is fixed and `/new` connects it.
+- A server that stops restarts after 1, 2, 4, 8, and 16 s, at most 5 times in a row, and keeps its tools meanwhile, so the prompt cache holds; a call made while it restarts waits for it. A server that changes its tool list has the new list from your next message, never in the middle of a turn.
 - A call runs in the background, so the agent keeps working. A tool asks for approval by its `approval_mode`, as in Codex.
-- OAuth tokens are kept in the OS keyring (or a 0600 file without one) and refreshed as they expire. A server that needs a login shows "needs login" in `/mcp` and `uah doctor`.
+- OAuth tokens are kept in the OS keyring (or a 0600 file without one) and refreshed as they expire. A server that needs a login shows "needs login" in `/mcp` and `uah doctor`, and reconnects at the next message once `uah mcp login` stored a new login.
 
 Read more: [MCP](internal/mcp/README.md), and the [design and validation](docs/design/mcp.md).
 <!-- /memoria:section -->

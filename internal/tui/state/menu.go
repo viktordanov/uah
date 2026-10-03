@@ -5,6 +5,7 @@ import (
 
 	"github.com/sahilm/fuzzy"
 
+	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
 )
@@ -29,6 +30,14 @@ type Menu struct {
 	// Review is the branches and commits for /review (reviewmenu.go).
 	Review        *ReviewTargetsLoaded
 	reviewLoading bool
+	// Prompts are the MCP servers' prompts for "/", loaded again each time
+	// "/" starts a draft, as servers can change them.
+	Prompts        []mcp.Prompt
+	promptsLoading bool
+	// Resources are the MCP servers' resources for "@", loaded again each
+	// time an "@" word starts.
+	Resources        []mcp.ResourceRef
+	resourcesLoading bool
 }
 
 // Suggestion is one menu entry. Accepting it replaces the draft with Draft.
@@ -36,6 +45,9 @@ type Suggestion struct {
 	Label string
 	Help  string
 	Draft string
+	// Resource marks an MCP resource after "@", which is never a file
+	// to attach.
+	Resource bool
 }
 
 // Menu intents carry the composer's text, which the shell owns.
@@ -65,14 +77,16 @@ func (s State) Suggestions(draft string) []Suggestion {
 		return nil
 	}
 	if at, ok := mentionAt(draft); ok {
-		return s.fileSuggestions(draft, at)
+		out := append(s.resourceSuggestions(draft, at), s.fileSuggestions(draft, at)...)
+
+		return out[:min(menuSize, len(out))]
 	}
 	if !strings.HasPrefix(draft, "/") || strings.Contains(draft, "\n") {
 		return nil
 	}
 	name, arg, hasArg := strings.Cut(strings.TrimPrefix(draft, "/"), " ")
 	if !hasArg {
-		return commandSuggestions(name)
+		return append(commandSuggestions(name), s.promptSuggestions(name)...)
 	}
 
 	return s.argSuggestions(name, arg)
@@ -156,6 +170,30 @@ func (s State) fileSuggestions(draft string, at int) []Suggestion {
 	return out
 }
 
+// loadMenu loads what the menu offers for the draft: the files once and
+// the MCP resources each time an "@" word starts, and the MCP prompts each
+// time "/" starts a draft (or first while a command's name is typed).
+func (s *State) loadMenu(draft string) []Effect {
+	var effects []Effect
+	if at, mention := mentionAt(draft); mention {
+		if s.Menu.Files == nil && !s.Menu.filesLoading {
+			s.Menu.filesLoading = true
+			effects = append(effects, EffLoadFiles{})
+		}
+		if (s.Menu.Resources == nil || at == len(draft)-1) && !s.Menu.resourcesLoading {
+			s.Menu.resourcesLoading = true
+			effects = append(effects, EffLoadMCPResources{})
+		}
+	}
+	naming := strings.HasPrefix(draft, "/") && !strings.ContainsAny(draft, " \n")
+	if naming && (s.Menu.Prompts == nil || draft == "/") && !s.Menu.promptsLoading {
+		s.Menu.promptsLoading = true
+		effects = append(effects, EffLoadMCPPrompts{})
+	}
+
+	return effects
+}
+
 // onMenu handles the menu intents; ok is false for any other event.
 func (s *State) onMenu(ev any) (effects []Effect, ok bool) {
 	switch e := ev.(type) {
@@ -168,11 +206,12 @@ func (s *State) onMenu(ev any) (effects []Effect, ok bool) {
 		if eff := s.loadReviewTargets(e.Draft); eff != nil {
 			return []Effect{eff}, true
 		}
-		if _, mention := mentionAt(e.Draft); mention && s.Menu.Files == nil && !s.Menu.filesLoading {
-			s.Menu.filesLoading = true
 
-			return []Effect{EffLoadFiles{}}, true
-		}
+		return s.loadMenu(e.Draft), true
+	case MCPPromptsLoaded:
+		s.Menu.Prompts, s.Menu.promptsLoading = e.Prompts, false
+	case MCPResourcesLoaded:
+		s.Menu.Resources, s.Menu.resourcesLoading = e.Resources, false
 	case FilesLoaded:
 		s.Menu.Files, s.Menu.filesLoading = e.Paths, false
 		if s.Menu.Files == nil {

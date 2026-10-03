@@ -81,6 +81,18 @@ func (s *scope) disallow(disallowed []string) []string {
 	return disallowed
 }
 
+// disallowResources adds the MCP resource tools the scope does not offer
+// to the request's disallowed tools.
+func (s *scope) disallowResources(disallowed []string) []string {
+	for _, name := range []string{mcp.ListResourcesTool, mcp.ListResourceTemplatesTool, mcp.ReadResourceTool} {
+		if !s.offers(name) && !slices.Contains(disallowed, name) {
+			disallowed = append(disallowed, name)
+		}
+	}
+
+	return disallowed
+}
+
 // mcpTools are the MCP tools the scope offers.
 func (s *scope) mcpTools(tools []mcp.Tool) []mcp.Tool {
 	if s == nil || s.Tools == nil {

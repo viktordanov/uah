@@ -45,7 +45,7 @@ func TestMenu_MoveAcceptClose(t *testing.T) {
 func TestMenu_Mentions(t *testing.T) {
 	s := opened()
 	s, effects := apply(s, state.DraftChanged{Draft: "look at @"})
-	require.Equal(t, []state.Effect{state.EffLoadFiles{}}, effects, "the first @ loads the file list")
+	require.Equal(t, []state.Effect{state.EffLoadFiles{}, state.EffLoadMCPResources{}}, effects, "the first @ loads the file list and the MCP resources")
 	_, effects = apply(s, state.DraftChanged{Draft: "look at @x"})
 	assert.Empty(t, effects, "only once")
 

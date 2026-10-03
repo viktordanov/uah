@@ -258,7 +258,7 @@ func mcpCheck(st mcp.ServerStatus, c mcp.ServerConfig) Check {
 		}
 
 		return check(name, "needs login", "run `uah mcp login "+st.Name+"`")
-	case mcp.StateStarting, mcp.StateFailed:
+	case mcp.StateStarting, mcp.StateFailed, mcp.StateRestarting:
 	}
 
 	return fail(name, fmt.Sprintf("%s (startup timeout %s)", st.Error, timeout),

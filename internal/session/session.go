@@ -276,6 +276,16 @@ func (s *Session) MCPServers() (servers []mcp.ServerStatus, ok bool) {
 	return l.MCPServers(), true
 }
 
+// MCP is the engine's MCP servers, for their prompts and resources; nil
+// when the engine runs none.
+func (s *Session) MCP() *mcp.Manager {
+	if c, ok := s.eng.(engine.MCPClient); ok {
+		return c.MCP()
+	}
+
+	return nil
+}
+
 // ContextUsage breaks down the context of the last model request; ok is
 // false when the engine cannot or no request was sent yet.
 func (s *Session) ContextUsage() (contextusage.Usage, bool) {

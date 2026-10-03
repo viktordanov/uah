@@ -31,7 +31,7 @@ func (s *State) onToolCalled(e core.ToolCalled) {
 		it.Command = bashCommand(e.Arguments, e.Label)
 		sum := cmdparse.Summarize(it.Command, s.pathEnv())
 		it.Verb, it.Parts = sum.Label, sum.Parts
-	case strings.HasPrefix(e.Name, "mcp__"):
+	case isMCP(e.Name):
 		it.Parts = mcpParts(e.Name, e.Arguments)
 	case e.Name == toolSkill:
 		s.joinSkill(&it)
@@ -109,7 +109,7 @@ func (s *State) onToolOutput(e engine.ToolOutput) {
 			it.ErrorLine = lastLine(e.Error)
 		case e.Output != "":
 			it.ErrorLine = lastLine(e.Output)
-		case strings.HasPrefix(it.Name, "mcp__"):
+		case isMCP(it.Name):
 			it.Result = resultSummary(e.Result, e.Size)
 		}
 	})

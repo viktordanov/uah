@@ -59,7 +59,8 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	never := w.e.cfg.Approver != nil && w.e.cfg.Approver.Policy() == approval.Never
 	gate := w.mcpGate(approvals, never)
 	gate.approved = scope.approvesTool
-	registry = withMCP(registry, scope.mcpTools(mcpTools), req.DisallowedTools, gate)
+	resources := w.e.cfg.MCP != nil && w.e.cfg.MCP.HasServers()
+	registry = withMCP(registry, scope.mcpTools(mcpTools), resources, scope.disallowResources(req.DisallowedTools), gate)
 	registry = withPatch(registry, offersPatch(w.e.models, req), w.patchGate(approvals, req))
 	registry = w.withAgents(registry, req)
 	registry = withQuestions(registry, questionTranslator{offered: w.offersQuestions(req), root: !isSubagent(req.SessionID), ctx: approvals, ask: w.askUser})

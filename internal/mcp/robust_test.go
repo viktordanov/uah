@@ -118,29 +118,18 @@ func TestServerEnvironment(t *testing.T) {
 	}
 }
 
-// Every page of a long tool list is read; a changed list is logged and the
-// tools listed at startup stay, as in Codex.
-func TestManyToolsAndListChanges(t *testing.T) {
+// Every page of a long tool list is read.
+func TestManyTools(t *testing.T) {
 	t.Parallel()
-	var buf safeBuffer
 	cfg := stdio(t)
 	cfg.Env["MCPSERVER_EXTRA_TOOLS"] = "1500"
-	m, err := mcp.NewManager(map[string]mcp.ServerConfig{"s": cfg}, mcp.Options{
-		Workspace: t.TempDir(), Getenv: func(string) string { return "" }, Logger: slog.New(slog.NewTextHandler(&buf, nil)),
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = m.Close() })
+	m := newManager(t, map[string]mcp.ServerConfig{"s": cfg})
 	tools, err := m.Tools(context.Background())
 	require.NoError(t, err)
-	assert.Len(t, tools, 1500+11)
+	assert.Len(t, tools, 1500+13)
 	r, err := call(t, m, "s", "tool_1499", `{}`)
 	require.NoError(t, err)
 	assert.Equal(t, "extra", r.Text)
-
-	_, err = call(t, m, "s", "add_tool", `{"text":"late"}`)
-	require.NoError(t, err)
-	require.Eventually(t, func() bool { return strings.Contains(buf.String(), "tool list changed") }, 5*time.Second, 10*time.Millisecond)
-	assert.Len(t, m.Status()[0].Tools, 1500+11, "the startup list stays")
 }
 
 // Servers whose names sanitize alike get distinct tool names.

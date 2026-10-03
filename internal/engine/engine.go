@@ -39,6 +39,13 @@ type MCPLister interface {
 	MCPServers() []mcp.ServerStatus
 }
 
+// MCPClient is an engine whose MCP servers the user reaches directly:
+// their prompts as slash commands and their resources after "@".
+type MCPClient interface {
+	// MCP is the engine's servers; nil when none are configured.
+	MCP() *mcp.Manager
+}
+
 // MCPStarter is an engine whose MCP servers can connect before its first
 // run, so an interactive session connects them when it opens.
 type MCPStarter interface {
