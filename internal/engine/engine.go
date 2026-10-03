@@ -107,6 +107,25 @@ type Options struct {
 	// Stream reports the model's text as it arrives, for the run's own
 	// turn requests.
 	Stream bool
+	// Goal answers the goal tools (get_goal, create_goal, update_goal)
+	// with the session's goal: the result for the model, or an error the
+	// model reads (nil: the session has no goals, as a subagent's).
+	Goal GoalTool
+}
+
+// GoalTool runs one goal tool call against the session's goal.
+type GoalTool func(ctx context.Context, name, arguments string) (string, error)
+
+// GoalPlanType is the remote job plan a goal tool call runs as: the
+// session has already applied the call, and the job completes at once
+// with its result.
+const GoalPlanType = "uah.goal"
+
+// GoalPlan is the plan of a goal call's job: the tool and the result the
+// session returned.
+type GoalPlan struct {
+	Tool   string `json:"tool"`
+	Result string `json:"result"`
 }
 
 // Forgetter is an engine that keeps per-session state across runs; the

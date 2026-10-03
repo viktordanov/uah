@@ -295,6 +295,9 @@ func (st *Styles) footerLine(s state.State, w int) string {
 	if u, ok := s.UsageLeft(); ok {
 		text += " · " + u
 	}
+	if g := s.GoalIndicator(); g != "" {
+		text += " · " + g
+	}
 	if s.Shell {
 		hint = shellHint
 	}
@@ -343,6 +346,9 @@ func (st *Styles) compactFooter(s state.State, w int) string {
 	}
 	if u, ok := s.UsageLeft(); ok {
 		before(u) // the plan's tightest window
+	}
+	if g := s.GoalIndicator(); g != "" {
+		before(g) // Codex's goal indicator: "Pursuing goal (12.5K / 50K)"
 	}
 	// The hint wins over the left side, which is cut when the line is
 	// full: from the end, the live →low part only when the model and the

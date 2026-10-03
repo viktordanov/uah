@@ -110,7 +110,7 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	} else {
 		catalog.Catalog(ctx, catalog.Provider(), models.Offline) // the cache only, no network
 	}
-	opts.Settings, opts.Yolo = r.Settings, in.Yolo
+	opts.Settings, opts.Yolo, opts.Goals = r.Settings, in.Yolo, r.Goals
 	opts.Notices = append(opts.Notices, modelNotices(catalog.Cached(r.Settings.Provider), r)...)
 	// The session's own files go to runDir; the model cache stays shared.
 	runDir := cmp.Or(in.RunStateDir, stateDir)
@@ -179,6 +179,7 @@ func newEngine(r Resolved, stateDir string, logger *slog.Logger, p parts, opts *
 		InstructionFiles: instructionFiles(opts.Instructions),
 		Compaction:       r.Compaction, ContextWindow: r.Settings.ContextWindow,
 		BeforeCompact: preCompactHook(opts.Hooks, r.Settings), Subagents: p.subagents, AskUser: p.askUser,
+		Goals: !r.Goals.Disabled,
 	}
 
 	return embedded.New(ecfg)

@@ -44,7 +44,7 @@ func (b backend) Start(ctx context.Context, l harness.Launch) (harness.Process, 
 	start, _ := ctx.Value(startKey{}).(startValue)
 	w := &wiring{
 		e: b.e, l: l, getenv: b.e.cfg.Getenv, emit: start.emit, notify: start.opts.Notify, ask: start.opts.Ask,
-		askAnytime: start.opts.AskAnytime, askUser: start.opts.AskUser, inject: start.opts.Inject, tier: start.opts.ServiceTier, adaptive: start.opts.AdaptiveEffort,
+		askAnytime: start.opts.AskAnytime, askUser: start.opts.AskUser, goal: start.opts.Goal, inject: start.opts.Inject, tier: start.opts.ServiceTier, adaptive: start.opts.AdaptiveEffort,
 		mode: newModeCell(start.opts, b.e.cfg),
 	}
 	a, err := w.start(ctx, start.opts)
@@ -74,6 +74,8 @@ type wiring struct {
 	askAnytime approval.Ask
 	// askUser asks the user the agent's questions (request_user_input).
 	askUser engine.AskUser
+	// goal answers the goal tools with the session's goal.
+	goal engine.GoalTool
 	// inject gives the session's agent a message without a turn of its own.
 	inject func(string) func()
 	// tier and adaptive are the run's service tier and adaptive effort
@@ -174,7 +176,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if err := w.effortUpdates(ctx, sw, s, req); err != nil {
 		return nil, err
 	}
-	operations := operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx))
+	operations := operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx))
 	first := compaction.Trigger("")
 	switch {
 	case opts.Clear:

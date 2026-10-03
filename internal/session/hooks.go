@@ -152,7 +152,7 @@ func (s *Session) onStopChecked(m evStopChecked) {
 		}
 	}
 	s.hooks.stopStreak = 0
-	s.emit(Idle{At: time.Now()})
+	s.goIdle(false)
 }
 
 // postToolUse runs PostToolUse hooks for a finished tool; they only observe.

@@ -19,8 +19,9 @@ The layout, screens, and framework choice are recorded in the [TUI design](../..
 8. [The look](#the-look)
 9. [Images](#images)
 10. [Plan usage](#plan-usage)
-11. [Extending the TUI](#extending-the-tui)
-12. [Tests](#tests)
+11. [Goals](#goals)
+12. [Extending the TUI](#extending-the-tui)
+13. [Tests](#tests)
 <!-- /memoria:section -->
 
 <!-- memoria:section id="packages" files="state/state.go state/reduce.go state/effects.go render/screen.go render/items.go bubble/model.go bubble/effects.go bubble/keys.go bubble/exit.go" -->
@@ -156,6 +157,7 @@ In the `/model` picker, ↑/↓ (or ctrl+p/ctrl+n) choose, enter on a model list
 | `/clear` | Start the agent fresh in this session: the screen clears, and the next request carries nothing from before; the session keeps its history (embedded engine) | Yes |
 | `/stop` | Interrupt the run; queued messages stay | Yes |
 | `/rewind` | Select your latest message to go back to, as esc esc does while idle (see [Keys](#keys); embedded engine) | No |
+| `/goal [objective\|edit\|pause\|resume\|clear\|status]` | Codex's `/goal`: set a goal the agent works on, run after run, until it is complete; alone or with `status`, show it (see [Goals](#goals)) | Yes |
 | `/compact [focus]` | Compact the context before the next model request; words after it tell the summary what to focus on, as Claude Code's `/compact [instructions]` (embedded engine). The notice after it says how: a summary, the provider's compaction, or, for an automatic one, old tool outputs elided (`onCompacted`) | Yes |
 | `/diff` | The workspace's git changes, staged, unstaged, and untracked, as a transcript item; never sent to the agent | Yes |
 | `/review [target]` | A read-only reviewer looks at `uncommitted` changes, the changes against `branch <name>`, `commit <sha>`, or follows custom instructions, and lists its findings (embedded engine) | No |
@@ -292,6 +294,26 @@ prompt cache 86% · missed 119k: effort switches 72k, cold start 9k, other 38k �
 The share of input served from the cache comes first, then the input that the session could have found cached and did not, by cause, and what that input cost as a share of the session's usage at API prices. A session without misses shows `prompt cache 93% · no misses`. Both commands return `EffLoadCache{SessionID}` (`state/cache.go`, none before the session has an ID). `bubble/usage.go` calls `Deps.Cache` off the update loop, which `cmd/uah` sets to `session.CacheStats`, and the answer comes back as `CacheLoaded`, which `onCache` shows. A failed read is a debug notice. Without `Deps.Cache`, the TUI shows no cache line.
 <!-- /memoria:section -->
 
+<!-- memoria:section id="goals" files="state/goal.go state/commands.go state/runevents.go state/reduce.go state/state.go bubble/effects.go render/screen.go" -->
+## Goals
+
+`/goal` is Codex's command (`state/goal.go`); the session keeps the goal and continues it ([sessions](../session/README.md#goals), the [design record](../../docs/design/goal.md)). It works while the agent works, as in Codex.
+
+| Command | Effect |
+| --- | --- |
+| `/goal`, `/goal status` | The goal's summary as a notice (`goal.Summary`), with the live run's time; without a goal, the usage. Enter on `/goal` in the menu runs it so (`Command.Bare`) |
+| `/goal <objective>` | `EffGoal` set: `Session.SetGoal`, which starts a run while idle and refuses while an unfinished goal exists |
+| `/goal edit <objective>` | `Session.EditGoal`; `/goal edit` alone puts `/goal edit <objective>` in the composer to change |
+| `/goal pause`, `/goal resume`, `/goal clear` | `PauseGoal`, `ResumeGoal`, `ClearGoal` |
+
+A word followed by more text is an objective: `/goal clear the cache folder` sets a goal. `bubble/effects.go` (`runGoal`) calls the session; an error is an error notice. The session's events keep `State.Goal` (`GoalView`: the goal and when the session reported it):
+
+- **The footer** shows `State.GoalIndicator()`, Codex's words (`Pursuing goal (12.5K / 50K)`, `Goal paused (/goal resume)`), on the right in the compact view and after the usage in the detailed view. An active goal's time adds the live run's since the later of the report and the run's start.
+- **Notices.** A new or edited goal and each status change show `goal.Line` (a guard's as a warning); a restored goal says how it goes on (`/goal resume continues it.`); `GoalCleared` shows `Goal cleared`. Usage changes only move the footer.
+- **The transcript.** The goal's messages are uah's (`goalItem`, from `core.UserMessage` and `core.DeveloperMessage`, so a resumed transcript shows them the same way): a continuation is `↻ continuing the goal automatically (3 of 50)`, the budget message and an edited objective a line each, and the user's records (`goal: User set the goal: "…"`) show only in the detailed view, since a notice already said so. `GoalContinued` keeps the session busy for the run it starts.
+- **`/status`** adds the goal's line.
+<!-- /memoria:section -->
+
 <!-- memoria:section id="extending" files="state/commands.go state/contextview.go state/effects.go state/items.go render/contextview.go render/items.go bubble/effects.go bubble/model.go" -->
 ## Extending the TUI
 
@@ -314,7 +336,7 @@ To add an item kind, follow `KindContext`:
 To add a key, map it to an intent in `bubble/keys.go` and handle the intent in `state.Reduce`. Keep the existing keys' meanings.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="state/questions_test.go render/questions_test.go render/approval_test.go bubble/questions_test.go render/notice_test.go render/spacing_test.go render/toolcalls_test.go state/toolcalls_test.go state/modelpicker_test.go render/modelpicker_test.go bubble/modelpicker_test.go state/images_test.go bubble/images_test.go state/reduce_test.go state/menu_test.go state/contextview_test.go state/mode_test.go render/screen_test.go render/contextview_test.go render/mode_test.go bubble/bubble_test.go bubble/approval_test.go bubble/mode_test.go state/config_test.go bubble/config_test.go render/diff_test.go state/shell_test.go render/shell_test.go bubble/shell_test.go state/usage_test.go render/usage_test.go bubble/usage_test.go state/agents_test.go bubble/steer_test.go state/wait_test.go render/waitline_test.go bubble/wait_test.go state/stream_test.go render/stream_test.go bubble/stream_test.go render/markdown/markdown_test.go render/markdown/incremental_test.go render/markdown_test.go render/markdown_bench_test.go state/backtrack_test.go render/backtrack_test.go render/backtrack_internal_test.go bubble/rewind_test.go state/selection_test.go render/selection_test.go bubble/selection_test.go bubble/composer_test.go state/history_test.go bubble/history_test.go bubble/historyfolder_test.go state/title_test.go bubble/title_test.go state/editor_test.go bubble/editor_test.go bubble/editor_internal_test.go render/websearch_test.go state/review_test.go render/review_test.go bubble/review_test.go state/sendkeys_test.go render/adaptive_test.go render/testdata/adaptive.golden" -->
+<!-- memoria:section id="tests" files="state/questions_test.go render/questions_test.go render/approval_test.go bubble/questions_test.go render/notice_test.go render/spacing_test.go render/toolcalls_test.go state/toolcalls_test.go state/modelpicker_test.go render/modelpicker_test.go bubble/modelpicker_test.go state/images_test.go bubble/images_test.go state/reduce_test.go state/menu_test.go state/contextview_test.go state/mode_test.go render/screen_test.go render/contextview_test.go render/mode_test.go bubble/bubble_test.go bubble/approval_test.go bubble/mode_test.go state/config_test.go bubble/config_test.go render/diff_test.go state/shell_test.go render/shell_test.go bubble/shell_test.go state/usage_test.go render/usage_test.go bubble/usage_test.go state/agents_test.go bubble/steer_test.go state/wait_test.go render/waitline_test.go bubble/wait_test.go state/stream_test.go render/stream_test.go bubble/stream_test.go render/markdown/markdown_test.go render/markdown/incremental_test.go render/markdown_test.go render/markdown_bench_test.go state/backtrack_test.go render/backtrack_test.go render/backtrack_internal_test.go bubble/rewind_test.go state/selection_test.go render/selection_test.go bubble/selection_test.go bubble/composer_test.go state/history_test.go bubble/history_test.go bubble/historyfolder_test.go state/title_test.go bubble/title_test.go state/editor_test.go bubble/editor_test.go bubble/editor_internal_test.go render/websearch_test.go state/review_test.go render/review_test.go bubble/review_test.go state/sendkeys_test.go render/adaptive_test.go render/testdata/adaptive.golden state/goal_test.go render/goal_test.go" -->
 ## Tests
 
 | Test | Pins |
@@ -342,6 +364,7 @@ To add a key, map it to an intent in `bubble/keys.go` and handle the intent in `
 | `state/selection_test.go`, `render/selection_test.go`, `bubble/selection_test.go` | Selecting text: press, drag, and release in either direction, a click selecting nothing, double and triple clicks (cells of wide characters, a slow click), clearing on esc, a click, typing, sending, and view changes, the selection staying on its text while the transcript scrolls and streams and going with its items, the copy notice, the overlay in both themes and the lines as before once cleared (`selection`, `selection-light`), what a copy holds (the band, a code line and its language, a diff line, wide characters, trailing spaces, and an answer with a quote, an alert, a zebra table, a nested list, and code), the screen-to-text mapping, and a real session: a drag, a double click, esc, a click on the composer, a drag past the top scrolling, and the wheel during a drag, with the copies caught by `Deps.CopyText` |
 | `state/title_test.go`, `bubble/title_test.go` | The terminal title: idle, working, and waiting for an approval, with no progress bar at any point, and no title with the title off; a real session through an approval and an interrupted run |
 | `state/editor_test.go`, `bubble/editor_test.go`, `bubble/editor_internal_test.go` | ctrl+g: the effect with the draft, none in the picker or `/config`, the saved text as the draft (one trailing newline stripped, CRLF, an empty file), images kept or dropped by placeholder and a typed placeholder as text, a failure keeping the draft; the editor command's words (`$VISUAL` before `$EDITOR`, quotes, escapes, variables, the vim or vi default); the draft directory out of the sandbox's reach in every permission mode and refused when a writable root covers it; and a real session with the test binary as `$VISUAL --wait`: the 0600 `.md` file in `<uah home>/editor` (0700) and removed after, the refusal in workspace mode with the home in the temporary directory, the edited draft and its one image in the model request, a multi-line paste unchanged, a failing editor, and an empty file |
+| `state/goal_test.go`, `render/goal_test.go` | `/goal`: each word's effect, the summary, edit putting the objective in the composer; the goal's events reaching the footer with the live run's time, the notices, a continuation marked automatic, the user's record in the detailed view, and the goal dropped by a clear or another session; the footer's indicator in both views. The loop runs on a real session in `internal/app/goal_test.go` |
 | `render/notice_test.go` | An information notice in the notice gray, tool labels in the dim, and a warning in its color, in both themes (goldens `notice`, `notice-light`, a mark per line) |
 | `render/spacing_test.go` | Blank lines in both views: tool lines one after another, one blank line above and below an edit with its diff (after its fold) and each message's band, never two in a row, the blank line mapped to its item for the mouse, and rows unmoved while going back |
 | `render/toolcalls_test.go`, `state/toolcalls_test.go` | Tool calls: the gallery's sample turn (wrappers, absolute paths, two skills, failures with their stderr, a heredoc, an auto-approval arriving after later calls, a listing, searches, and two MCP calls) in both views (`tools`, `tools-details`) and the colors each line uses in both themes (`tools-colors`, `tools-colors-light`); blank lines around entries with a second line only; the approval on its call and a notice when no call matches; the MCP line, result, and failure; a copy of a failure and its error line; a command shaped from its whole arguments; skills joined and a failed one split off; and the error line and result summary from `engine.ToolOutput` |

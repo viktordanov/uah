@@ -18,10 +18,12 @@ func (s *Session) startRun(inputs []core.UserInput) {
 	inputs, s.held = slices.Concat(s.held, inputs), nil
 	s.state = StateStarting
 	s.markSent(inputs)
+	s.noteGoalRun()
 	req := s.settings.request(s.id, inputs)
 	opts := engine.Options{
 		ServiceTier: s.settings.ServiceTier, AdaptiveEffort: s.settings.AdaptiveEffort, Mode: s.settings.Mode, Compact: s.compactPending, CompactFocus: s.compactFocus, Clear: s.clearPending,
 		Ask: s.askFunc(false), AskAnytime: s.askFunc(true), AskUser: s.askUserFunc(), Notify: s.notify, Inject: s.Inject, Stream: s.stream,
+		Goal: s.goalToolFunc(),
 	}
 	sink := func(e core.Event) { s.in <- evRun{event: e} }
 	go func() {
@@ -103,6 +105,8 @@ func (s *Session) onRunEvent(e core.Event) {
 		delete(s.hooks.tools, v.CallID)
 		s.sendAfterTool()
 	}
+	s.onGoalRunEvent(e)
+	s.sendGoalSteer() // one held while the run started
 	s.noteCompaction(e)
 	if m, ok := e.(core.UserMessage); ok && s.sent[m.ID] {
 		delete(s.sent, m.ID)
@@ -119,6 +123,7 @@ func (s *Session) onEnded(m evEnded) bool {
 		s.emit(Notice{At: time.Now(), Level: LevelError, Message: m.err.Error()})
 	}
 	userStopped := s.state == StateStopping && !s.restartAfterStop
+	s.endGoalRun(m.result, m.err, userStopped)
 	s.requeueUnread(userStopped && s.closeReply == nil) // a close keeps them queued too
 	s.live, s.modelBusy = nil, false
 	clear(s.afterTool) // they go out with the next run, or stay queued
@@ -152,7 +157,7 @@ func (s *Session) onEnded(m evEnded) bool {
 	if !userStopped && s.checkStop() {
 		return false
 	}
-	s.emit(Idle{At: time.Now()})
+	s.goIdle(userStopped)
 
 	return false
 }

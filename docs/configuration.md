@@ -4,7 +4,7 @@ uah reads its configuration from TOML files and combines it with flags, the envi
 
 1. [Files](#files)
 2. [Precedence](#precedence)
-3. [Keys](#keys): [model](#model), [sandbox and approvals](#sandbox-and-approvals), [review](#review), [compaction](#compaction), [instructions and skills](#instructions-and-skills), [hooks](#hooks), [MCP servers](#mcp-servers), [TUI](#tui), [projects](#projects)
+3. [Keys](#keys): [model](#model), [sandbox and approvals](#sandbox-and-approvals), [review](#review), [compaction](#compaction), [instructions and skills](#instructions-and-skills), [hooks](#hooks), [MCP servers](#mcp-servers), [subagents](#subagents), [goals](#goals), [TUI](#tui), [projects](#projects)
 4. [Environment variables](#environment-variables)
 5. [uah config](#uah-config)
 6. [Examples](#examples)
@@ -379,6 +379,16 @@ tools = ["Bash"]
 approve = ["git diff", "git log"]
 developer_instructions = "Review the diff you are given. List only real bugs, each with its file and line."
 ```
+
+### Goals
+
+`/goal` keeps the agent working, run after run, until it marks the goal complete or a budget stops it ([README](../README.md#goals), [design](design/goal.md)). The keys are Codex's, with uah's cap on continuations:
+
+| Key | Type | Default | Merge | Meaning |
+| --- | --- | --- | --- | --- |
+| `[features]` `goals` | bool | true | override, can unset | `/goal` and the goal tools (`get_goal`, `create_goal`, `update_goal`), as Codex's feature flag. `false` offers no goal tools, refuses `/goal`, and leaves a goal a session kept alone |
+| `[goals]` `max_goal_token_budget` | integer | none | override | The most tokens a goal may have as its budget, and the budget of a goal set without one: `/goal`, or the model's `create_goal` without `token_budget`, as Codex's key. Tokens count as Codex counts them: input not read from the prompt cache, plus output. A goal over its budget stops as budget-limited and the model is told to wrap up |
+| `[goals]` `max_continuations` | integer | 50 | override, can unset | uah's: the most runs uah starts on its own for one goal; then the goal stops as budget-limited, and `/goal resume` gives it as many again. 0 means no limit, as in Codex |
 
 ### TUI
 

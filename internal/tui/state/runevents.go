@@ -27,6 +27,11 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 		if s.shellMessage(e) {
 			return
 		}
+		if it, ok := goalItem(e.ID, e.Text); ok {
+			s.put(it)
+
+			return
+		}
 		note, ok := s.agentNote(e.Text)
 		if !ok {
 			note, ok = reviewNote(e.Text)
@@ -43,6 +48,11 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 			s.put(Item{Kind: KindUser, Key: "msg:" + e.ID, Text: images.Display(e.Text), Raw: e.Text, Input: InputDelivered})
 		}
 	case core.DeveloperMessage:
+		if it, ok := goalItem(e.ID, e.Text); ok {
+			s.put(it)
+
+			return
+		}
 		s.put(Item{Kind: KindNotice, Key: "msg:" + e.ID, Text: preparedNote(e.Text), Level: session.LevelInfo})
 	case core.TurnStarted:
 		l := s.live()

@@ -105,7 +105,7 @@ func (s *State) onEvent(ev core.Event) { //nolint:gocyclo // a dispatch switch o
 			s.View = nil
 		}
 		s.SessionID, s.Resumed, s.Engine, s.Settings = e.ID, e.Resumed, e.Engine, e.Settings
-		s.Queue, s.Live, s.Busy, s.Quitting, s.Approvals, s.Questions, s.Reviewing = nil, nil, false, false, nil, nil, ""
+		s.Queue, s.Live, s.Busy, s.Quitting, s.Approvals, s.Questions, s.Reviewing, s.Goal = nil, nil, false, false, nil, nil, "", nil
 	case session.InstructionsLoaded:
 		s.Files = e.Files
 	case session.QuestionsAsked:
@@ -155,7 +155,7 @@ func (s *State) onEvent(ev core.Event) { //nolint:gocyclo // a dispatch switch o
 	case session.Notice:
 		s.notice(e.Level, e.Message)
 	default:
-		if !s.onEngineEvent(ev) {
+		if !s.onGoalEvent(ev) && !s.onEngineEvent(ev) {
 			s.onRunEvent(ev)
 		}
 	}
