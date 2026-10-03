@@ -221,6 +221,22 @@ func engineEventDTO(event core.Event) (any, bool) {
 			MessageID string `json:"message_id"`
 			Tokens    int64  `json:"tokens,omitempty"`
 		}{header("rewound", e.At), e.MessageID, e.Tokens}, true
+	case engine.AutoReviewed:
+		return struct {
+			sessionHeader
+
+			Command           string `json:"command"`
+			Outcome           string `json:"outcome"`
+			Risk              string `json:"risk,omitempty"`
+			Reason            string `json:"reason,omitempty"`
+			DurationMS        int64  `json:"duration_ms"`
+			InputTokens       int64  `json:"input_tokens"`
+			CachedInputTokens int64  `json:"cached_input_tokens"`
+			OutputTokens      int64  `json:"output_tokens"`
+		}{
+			header("auto_reviewed", e.At), e.Command, e.Outcome, e.Risk, e.Reason, e.Duration.Milliseconds(),
+			e.InputTokens, e.CachedInputTokens, e.OutputTokens,
+		}, true
 	}
 
 	return nil, false

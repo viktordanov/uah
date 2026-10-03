@@ -66,12 +66,17 @@ func (e EffortUpdatesOff) Text() string {
 
 // AutoReviewed reports the auto-reviewer's verdict on an action that needed
 // approval. Outcome is allow, deny, or ask_user (the user decides).
+// Duration is how long the review took, and the tokens are its model
+// calls' (input includes cached).
 type AutoReviewed struct {
-	At      time.Time
-	Command string
-	Outcome string
-	Risk    string
-	Reason  string
+	At       time.Time
+	Command  string
+	Outcome  string
+	Risk     string
+	Reason   string
+	Duration time.Duration
+
+	InputTokens, CachedInputTokens, OutputTokens int64
 }
 
 // AutoReviewing means the auto-reviewer started judging Command; an

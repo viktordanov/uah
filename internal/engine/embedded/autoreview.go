@@ -146,15 +146,19 @@ func (w *wiring) reviewedAsk(sw *switcher, req core.Request) approval.Ask {
 		if !alone && !always {
 			return askNext(ctx, next, p)
 		}
+		start := time.Now()
 		if emit != nil {
-			emit(engine.AutoReviewing{At: time.Now(), Command: p.Command})
+			emit(engine.AutoReviewing{At: start, Command: p.Command})
 		}
 		v, err := rv.Review(ctx, reviewRequest(t, req, p, mode.get()))
 		if err != nil {
 			v = review.Verdict{Outcome: "error", Reason: err.Error()}
 		}
 		if emit != nil {
-			emit(engine.AutoReviewed{At: time.Now(), Command: p.Command, Outcome: string(v.Outcome), Risk: string(v.Risk), Reason: v.Reason})
+			emit(engine.AutoReviewed{
+				At: time.Now(), Command: p.Command, Outcome: string(v.Outcome), Risk: string(v.Risk), Reason: v.Reason,
+				Duration: time.Since(start), InputTokens: v.Usage.InputTokens, CachedInputTokens: v.Usage.CachedInputTokens, OutputTokens: v.Usage.OutputTokens,
+			})
 		}
 		if err != nil {
 			return approval.Decline
