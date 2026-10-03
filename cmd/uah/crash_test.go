@@ -27,6 +27,62 @@ import (
 // call failed but left its process running.)
 func TestCrashRecovery(t *testing.T) {
 	t.Parallel()
+	c := crashDuringTool(t)
+
+	res := uahWith(t, c.env, "", append(c.args, "--session", c.session, "carry on")...)
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Contains(t, res.stdout, "recovered")
+
+	reqs := c.llm.Requests()
+	require.Len(t, reqs, 2)
+	last := reqs[1]
+	assert.Equal(t, []string{"start a long command", "carry on"}, last.UserTexts, "the resumed run sees the history")
+	assert.Equal(t, []string{"call-1-0"}, last.CallIDs, "the interrupted call is in the history")
+	require.Len(t, last.ToolOutputs, 1, "and it has a result")
+	assert.Contains(t, last.ToolOutputs[0], "interrupted before an exit status was recorded")
+
+	deadline := time.Now().Add(10 * time.Second)
+	for alive(c.pid) && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	assert.False(t, alive(c.pid), "the orphaned tool was killed")
+}
+
+// TestCrashRecovery_LeavesAGroupRecordedInAnEarlierBoot: the session file
+// says the tool's process group was recorded in another boot, as it would be
+// after a reboot, when the ID can belong to an unrelated process. The resume
+// leaves the group alone (uagent compares the recorded leader start).
+func TestCrashRecovery_LeavesAGroupRecordedInAnEarlierBoot(t *testing.T) {
+	t.Parallel()
+	c := crashDuringTool(t)
+	file := filepath.Join(c.stateDir, "sessions", c.session+".session.jsonl")
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	start := regexp.MustCompile(`"ProcessGroupStart":"[^"/]+/`)
+	require.True(t, start.Match(data), "the runner recorded the leader's start")
+	data = start.ReplaceAll(data, []byte(`"ProcessGroupStart":"00000000-0000-0000-0000-000000000000/`))
+	require.NoError(t, os.WriteFile(file, data, 0o600))
+
+	res := uahWith(t, c.env, "", append(c.args, "--session", c.session, "carry on")...)
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Contains(t, res.stdout, "recovered")
+	assert.True(t, alive(c.pid), "a group recorded in another boot is not signaled")
+}
+
+// crashed is a uah run killed while its Bash tool runs.
+type crashed struct {
+	llm      *fakellm.Server
+	env      []string
+	args     []string
+	stateDir string
+	session  string
+	pid      int // the tool's
+}
+
+// crashDuringTool kills uah (SIGKILL, no graceful stop) once the runner has
+// recorded the tool's process group, and leaves the tool running.
+func crashDuringTool(t *testing.T) crashed {
+	t.Helper()
 	e := harnesstest.NewEnv(t)
 	llm := fakellm.New(t,
 		fakellm.Reply{Text: "Waiting.", Commands: []string{"echo $$ > sleep.pid; exec sleep 30"}},
@@ -52,26 +108,9 @@ func TestCrashRecovery(t *testing.T) {
 	waitRecorded(t, e.StateDir)
 	require.NoError(t, first.Process.Kill())
 	_ = first.Wait()
-	assert.True(t, alive(pid), "the crash leaves the tool running")
+	require.True(t, alive(pid), "the crash leaves the tool running")
 
-	id := onlySession(t, e.StateDir)
-	res := uahWith(t, env, "", append(args, "--session", id, "carry on")...)
-	require.Equal(t, 0, res.code, res.stderr)
-	assert.Contains(t, res.stdout, "recovered")
-
-	reqs := llm.Requests()
-	require.Len(t, reqs, 2)
-	last := reqs[1]
-	assert.Equal(t, []string{"start a long command", "carry on"}, last.UserTexts, "the resumed run sees the history")
-	assert.Equal(t, []string{"call-1-0"}, last.CallIDs, "the interrupted call is in the history")
-	require.Len(t, last.ToolOutputs, 1, "and it has a result")
-	assert.Contains(t, last.ToolOutputs[0], "interrupted before an exit status was recorded")
-
-	deadline := time.Now().Add(10 * time.Second)
-	for alive(pid) && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	assert.False(t, alive(pid), "the orphaned tool was killed")
+	return crashed{llm: llm, env: env, args: args, stateDir: e.StateDir, session: onlySession(t, e.StateDir), pid: pid}
 }
 
 // waitPID waits for the tool to write its process ID.
