@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // Mode is how much a sandboxed command may do. The names match Codex's
@@ -112,10 +113,10 @@ func (p Policy) Writable() []string {
 }
 
 // insideReadOnly reports whether path is one of the ReadOnly paths or
-// inside one.
+// inside one, also under another name for it (protects).
 func (p Policy) insideReadOnly(path string) bool {
 	for _, ro := range p.ReadOnly {
-		if ro != "" && within(path, ResolvePath(ro)) {
+		if ro != "" && protects(ResolvePath(ro), path) {
 			return true
 		}
 	}
@@ -151,19 +152,49 @@ func (p Policy) protectedIn(root string) []string {
 	return out
 }
 
-// readOnlyIn returns the policy's ReadOnly paths at or under root, resolved.
+// readOnlyIn returns the policy's ReadOnly paths at or under root,
+// resolved and spelled under root: a root that names one of the path's
+// directories in another case, or by another name for the same directory,
+// still holds the path, and Seatbelt, which compares names without case,
+// would otherwise let the root open it.
 func (p Policy) readOnlyIn(root string) []string {
 	var out []string
 	for _, path := range p.ReadOnly {
 		if path == "" {
 			continue
 		}
-		if path = ResolvePath(path); within(path, root) && !slices.Contains(out, path) {
+		path, ok := underRoot(ResolvePath(path), root)
+		if ok && !slices.Contains(out, path) {
 			out = append(out, path)
 		}
 	}
 
 	return out
+}
+
+// underRoot returns path spelled under root when path is root or inside
+// it, lexically, without case, or because one of its directories is root
+// under another name.
+func underRoot(path, root string) (string, bool) {
+	if within(path, root) {
+		return path, true
+	}
+	info, err := os.Stat(root)
+	for dir := path; ; dir = filepath.Dir(dir) {
+		same := strings.EqualFold(dir, root)
+		if !same && err == nil {
+			d, derr := os.Stat(dir)
+			same = derr == nil && os.SameFile(d, info)
+		}
+		if same {
+			rel, rerr := filepath.Rel(dir, path)
+
+			return filepath.Join(root, rel), rerr == nil
+		}
+		if filepath.Dir(dir) == dir {
+			return "", false
+		}
+	}
 }
 
 // Wrap returns argv run inside the sandbox on this platform. FullAccess

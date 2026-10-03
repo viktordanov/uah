@@ -353,3 +353,29 @@ func TestSeatbeltShellScriptsStayReadOnly(t *testing.T) {
 	assert.Equal(t, string(want), string(got))
 	assert.NoDirExists(t, home+".moved")
 }
+
+// TestSeatbeltShellScriptsCaseAliases checks that a writable root that
+// names the scripts' directory, or a directory above it, in another case
+// does not open the scripts: Seatbelt compares names without case.
+func TestSeatbeltShellScriptsCaseAliases(t *testing.T) {
+	out := outsideDir(t)
+	dir := filepath.Join(out, "state", "sandbox")
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	if _, err := os.Stat(filepath.Join(out, "STATE")); err != nil {
+		t.Skip("this file system tells cases apart")
+	}
+	for _, root := range []string{filepath.Join(out, "STATE"), filepath.Join(out, "state", "SANDBOX")} {
+		p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: root}
+		shell, err := sandbox.Shell(dir, p, sandbox.EnvPolicy{}, "/bin/sh")
+		require.NoError(t, err)
+		want, err := os.ReadFile(shell)
+		require.NoError(t, err)
+		cmd := exec.CommandContext(t.Context(), shell, "-c", "echo evil > "+shell)
+		cmd.Dir = out
+		output, err := cmd.CombinedOutput()
+		assert.Error(t, err, "%s: %s", root, output)
+		got, err := os.ReadFile(shell)
+		require.NoError(t, err)
+		assert.Equal(t, string(want), string(got), root)
+	}
+}

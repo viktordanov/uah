@@ -77,6 +77,10 @@ func TestCanWriteAliases(t *testing.T) {
 	assert.False(t, p.CanWrite(filepath.Join(ws, ".Uah", "config.toml")), "a protected name that does not exist yet")
 	assert.False(t, p.CanWrite(filepath.Join(ws, "home", "café", "SANDBOX", "sh-0123")))
 	assert.True(t, p.CanWrite(filepath.Join(ws, ".github", "x")))
+	alias := filepath.Join(ws, "home", "caf\u00e9", "SANDBOX")
+	p.WritableRoots = []string{alias}
+	assert.NotContains(t, p.Writable(), alias, "a root naming a ReadOnly path in another case is dropped")
+	p.WritableRoots = nil
 
 	nfd := filepath.Join(ws, "home", "café", "sandbox")
 	if _, err := os.Stat(nfd); err != nil {
