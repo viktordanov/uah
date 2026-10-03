@@ -1,13 +1,17 @@
 package embedded
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/viktordanov/uah-core/harness/llm"
 
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/review"
 )
 
 // TestTranscript_PerSession keeps each session's auto-review transcript
@@ -20,10 +24,8 @@ func TestTranscript_PerSession(t *testing.T) {
 	e.transcript("parent").observe(core.UserMessage{Text: "the user's request"})
 	e.transcript("child").observe(core.UserMessage{Text: "the parent's task for the child"})
 
-	users, _ := e.transcript("parent").snapshot()
-	assert.Equal(t, []string{"the user's request"}, users)
-	users, _ = e.transcript("child").snapshot()
-	assert.Equal(t, []string{"the parent's task for the child"}, users)
+	assert.Equal(t, []review.Entry{{Kind: review.EntryUser, Text: "the user's request"}}, e.transcript("parent").snapshot().Entries)
+	assert.Equal(t, []review.Entry{{Kind: review.EntryUser, Text: "the parent's task for the child"}}, e.transcript("child").snapshot().Entries)
 	assert.Equal(t, 1, parentResets, "the child's message did not reset the parent's reviewer")
 	assert.Same(t, e.transcript("parent"), e.transcript("parent"))
 }
@@ -42,6 +44,45 @@ func TestTranscript_KeepsAnswers(t *testing.T) {
 	})
 	tr.observe(engine.QuestionsAnswered{Questions: []engine.Question{{ID: "a", Question: "Which?"}}, Answers: engine.Answers{}})
 
-	users, _ := tr.snapshot()
-	assert.Equal(t, []string{"Question: Drop the old table?\nDrop it: Deletes users_old.\nAnswer: Drop it\nuser_note: after the backup"}, users)
+	assert.Equal(t, []review.Entry{{Kind: review.EntryUser, Text: "Question: Drop the old table?\nDrop it: Deletes users_old.\nAnswer: Drop it\nuser_note: after the backup"}}, tr.snapshot().Entries)
+}
+
+// TestTranscript_InOrder records the session's entries in order, numbered
+// across the session: a call noted before its event is recorded once, and
+// its result follows as an entry of its own, so a review's delta only
+// appends.
+func TestTranscript_InOrder(t *testing.T) {
+	tr := newTranscript()
+	tr.observe(core.UserMessage{Text: "fetch the data"})
+	tr.note([]llm.ToolCall{{CallID: "c1", Name: "Bash", Arguments: `{"command":"curl x"}`}})
+	tr.observe(core.ToolCalled{CallID: "c1", Name: "Bash", Arguments: `{"command":"curl x"}`})
+	tr.observe(core.ToolFinished{CallID: "c1", Name: "Bash", Detail: "exit 0"})
+	tr.observe(core.UserMessage{Text: "thanks"})
+
+	got := tr.snapshot()
+	assert.Equal(t, []review.Entry{
+		{Kind: review.EntryUser, Text: "fetch the data"},
+		{Kind: review.EntryCall, Tool: "Bash", Text: `{"command":"curl x"}`},
+		{Kind: review.EntryResult, Tool: "Bash", Text: "exit 0"},
+		{Kind: review.EntryUser, Text: "thanks"},
+	}, got.Entries)
+	assert.Equal(t, 4, got.End())
+}
+
+// TestTranscript_KeepsTheTaskAndTheLatest drops the oldest entries past
+// keepEntries but keeps the first user message apart.
+func TestTranscript_KeepsTheTaskAndTheLatest(t *testing.T) {
+	tr := newTranscript()
+	tr.observe(core.UserMessage{Text: "the task"})
+	for i := range keepEntries + 5 {
+		tr.observe(core.ToolFinished{CallID: fmt.Sprint(i), Name: "Bash", Detail: "exit 0"})
+	}
+
+	got := tr.snapshot()
+	assert.Len(t, got.Entries, keepEntries)
+	assert.Equal(t, 6, got.Start)
+	assert.Equal(t, keepEntries+6, got.End())
+	require.NotNil(t, got.First)
+	assert.Equal(t, "the task", got.First.Text)
+	assert.Equal(t, 0, got.FirstAt)
 }

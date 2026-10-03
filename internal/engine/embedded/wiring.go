@@ -138,7 +138,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	w.closers = append(w.closers, closer{close: sw.Close})
 	sw.seen, sw.cacheKey = w.e.last.recorder(req.SessionID), w.e.cacheKey(req.SessionID)
 	if w.e.cfg.AutoReview || w.ask != nil || w.mode.get().ReviewerDecides() {
-		w.ask = w.reviewedAsk(sw, req)
+		w.ask = w.reviewedAsk(sw, req) //nolint:contextcheck,nolintlint // on Linux, the sandbox probes bwrap once per process, with its own timeout; not on darwin
 	}
 	if sc := w.e.scope(req.SessionID); sc != nil && sc.NeverAsk {
 		w.ask = neverAsk

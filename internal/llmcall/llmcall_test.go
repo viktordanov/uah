@@ -61,3 +61,16 @@ func TestCall_Timeout(t *testing.T) {
 	require.Error(t, err)
 	assert.Less(t, time.Since(start), 10*time.Second)
 }
+
+func TestCall_ToolCalls(t *testing.T) {
+	srv := fakellm.New(t, fakellm.Reply{Calls: []fakellm.Call{{Name: "exec_command", Args: `{"cmd":"ls"}`}}})
+	res, err := llmcall.Call(context.Background(), client(t, srv), llmcall.Request{
+		Model: "gpt-test", Input: []llm.Item{llmcall.Message(llm.RoleUser, "hi")},
+		Tools: []llm.Tool{{Type: llm.ToolFunction, Name: "exec_command", Parameters: map[string]any{"type": "object"}}},
+	})
+	require.NoError(t, err, "a call is an answer when the request offers tools")
+	require.Len(t, res.Calls, 1)
+	assert.Equal(t, `{"cmd":"ls"}`, res.Calls[0].Arguments)
+	assert.NotEmpty(t, res.Output)
+	assert.Equal(t, []string{"exec_command"}, srv.Requests()[0].ToolNames)
+}

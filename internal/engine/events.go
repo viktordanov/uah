@@ -67,7 +67,10 @@ func (e EffortUpdatesOff) Text() string {
 // AutoReviewed reports the auto-reviewer's verdict on an action that needed
 // approval. Outcome is allow, deny, or ask_user (the user decides).
 // Duration is how long the review took, and the tokens are its model
-// calls' (input includes cached).
+// calls' (input includes cached). Delta means the review continued the
+// session's review conversation with what changed since the last review,
+// Forked that it ran on a copy because another review held the
+// conversation, and Commands counts the reviewer's read-only commands.
 type AutoReviewed struct {
 	At       time.Time
 	Command  string
@@ -75,6 +78,9 @@ type AutoReviewed struct {
 	Risk     string
 	Reason   string
 	Duration time.Duration
+	Delta    bool
+	Forked   bool
+	Commands int
 
 	InputTokens, CachedInputTokens, OutputTokens int64
 }

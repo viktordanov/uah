@@ -230,12 +230,15 @@ func engineEventDTO(event core.Event) (any, bool) {
 			Risk              string `json:"risk,omitempty"`
 			Reason            string `json:"reason,omitempty"`
 			DurationMS        int64  `json:"duration_ms"`
+			Delta             bool   `json:"delta,omitempty"`
+			Forked            bool   `json:"forked,omitempty"`
+			Commands          int    `json:"commands,omitempty"`
 			InputTokens       int64  `json:"input_tokens"`
 			CachedInputTokens int64  `json:"cached_input_tokens"`
 			OutputTokens      int64  `json:"output_tokens"`
 		}{
 			header("auto_reviewed", e.At), e.Command, e.Outcome, e.Risk, e.Reason, e.Duration.Milliseconds(),
-			e.InputTokens, e.CachedInputTokens, e.OutputTokens,
+			e.Delta, e.Forked, e.Commands, e.InputTokens, e.CachedInputTokens, e.OutputTokens,
 		}, true
 	}
 

@@ -2,6 +2,7 @@ package embedded_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -326,10 +327,48 @@ func TestEmbedded_AutoReview(t *testing.T) {
 				assert.Contains(t, strings.Join(reqs[len(reqs)-1].ToolOutputs, "\n"), tc.output)
 			}
 			review := e.llm.Requests()[1]
-			assert.Empty(t, review.Tools, "the review call offers no tools")
+			assert.Equal(t, []string{"exec_command"}, review.ToolNames, "the review call offers only Codex's read-only exec_command")
 			assert.Contains(t, strings.Join(review.UserTexts, "\n"), "touch ", "the reviewer sees the action")
 		})
 	}
+}
+
+// TestEmbedded_AutoReviewCommandsAreReadOnly runs the reviewer's own
+// commands in the read-only sandbox with a temporary directory of its own,
+// and a session's second review continues the first's conversation with
+// only what happened since.
+func TestEmbedded_AutoReviewCommandsAreReadOnly(t *testing.T) {
+	allow := fakellm.Reply{Text: `{"outcome":"allow"}`}
+	e := newApprovalEnv(t, approvalOpts{interactive: true, autoReview: true}, func(outside string) []fakellm.Reply {
+		probe := `touch probe.txt; echo tmp > "$TMPDIR/scratch" && cat "$TMPDIR/scratch"; pwd`
+		return []fakellm.Reply{
+			{Escalated: []string{"touch " + filepath.Join(outside, "x.txt")}},
+			{Calls: []fakellm.Call{{Name: "exec_command", Args: fmt.Sprintf(`{"cmd":%q}`, probe)}}},
+			allow,
+			{Escalated: []string{"touch " + filepath.Join(outside, "y.txt")}},
+			allow,
+			{Text: "done"},
+		}
+	})
+	ws := e.Workspace
+	e.run(t)
+
+	assert.Equal(t, core.StatusOK, e.ev.finished().Status)
+	assert.FileExists(t, filepath.Join(e.outside, "y.txt"))
+	assert.NoFileExists(t, filepath.Join(ws, "probe.txt"), "the reviewer cannot write the workspace")
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 6)
+	out := strings.Join(reqs[2].ToolOutputs, "\n")
+	assert.Contains(t, out, "Process exited with code 0")
+	assert.Contains(t, out, "\ntmp\n", "the reviewer writes its own temporary directory")
+	assert.Contains(t, out, ws)
+	second := reqs[4]
+	assert.Equal(t, reqs[2].Input, second.Input[:len(reqs[2].Input)], "the second review continues the first")
+	last := second.UserTexts[len(second.UserTexts)-1]
+	assert.Contains(t, last, ">>> TRANSCRIPT DELTA START")
+	assert.Contains(t, last, "y.txt")
+	delta, _, _ := strings.Cut(last, ">>> APPROVAL REQUEST START")
+	assert.NotContains(t, delta, "x.txt", "the first escalation is not sent again")
 }
 
 // TestEmbedded_AutoReviewStartsAndEnds: a review reports its start, and
