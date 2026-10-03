@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/json/jsontext"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -204,7 +205,7 @@ func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments stri
 	for _, p := range paths {
 		targets[p] = sandbox.ResolvePath(p)
 	}
-	if reason := g.forbidden(paths, targets); reason != "" {
+	if reason := g.forbidden(hunks, paths, targets); reason != "" {
 		return nil, reason
 	}
 	if g.policy == nil {
@@ -243,14 +244,22 @@ func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments stri
 }
 
 // forbidden returns why a forbid rule refuses the patch, or "": checked
-// on the whole patch and on each path alone, as the patch names it and
-// with its symlinks resolved, so a rule on any one path, or reached
-// through a link, applies wherever that path is in the patch.
-func (g patchGate) forbidden(paths []string, targets patch.Targets) string {
+// on the whole patch and on each path alone, as the patch writes it,
+// absolute, and with its symlinks resolved, so a rule on any one path,
+// relative or absolute or reached through a link, applies wherever that
+// path is in the patch.
+func (g patchGate) forbidden(hunks []patch.Hunk, paths []string, targets patch.Targets) string {
 	if g.approver == nil {
 		return ""
 	}
 	commands := []string{patchCommand(paths)}
+	for _, h := range hunks {
+		for _, name := range []string{h.Path, h.MovePath} {
+			if name != "" && !filepath.IsAbs(name) {
+				commands = append(commands, patchCommand([]string{name}))
+			}
+		}
+	}
 	for _, p := range paths {
 		commands = append(commands, patchCommand([]string{p}))
 		if targets[p] != p {

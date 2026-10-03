@@ -77,6 +77,8 @@ type Policy struct {
 // absolute and with symlinks resolved where they exist: the TempDir in
 // ReadOnly; the workspace, the writable roots, /tmp, uah's own $TMPDIR, and
 // the TempDir in WorkspaceWrite; none in FullAccess, which has no sandbox.
+// A root inside one of the ReadOnly paths is left out, so it cannot open
+// up part of that path again.
 func (p Policy) Writable() []string {
 	var roots []string
 	switch p.Mode {
@@ -101,12 +103,24 @@ func (p Policy) Writable() []string {
 			r = resolved
 		}
 		r = filepath.Clean(r)
-		if !slices.Contains(out, r) {
+		if !slices.Contains(out, r) && !p.insideReadOnly(r) {
 			out = append(out, r)
 		}
 	}
 
 	return out
+}
+
+// insideReadOnly reports whether path is one of the ReadOnly paths or
+// inside one.
+func (p Policy) insideReadOnly(path string) bool {
+	for _, ro := range p.ReadOnly {
+		if ro != "" && within(path, ResolvePath(ro)) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Protected returns the paths inside root that stay read-only: each of

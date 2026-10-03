@@ -42,7 +42,7 @@ The same ask (steps 8 to 10) serves [patches](#patches) that write outside the s
 <!-- memoria:section id="patches" files="approval.go" -->
 ## Patches
 
-An `apply_patch` call (see [patches](../patch/README.md)) goes through the same pipeline, as Codex's patch approval does (`assess_patch_safety` in `codex-rs/core/src/safety.rs`). Forbid rules come first, in every mode, yolo included (`Approver.Forbidden`): the engine checks `apply_patch <paths>` for the whole patch and `apply_patch <path>` for each path alone, as the patch names it and with its symlinks resolved, so a rule on one path refuses a patch wherever that path is in it. Then the engine checks each path the patch writes, move destinations included, against the sandbox policy of the run's current permission mode (`sandbox.Policy.CanWriteResolved`):
+An `apply_patch` call (see [patches](../patch/README.md)) goes through the same pipeline, as Codex's patch approval does (`assess_patch_safety` in `codex-rs/core/src/safety.rs`). Forbid rules come first, in every mode, yolo included (`Approver.Forbidden`): the engine checks `apply_patch <paths>` for the whole patch and `apply_patch <path>` for each path alone: as the patch writes it (a relative name too), absolute, and with its symlinks resolved, so a rule on one path refuses a patch wherever that path is in it. Then the engine checks each path the patch writes, move destinations included, against the sandbox policy of the run's current permission mode (`sandbox.Policy.CanWriteResolved`):
 
 | Mode | A write inside the writable roots | Any other write |
 | --- | --- | --- |

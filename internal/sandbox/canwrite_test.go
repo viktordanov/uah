@@ -50,6 +50,13 @@ func TestCanWriteReadOnly(t *testing.T) {
 	assert.False(t, p.CanWrite(scripts))
 	assert.False(t, p.CanWrite(filepath.Join(scripts, "sh-0123")))
 	assert.True(t, p.CanWrite(filepath.Join(ws, "home", "state", "other")))
+
+	// A writable root inside it does not open part of it again.
+	inner := filepath.Join(scripts, "inner")
+	require.NoError(t, os.MkdirAll(inner, 0o700))
+	p.WritableRoots = []string{inner}
+	assert.NotContains(t, p.Writable(), inner)
+	assert.False(t, p.CanWrite(filepath.Join(inner, "x")))
 	p.Mode = sandbox.FullAccess
 	assert.True(t, p.CanWrite(filepath.Join(scripts, "sh-0123")), "full access has no sandbox")
 }

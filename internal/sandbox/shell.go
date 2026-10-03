@@ -23,13 +23,15 @@ import (
 // no TempDir it returns realShell.
 //
 // The scripts run outside the sandbox, so a sandboxed command must not
-// change them: Shell makes dir a private directory (0700, the user's own)
-// and adds it to the policy's ReadOnly paths, so it stays read-only also
-// when it lies in a writable root, such as $TMPDIR. A script already in dir
-// is used only when it is the user's, private, and has the content Shell
-// would write; any other file is replaced.
+// change them: Shell makes dir a private directory (0700, the user's own),
+// resolves its symlinks, so the path it returns has none that a command
+// could swap, and adds it to the policy's ReadOnly paths, so it stays
+// read-only also when it lies in a writable root, such as $TMPDIR. A
+// script already in dir is used only when it is the user's, private, and
+// has the content Shell would write; any other file is replaced.
 func Shell(dir string, p Policy, env EnvPolicy, realShell string) (string, error) {
-	if err := privateDir(dir); err != nil {
+	dir, err := privateDir(dir)
+	if err != nil {
 		return "", err
 	}
 	p.ReadOnly = append(slices.Clip(p.ReadOnly), dir)
@@ -42,7 +44,6 @@ func Shell(dir string, p Policy, env EnvPolicy, realShell string) (string, error
 	}
 	argv := []string{realShell}
 	if p.Mode != FullAccess {
-		var err error
 		if argv, err = p.Wrap(argv); err != nil {
 			return "", err
 		}
@@ -109,10 +110,14 @@ func writeScript(dir, script string) (string, error) {
 }
 
 // trusted reports whether path is a script Shell wrote with this content:
-// a regular file (not a symlink) owned by the user, mode 0700.
+// a regular file (not a symlink) owned by the user, mode 0700, with no
+// other hard link through which it could change.
 func trusted(path, script string) bool {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o700 || !ownedByUser(info) {
+		return false
+	}
+	if st, ok := info.Sys().(*syscall.Stat_t); !ok || st.Nlink != 1 {
 		return false
 	}
 	data, err := os.ReadFile(path)
@@ -120,26 +125,34 @@ func trusted(path, script string) bool {
 	return err == nil && string(data) == script
 }
 
-// privateDir creates dir (mode 0700) when it is missing and makes sure it is
-// a directory of the user's that no one else can write.
-func privateDir(dir string) error {
+// privateDir creates dir (mode 0700) when it is missing, makes sure it is a
+// directory of the user's that no one else can write, and returns it
+// absolute with its symlinks resolved.
+func privateDir(dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("failed to create %s: %w", dir, err)
+		return "", fmt.Errorf("failed to create %s: %w", dir, err)
 	}
-	info, err := os.Lstat(dir)
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err == nil {
+		resolved, err = filepath.Abs(resolved)
+	}
 	if err != nil {
-		return fmt.Errorf("failed to check %s: %w", dir, err)
+		return "", fmt.Errorf("failed to resolve %s: %w", dir, err)
+	}
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("failed to check %s: %w", dir, err)
 	}
 	if !info.IsDir() || !ownedByUser(info) {
-		return fmt.Errorf("the sandbox shell directory %s is not a directory of the current user", dir)
+		return "", fmt.Errorf("the sandbox shell directory %s is not a directory of the current user", dir)
 	}
 	if info.Mode().Perm() != 0o700 {
-		if err := os.Chmod(dir, 0o700); err != nil {
-			return fmt.Errorf("failed to make %s private: %w", dir, err)
+		if err := os.Chmod(resolved, 0o700); err != nil {
+			return "", fmt.Errorf("failed to make %s private: %w", dir, err)
 		}
 	}
 
-	return nil
+	return resolved, nil
 }
 
 // ownedByUser reports whether the file belongs to the current user.

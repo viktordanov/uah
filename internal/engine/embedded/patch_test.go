@@ -319,6 +319,21 @@ func TestPatch_ForbidRuleRefusesInEveryMode(t *testing.T) {
 			assert.Contains(t, e.lastOutput(), "not run: a rule forbids this command: no edits.")
 			assert.NoFileExists(t, filepath.Join(e.Workspace, "a.txt"))
 		})
+		t.Run(string(mode)+"/a relative path", func(t *testing.T) {
+			e := newPatchEnv(t, patchOpts{mode: mode, rules: func(string) []rules.Rule {
+				return []rules.Rule{{Pattern: [][]string{{"apply_patch"}, {"secret.txt"}}, Decision: rules.Forbidden}}
+			}}, func(ws, _ string) []fakellm.Reply {
+				require.NoError(t, os.WriteFile(filepath.Join(ws, "b.txt"), []byte("b\n"), 0o644))
+
+				return applyPatch("*** Add File: a.txt\n+hi\n*** Update File: b.txt\n*** Move to: secret.txt\n@@\n-b\n+leak")
+			})
+			e.ev.finished()
+
+			assert.Contains(t, e.lastOutput(), "not run: a rule forbids this command.")
+			assert.NoFileExists(t, filepath.Join(e.Workspace, "a.txt"))
+			assert.NoFileExists(t, filepath.Join(e.Workspace, "secret.txt"))
+			assert.FileExists(t, filepath.Join(e.Workspace, "b.txt"))
+		})
 		t.Run(string(mode)+"/a later path", func(t *testing.T) {
 			e := newPatchEnv(t, patchOpts{mode: mode, rules: func(ws string) []rules.Rule {
 				return []rules.Rule{{Pattern: [][]string{{"apply_patch"}, {filepath.Join(ws, "secret.txt")}}, Decision: rules.Forbidden}}

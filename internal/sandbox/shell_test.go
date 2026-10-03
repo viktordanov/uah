@@ -35,7 +35,9 @@ func TestShellScript(t *testing.T) {
 	entries, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	assert.Len(t, entries, 1, "no temporary files are left")
-	assert.Equal(t, filepath.Dir(first), dir)
+	resolved, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
+	assert.Equal(t, resolved, filepath.Dir(first), "the script's path has no symlinks")
 }
 
 func TestShellEnvPolicy(t *testing.T) {
@@ -84,8 +86,8 @@ func TestShellTempDir(t *testing.T) {
 
 // TestShellReplacesAChangedScript checks that a script already in the
 // directory is used only when it is still the one Shell writes: a changed
-// script, a symlink, or a script others can write is replaced, and the
-// directory is made private again.
+// script, a symlink, a script others can write, or one with another hard
+// link is replaced, and the directory is made private again.
 func TestShellReplacesAChangedScript(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "sandbox")
 	p := sandbox.Policy{Mode: sandbox.FullAccess, TempDir: filepath.Join(t.TempDir(), "tmp")}
@@ -104,6 +106,7 @@ func TestShellReplacesAChangedScript(t *testing.T) {
 			require.NoError(t, os.Symlink(other, path))
 		},
 		"writable by others": func() { require.NoError(t, os.Chmod(path, 0o777)) },
+		"hard linked":        func() { require.NoError(t, os.Link(path, filepath.Join(t.TempDir(), "link"))) },
 		"open directory":     func() { require.NoError(t, os.Chmod(dir, 0o777)) },
 	} {
 		tamper()
@@ -124,4 +127,19 @@ func TestShellReplacesAChangedScript(t *testing.T) {
 	data, err := os.ReadFile(other)
 	require.NoError(t, err)
 	assert.Equal(t, evil, data, "the symlink's target is left alone")
+}
+
+// TestShellResolvesItsDirectory checks that the script's path has no
+// symlink a command could swap: a directory reached through a link in the
+// workspace gives the link's target.
+func TestShellResolvesItsDirectory(t *testing.T) {
+	ws, real := t.TempDir(), t.TempDir()
+	link := filepath.Join(ws, "state-link")
+	require.NoError(t, os.Symlink(real, link))
+	p := sandbox.Policy{Mode: sandbox.FullAccess, TempDir: filepath.Join(t.TempDir(), "tmp")}
+	path, err := sandbox.Shell(filepath.Join(link, "sandbox"), p, sandbox.EnvPolicy{}, "/bin/sh")
+	require.NoError(t, err)
+	resolved, err := filepath.EvalSymlinks(real)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(resolved, "sandbox"), filepath.Dir(path))
 }
