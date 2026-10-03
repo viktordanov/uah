@@ -27,8 +27,11 @@ func (m *Manager) transport(s *server) (sdk.Transport, error) {
 			Endpoint:   c.URL,
 			HTTPClient: &http.Client{Transport: headerTransport{base: http.DefaultTransport, headers: headers}},
 		}
-		if s.auth != nil {
-			t.OAuthHandler = s.auth
+		m.mu.Lock()
+		auth := s.auth // a new login replaces it
+		m.mu.Unlock()
+		if auth != nil {
+			t.OAuthHandler = auth
 		}
 
 		return t, nil

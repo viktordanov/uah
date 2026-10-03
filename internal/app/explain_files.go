@@ -63,6 +63,9 @@ func fileSettings(workspace string, l config.Layers, r Resolved, cfg config.Conf
 		overridden(l, "tui.title", cfg.TUI.TitleOn(), func(c config.Config) any { return c.TUI.Title }),
 		overridden(l, "history.persistence", first(cfg.History.Persistence, string(history.SaveAll)), func(c config.Config) any { return c.History.Persistence }),
 		overridden(l, "history.max_bytes", historyMaxBytes(cfg.History), func(c config.Config) any { return c.History.MaxBytes }),
+		overridden(l, "features.goals", !r.Goals.Disabled, func(c config.Config) any { return c.Features.Goals }),
+		overridden(l, "goals.max_goal_token_budget", r.Goals.MaxTokenBudget, func(c config.Config) any { return c.Goals.MaxGoalTokenBudget }),
+		overridden(l, "goals.max_continuations", r.Goals.MaxContinuations, func(c config.Config) any { return c.Goals.MaxContinuations }),
 	}...)
 	out = append(out, hookSettings(l, cfg)...)
 	out = append(out, mcpSettings(l, cfg)...)

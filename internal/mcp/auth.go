@@ -140,10 +140,17 @@ type storedAuth struct {
 	mu       sync.Mutex
 	loaded   bool
 	hasLogin bool
-	source   oauth2.TokenSource
+	// tokens are the stored tokens the handler loaded, "" without a login;
+	// a login elsewhere changes what the store holds.
+	tokens string
+	source oauth2.TokenSource
 }
 
 var _ auth.OAuthHandler = (*storedAuth)(nil)
+
+func newStoredAuth(name, url string, opts Options) *storedAuth {
+	return &storedAuth{name: name, url: url, store: opts.Credentials, client: opts.HTTPClient, logger: opts.Logger}
+}
 
 func (a *storedAuth) TokenSource(context.Context) (oauth2.TokenSource, error) {
 	a.mu.Lock()
@@ -151,12 +158,26 @@ func (a *storedAuth) TokenSource(context.Context) (oauth2.TokenSource, error) {
 	if !a.loaded {
 		a.loaded = true
 		if creds, err := a.store.Load(a.name, a.url); err == nil && usable(creds) {
-			a.hasLogin = true
+			a.hasLogin, a.tokens = true, creds.AccessToken+"\x00"+creds.RefreshToken
 			a.source = savingSource(a.client, creds, a.store, a.logger) //nolint:contextcheck // the source outlives any request
 		}
 	}
 
 	return a.source, nil // nil without a login: the SDK then sends no token
+}
+
+// loginChanged reports whether the store now holds a usable login other
+// than the one the handler loaded: `uah mcp login` ran since, as Codex's
+// oauth_credentials_changed checks a server that failed to authorize.
+func (a *storedAuth) loginChanged() bool {
+	creds, err := a.store.Load(a.name, a.url)
+	if err != nil || !usable(creds) {
+		return false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return creds.AccessToken+"\x00"+creds.RefreshToken != a.tokens
 }
 
 // Authorize is called on a 401, and on a 403 that asks for more scopes.

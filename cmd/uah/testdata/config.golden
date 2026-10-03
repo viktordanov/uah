@@ -55,6 +55,9 @@ tui.mouse                                         true                          
 tui.title                                         true                          default
 history.persistence                               save-all                      default
 history.max_bytes                                 8388608                       default
+features.goals                                    true                          default
+goals.max_goal_token_budget                       0                             default
+goals.max_continuations                           50                            default
 hooks.Stop                                        [notify]                      user file
 mcp_servers.docs                                  https://docs.example.com/mcp  project file
 projects.<workspace>.trusted                      true                          user file

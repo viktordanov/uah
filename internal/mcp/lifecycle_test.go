@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -149,4 +150,62 @@ func TestUnsupportedAuthFailsOneServer(t *testing.T) {
 
 	_, err = mcp.NewManager(map[string]mcp.ServerConfig{"bad": {URL: url, Auth: "chatgpt", ToolTimeoutSec: ptr(0.0)}}, mcp.Options{})
 	require.ErrorContains(t, err, "positive", "other configuration errors still fail the manager")
+}
+
+// A `uah mcp login` in another terminal reconnects a needs_login server at
+// the next run (Tools) or /mcp (Status), without /new, as Codex checks the
+// stored login of a server that failed to authorize before each step.
+func TestLoginElsewhereReconnects(t *testing.T) {
+	t.Parallel()
+	srv := oauthserver.New(t)
+	store := &mcp.FileStore{Path: filepath.Join(t.TempDir(), "mcp-credentials.json")}
+	cfg := mcp.ServerConfig{URL: srv.MCPURL()}
+	m := oauthManager(t, cfg, store)
+	require.Equal(t, mcp.StateNeedsLogin, m.Status()[0].State)
+	tools, err := m.Tools(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, tools, "nothing changed: no reconnect")
+
+	login(t, cfg, store)
+	tools, err = m.Tools(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"mcp__remote__whoami"}, names(tools), "the next run reconnects first")
+	st := m.Status()[0]
+	assert.Equal(t, mcp.StateReady, st.State, st.Error)
+	assert.Equal(t, mcp.AuthOAuth, st.Auth)
+	r, err := m.Call(context.Background(), "remote", "whoami", json.RawMessage(`{}`))
+	require.NoError(t, err)
+	assert.Equal(t, "authorized", r.Text)
+
+	// A revoked login needs a new one; /mcp after it reconnects too.
+	srv.Revoke()
+	_, err = m.Call(context.Background(), "remote", "whoami", json.RawMessage(`{}`))
+	require.ErrorIs(t, err, mcp.ErrNeedsLogin)
+	login(t, cfg, store)
+	require.Eventually(t, func() bool { return m.Status()[0].State == mcp.StateReady }, 10*time.Second, 20*time.Millisecond)
+}
+
+// A 401 on the SDK's background SSE stream (a login revoked while no call
+// runs) makes the server needs_login, not failed: the reconnect it causes
+// is refused with a 401.
+func TestRevokedLoginOnTheSSEStream(t *testing.T) {
+	t.Parallel()
+	srv := oauthserver.New(t)
+	store := &mcp.FileStore{Path: filepath.Join(t.TempDir(), "mcp-credentials.json")}
+	cfg := mcp.ServerConfig{URL: srv.MCPURL()}
+	login(t, cfg, store)
+	m, err := mcp.NewManager(map[string]mcp.ServerConfig{"remote": cfg}, mcp.Options{
+		Credentials: store, Getenv: func(string) string { return "" }, RestartDelay: 10 * time.Millisecond,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = m.Close() })
+	_, err = m.Tools(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, mcp.StateReady, m.Status()[0].State)
+
+	srv.Revoke()
+	srv.DropConnections()
+	require.Eventually(t, func() bool { return m.Status()[0].State == mcp.StateNeedsLogin }, 20*time.Second, 20*time.Millisecond, "%+v", m.Status()[0])
+	assert.Contains(t, m.Status()[0].Error, "requires OAuth reauthentication. Run `uah mcp login remote`.")
+	assert.Equal(t, 1, m.Status()[0].Restarts, "the stream failed the connection, and the reconnect got the 401")
 }

@@ -24,11 +24,16 @@ const (
 	mcpPlanVersion operation.RemoteJobPlanVersion = 1
 )
 
-// mcpPlan is the remote job's plan: which tool to call, with what.
+// mcpPlan is the remote job's plan: which tool to call, with what, or
+// with Op set, a resource request. A plan stored before Op existed is a
+// tool call.
 type mcpPlan struct {
 	Server    string          `json:"server"`
-	Tool      string          `json:"tool"`
-	Arguments json.RawMessage `json:"arguments"`
+	Tool      string          `json:"tool,omitempty"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Op        string          `json:"op,omitempty"`
+	Cursor    string          `json:"cursor,omitempty"`
+	URI       string          `json:"uri,omitempty"`
 }
 
 // mcpOutputs is what a completed call keeps in the job's handle, which the
@@ -44,7 +49,9 @@ type mcpRegistry struct {
 	tool.Registry
 
 	tools []mcp.Tool
-	gate  mcpGate
+	// resources offers Codex's resource tools.
+	resources []tool.Definition
+	gate      mcpGate
 }
 
 // mcpGate asks the user about calls whose approval_mode needs it, through
@@ -68,15 +75,20 @@ type mcpGate struct {
 	yolo func() bool
 }
 
-// withMCP adds the tools the request does not disallow.
-func withMCP(r tool.Registry, tools []mcp.Tool, disallowed []string, gate mcpGate) tool.Registry {
+// withMCP adds the tools the request does not disallow, and with
+// resources, the resource tools it does not disallow.
+func withMCP(r tool.Registry, tools []mcp.Tool, resources bool, disallowed []string, gate mcpGate) tool.Registry {
 	tools = slices.DeleteFunc(slices.Clone(tools), func(t mcp.Tool) bool { return slices.Contains(disallowed, t.Name) })
+	var defs []tool.Definition
+	if resources {
+		defs = slices.DeleteFunc(resourceTools(), func(d tool.Definition) bool { return slices.Contains(disallowed, d.Tool.Name) })
+	}
 
-	return mcpRegistry{Registry: r, tools: tools, gate: gate}
+	return mcpRegistry{Registry: r, tools: tools, resources: defs, gate: gate}
 }
 
 func (r mcpRegistry) StaticDefinitions() []tool.Definition {
-	defs := r.Registry.StaticDefinitions()
+	defs := append(r.Registry.StaticDefinitions(), r.resources...)
 	for _, t := range r.tools {
 		description := t.Description
 		if description == "" {
@@ -89,8 +101,17 @@ func (r mcpRegistry) StaticDefinitions() []tool.Definition {
 }
 
 func (r mcpRegistry) Resolve(name string) (tool.Translator, bool) {
-	if t, ok := r.Registry.Resolve(name); ok || !strings.HasPrefix(name, mcp.Prefix) {
+	if t, ok := r.Registry.Resolve(name); ok {
 		return t, ok
+	}
+	if mcp.IsResourceTool(name) {
+		// Offered or not, it resolves, so stored results still read.
+		offered := slices.ContainsFunc(r.resources, func(d tool.Definition) bool { return d.Tool.Name == name })
+
+		return resourceTranslator{name: name, offered: offered}, true
+	}
+	if !strings.HasPrefix(name, mcp.Prefix) {
+		return nil, false
 	}
 	i := slices.IndexFunc(r.tools, func(t mcp.Tool) bool { return t.Name == name })
 	if i < 0 {
@@ -127,18 +148,8 @@ func (t mcpTranslator) decide(ctx context.Context, call llm.ToolCall) submit {
 	if reason := t.gate.check(ctx, *t.tool, string(args)); reason != "" {
 		return refuse(tool.ErrorStatus(reason, 0))
 	}
-	data, err := json.Marshal(mcpPlan{Server: t.tool.Server, Tool: t.tool.Tool, Arguments: args})
-	if err != nil {
-		return refuse(tool.ErrorStatus(fmt.Sprintf("failed to encode the MCP call: %v", err), 0))
-	}
-	spec, err := operation.NewRemoteJobSpec(operation.RemoteJobPlan{Type: mcpPlanType, Version: mcpPlanVersion, Data: jsontext.Value(data)})
-	if err != nil {
-		return refuse(tool.ErrorStatus(fmt.Sprintf("failed to build the MCP call: %v", err), 0))
-	}
 
-	return func(tc tool.Context) tool.CallStatus {
-		return tool.CallStatus{WaitingFor: []operation.ID{tc.Submit(spec)}}
-	}
+	return submitMCP(mcpPlan{Server: t.tool.Server, Tool: t.tool.Tool, Arguments: args})
 }
 
 // check returns why the call may not run, or "". It blocks while the user
@@ -194,6 +205,44 @@ func (g mcpGate) alwaysAllowed(name string) bool {
 	mode, ok := g.m.ToolApproval(name)
 
 	return ok && mode == mcp.ApprovalApprove
+}
+
+// resourceTranslator submits a resource request as an MCP remote job.
+type resourceTranslator struct {
+	name    string
+	offered bool
+}
+
+func (t resourceTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
+	if !t.offered {
+		return tool.ErrorStatus(fmt.Sprintf("tool %q is not available: no MCP server is configured", t.name), 0)
+	}
+	plan, err := resourcePlan(t.name, call.Arguments)
+	if err != nil {
+		return tool.ErrorStatus(err.Error(), 0)
+	}
+
+	return submitMCP(plan)(ctx)
+}
+
+func (t resourceTranslator) TranslateResult(callID string, status tool.CallStatus, ops []operation.Operation) (llm.ToolResult, error) {
+	return mcpTranslator{name: t.name}.TranslateResult(callID, status, ops)
+}
+
+// submitMCP submits the plan as an MCP remote job.
+func submitMCP(plan mcpPlan) submit {
+	data, err := json.Marshal(plan)
+	if err != nil {
+		return refuse(tool.ErrorStatus(fmt.Sprintf("failed to encode the MCP call: %v", err), 0))
+	}
+	spec, err := operation.NewRemoteJobSpec(operation.RemoteJobPlan{Type: mcpPlanType, Version: mcpPlanVersion, Data: jsontext.Value(data)})
+	if err != nil {
+		return refuse(tool.ErrorStatus(fmt.Sprintf("failed to build the MCP call: %v", err), 0))
+	}
+
+	return func(tc tool.Context) tool.CallStatus {
+		return tool.CallStatus{WaitingFor: []operation.ID{tc.Submit(spec)}}
+	}
 }
 
 func (t mcpTranslator) TranslateResult(callID string, status tool.CallStatus, ops []operation.Operation) (llm.ToolResult, error) {

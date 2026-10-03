@@ -16,6 +16,7 @@ import (
 	"github.com/viktordanov/uah/internal/contextprep"
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/goal"
+	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/review"
 )
 
@@ -57,7 +58,9 @@ func (t *transcript) observe(e core.Event) {
 		if kind, _ := goal.Parse(v.Text); kind != goal.KindNone && kind != goal.KindUser {
 			return // the goal's continuation or steering, uah's; the user's goal change stays
 		}
-		t.addLocked(review.Entry{Kind: review.EntryUser, Text: v.Text})
+		// The user's words without the MCP resources the message names,
+		// which a server wrote.
+		t.addLocked(review.Entry{Kind: review.EntryUser, Text: mcp.WithoutResources(v.Text)})
 		if t.onUser != nil {
 			t.onUser()
 		}

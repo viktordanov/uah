@@ -35,7 +35,7 @@ func TestSetupMCP(t *testing.T) {
 	require.True(t, ok)
 	t.Cleanup(func() { _ = closer.Close() })
 	require.Eventually(t, func() bool { return lister.MCPServers()[0].State == mcp.StateReady }, 20*time.Second, 20*time.Millisecond)
-	assert.Equal(t, "mcp__test__add_tool", lister.MCPServers()[0].Tools[0].Name)
+	assert.Equal(t, "mcp__test__add_prompt", lister.MCPServers()[0].Tools[0].Name)
 
 	write("[mcp_servers.bad]\nurl = \"http://x\"\nargs = [\"a\"]\n")
 	_, err = app.Setup(context.Background(), in, io.Discard)
@@ -58,25 +58,33 @@ func TestDoctor_MCPNeedsLogin(t *testing.T) {
 }
 
 // TestMCPServersAndLogin lists servers with their auth status and logs in
-// with the configured credential store.
+// with the configured credential store. A server with an auth uah does
+// not support is listed with the reason and refuses a login, while the
+// others still list and log in.
 func TestMCPServersAndLogin(t *testing.T) {
 	_, in := setupEnv(t)
 	srv := oauthserver.New(t)
-	writeConfig(t, &in, fmt.Sprintf("mcp_oauth_credentials_store = \"file\"\n[mcp_servers.remote]\nurl = %q\n[mcp_servers.local]\ncommand = \"x\"\n", srv.MCPURL()))
+	writeConfig(t, &in, fmt.Sprintf("mcp_oauth_credentials_store = \"file\"\n[mcp_servers.remote]\nurl = %q\n[mcp_servers.local]\ncommand = \"x\"\n"+
+		"[mcp_servers.apps]\nurl = %q\nauth = \"chatgpt\"\n", srv.MCPURL(), srv.MCPURL()))
 	ctx := context.Background()
 
 	entries, err := app.MCPServers(ctx, in.ConfigPath, in.Workspace)
 	require.NoError(t, err)
-	require.Len(t, entries, 2)
-	assert.Equal(t, mcp.AuthUnsupported, entries[0].Auth, "local")
-	assert.Equal(t, mcp.AuthNotLoggedIn, entries[1].Auth, "remote")
+	require.Len(t, entries, 3)
+	assert.Equal(t, mcp.AuthUnsupported, entries[0].Auth, "apps")
+	assert.Equal(t, `auth "chatgpt" is not supported (want oauth)`, entries[0].Error)
+	assert.Equal(t, mcp.AuthUnsupported, entries[1].Auth, "local")
+	assert.Empty(t, entries[1].Error)
+	assert.Equal(t, mcp.AuthNotLoggedIn, entries[2].Auth, "remote")
 
+	err = app.MCPLogin(ctx, in.ConfigPath, in.Workspace, "apps", mcp.LoginOptions{OpenBrowser: oauthserver.Browser})
+	require.ErrorContains(t, err, `mcp_servers.apps: auth "chatgpt" is not supported`)
 	require.NoError(t, app.MCPLogin(ctx, in.ConfigPath, in.Workspace, "remote", mcp.LoginOptions{OpenBrowser: oauthserver.Browser}))
 	_, err = os.Stat(app.MCPCredentialsFile())
 	require.NoError(t, err, "the file store in the config directory")
 	entries, err = app.MCPServers(ctx, in.ConfigPath, in.Workspace)
 	require.NoError(t, err)
-	assert.Equal(t, mcp.AuthOAuth, entries[1].Auth)
+	assert.Equal(t, mcp.AuthOAuth, entries[2].Auth)
 
 	ok, err := app.MCPLogout(in.ConfigPath, in.Workspace, "remote")
 	require.NoError(t, err)

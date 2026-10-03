@@ -38,6 +38,8 @@ The loop tracks where the session is in a run:
 `Open` shows `Options.Notices` after `SessionOpened`, such as configuration warnings, and reads `Engine.Priority` once for `Session.Priority`, which the TUI's `/fast` reads. The session never checks the engine's name.
 
 An `Options.Interactive` session connects the engine's MCP servers as it opens, when the engine is an `engine.MCPStarter` (`mcp.go`), with no message and no model request: a terminal host that waits for a server's `initialize` before it sends the first prompt can then start uah. A goroutine waits until each server has started or failed, then the loop shows a notice for each one that did not start (an error for a `required` one, whose failure fails every message) and sends `MCPStarted`. Runs, `/clear`, and subagents use these connections. `uah exec` is not interactive: its first run, which starts at once, connects them.
+
+`MCPServers` reports the servers for `/mcp` (`engine.MCPLister`), and `MCP` hands the TUI the engine's `mcp.Manager` (`engine.MCPClient`) for the user's own use of them: prompts as slash commands and resources after "@". A run picks up a server's changed tools, or a server reconnected after a login, when it starts; the session does nothing for that.
 <!-- /memoria:section -->
 
 <!-- memoria:section id="messages" files="dispatch.go runs.go inject.go history.go shell.go review.go" -->

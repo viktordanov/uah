@@ -104,20 +104,6 @@ func TestToolTimeout(t *testing.T) {
 	assert.Contains(t, r.Text, "after")
 }
 
-func TestCrashingServer(t *testing.T) {
-	t.Parallel()
-	m := newManager(t, map[string]mcp.ServerConfig{"s": stdio(t)})
-	_, err := m.Tools(context.Background())
-	require.NoError(t, err)
-	_, err = m.Call(context.Background(), "s", "crash", nil)
-	require.Error(t, err)
-	require.Eventually(t, func() bool { return m.Status()[0].State == mcp.StateFailed }, 5*time.Second, 20*time.Millisecond)
-	assert.Contains(t, m.Status()[0].Error, "the server stopped")
-	_, err = m.Call(context.Background(), "s", "echo", nil)
-	require.ErrorContains(t, err, "the MCP server s failed: the server stopped")
-	require.NoError(t, m.Close(), "the crash was reported already; closing does not report it again")
-}
-
 func TestStartupFailures(t *testing.T) {
 	t.Parallel()
 	slow := stdio(t)

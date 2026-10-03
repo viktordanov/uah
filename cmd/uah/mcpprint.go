@@ -70,6 +70,9 @@ func printServer(w io.Writer, e app.MCPEntry) {
 		line("env_http_headers", dash(pairs(c.EnvHTTPHeaders)))
 	}
 	line("auth", e.Auth.Text())
+	if e.Error != "" {
+		line("error", e.Error)
+	}
 	if c.StartupTimeoutSec != nil || c.StartupTimeoutMs != nil {
 		line("startup_timeout_sec", strconv.FormatFloat(c.StartupTimeout().Seconds(), 'f', -1, 64))
 	}
@@ -93,6 +96,7 @@ type jsonServer struct {
 	StartupTimeoutSec *float64      `json:"startup_timeout_sec"`
 	ToolTimeoutSec    *float64      `json:"tool_timeout_sec"`
 	AuthStatus        string        `json:"auth_status"`
+	Error             string        `json:"error,omitempty"`
 	EnabledTools      []string      `json:"enabled_tools,omitempty"`
 	DisabledTools     []string      `json:"disabled_tools,omitempty"`
 }
@@ -115,7 +119,7 @@ func jsonEntries(entries []app.MCPEntry, tools bool) []jsonServer {
 	for _, e := range entries {
 		c := e.Config
 		s := jsonServer{
-			Name: e.Name, Enabled: c.IsEnabled(), ToolTimeoutSec: c.ToolTimeoutSec, AuthStatus: string(e.Auth),
+			Name: e.Name, Enabled: c.IsEnabled(), ToolTimeoutSec: c.ToolTimeoutSec, AuthStatus: string(e.Auth), Error: e.Error,
 			Transport: jsonTransport{
 				Type: c.Transport(), Command: c.Command, Args: c.Args, Env: c.Env, EnvVars: c.EnvVars, Cwd: c.Cwd,
 				URL: c.URL, BearerTokenEnvVar: c.BearerTokenEnvVar, HTTPHeaders: c.HTTPHeaders, EnvHTTPHeaders: c.EnvHTTPHeaders,

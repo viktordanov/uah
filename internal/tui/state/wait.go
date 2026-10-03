@@ -92,7 +92,7 @@ func (s State) toolWait() Wait {
 		case it.Tool != ToolRunning:
 		case it.Name == "wait_agent":
 			return Wait{What: joinDetail("Waiting for agents", it.Label), Since: it.Started}
-		case strings.HasPrefix(it.Name, "mcp__"):
+		case isMCP(it.Name):
 			return Wait{What: "Calling server tool · " + strings.TrimPrefix(it.Name, "mcp__"), Since: it.Started}
 		default:
 			running++
