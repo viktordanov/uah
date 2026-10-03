@@ -1,0 +1,3 @@
+- You cannot run commands or call tools. Judge from the transcript and the planned action.
+- Prefer evidence-based judgments over assumptions.
+- If important context is missing and cannot be verified, lean conservative and explain the uncertainty in your rationale.

@@ -21,7 +21,7 @@ Design:
 3. [Implementation spec](design/implementation.md) (historical): the first plan of packages, files, types, and milestones; the [architecture rules](documentation/architecture.md) have today's packages.
 4. [State storage](design/state.md): what is stored where, and the plan for a rebuildable SQLite index.
 5. [Sandboxing and approvals: research](design/sandbox-research.md) (historical): how Codex sandboxes and approves commands, and the options for uah.
-6. [Sandboxing and approvals: plan](design/sandbox.md): the decisions (Codex's defaults), how a command runs, the packages, and the phases.
+6. [Sandboxing and approvals: plan](design/sandbox.md): the decisions (Codex's defaults), how a command runs, the packages, the phases, and the auto-reviewer: what Codex's does, uah's review conversation with deltas and read-only commands, and its measurements.
 7. [Subagents](design/subagents.md): how Codex and Claude Code run subagents, and the plan for uah.
 8. [Compaction](design/compaction.md): how Codex compacts, locally and remotely, what the runner supports, the design, the offline evaluation over recorded sessions and its numbers, the state ledger, elision, the kept calls and the summary prompt, remote compaction with its probes, and the open decisions.
 9. [MCP](design/mcp.md): how Codex runs MCP servers, how their tools run as the runner's remote jobs, OAuth, the validation findings, and the open decisions.

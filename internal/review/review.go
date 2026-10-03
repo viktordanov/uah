@@ -1,19 +1,26 @@
 // Package review is the automatic approval reviewer, Codex's "auto-review"
-// (guardian): one model call judges an action that needs approval, from the
-// user's messages (trusted), the recent tool calls without their output
-// (untrusted), and the action itself. It fails closed, and a circuit
-// breaker hands the decision back to the user after repeated denials.
+// (guardian): a model judges an action that needs approval, from the
+// session's transcript (the user's messages, trusted; the tool calls and
+// their results without output, untrusted) and the action itself, and may
+// run read-only commands first. Each session keeps one review conversation,
+// to which each review appends only what changed since the last. It fails
+// closed, and a circuit breaker hands the decision back to the user after
+// repeated denials.
 //
 // The prompts in prompts/ are Codex's (rust-v0.156.1,
 // codex-rs/prompts/templates/guardian), Apache License 2.0, Copyright 2025
-// OpenAI, trimmed for a reviewer without tools; see prompts/LICENSE-codex.
+// OpenAI, trimmed of what uah's reviewer cannot do; see
+// prompts/LICENSE-codex.
 package review
 
 import (
 	"cmp"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -73,28 +80,23 @@ type Action struct {
 	Rule string
 }
 
-// ToolCall is one recent tool call, without its output.
-type ToolCall struct {
-	Name      string
-	Arguments string
-	// Status is a short result without output, such as "exit 1".
-	Status string
-}
-
 // Request is one review.
 type Request struct {
 	Action Action
-	// UserMessages are the session's user messages, oldest first. They are
-	// the only trusted input.
-	UserMessages []string
-	// RecentCalls are the latest tool calls, oldest first. They are
-	// untrusted.
-	RecentCalls []ToolCall
+	// Transcript is the session so far. Its user entries are the only
+	// trusted input.
+	Transcript Transcript
 	// Policy replaces the default security policy when set, as Codex's
 	// [auto_review] policy does.
 	Policy string
 	// SessionID keys the provider's prompt cache.
 	SessionID string
+	// Conversation, when set, is the session's review conversation, which
+	// the review continues; without one, each review starts anew.
+	Conversation *Conversation
+	// Run, when set, runs the reviewer's read-only commands; without it,
+	// the reviewer has no tools.
+	Run Runner
 }
 
 // Verdict is the result of a review.
@@ -109,6 +111,14 @@ type Verdict struct {
 	// answer that did not parse), so the verdict is a fail-closed deny.
 	Failed bool
 	Usage  llm.Usage
+	// Delta means the review continued its session's conversation with
+	// what changed since the last review; else it sent the whole
+	// transcript. Forked means another review held the conversation, so
+	// this one continued a copy of it and was dropped. Commands counts
+	// the reviewer's commands.
+	Delta    bool
+	Forked   bool
+	Commands int
 }
 
 // Config is the reviewer's model, budget, and policy.
@@ -176,10 +186,29 @@ func (r *Reviewer) Reset() {
 }
 
 func (r *Reviewer) review(ctx context.Context, req Request) Verdict {
-	call := llmcall.Request{
-		Model: r.cfg.Model, Effort: r.cfg.Effort, Instructions: Instructions(cmp.Or(req.Policy, r.cfg.Policy)),
-		Input:   []llm.Item{llmcall.Message(llm.RoleUser, Render(req, r.cfg.Limits))},
-		Timeout: r.cfg.Timeout,
+	instructions := Instructions(cmp.Or(req.Policy, r.cfg.Policy), req.Run != nil)
+	conv := req.Conversation
+	if conv == nil {
+		conv = &Conversation{}
+	}
+	cp, trunk := conv.begin(settingsKey(r.cfg, instructions))
+	var next *checkpoint
+	if trunk {
+		defer func() { conv.end(next) }()
+	}
+	base := cp.history
+	delta := len(base) > 0
+	if delta && !cp.reminded {
+		base = append(base, llmcall.Message(llm.RoleDeveloper, followupReminder))
+	}
+	msg := Render(req, r.cfg.Limits)
+	if delta {
+		msg = RenderDelta(req, cp.cursor, r.cfg.Limits)
+	}
+	base = append(base, llmcall.Message(llm.RoleUser, msg))
+	call := llmcall.Request{Model: r.cfg.Model, Effort: r.cfg.Effort, Instructions: instructions}
+	if req.Run != nil {
+		call.Tools = []llm.Tool{execTool}
 	}
 	if req.SessionID != "" {
 		call.CacheKey = "uah-review-" + req.SessionID
@@ -187,18 +216,23 @@ func (r *Reviewer) review(ctx context.Context, req Request) Verdict {
 	deadline := time.Now().Add(r.cfg.Timeout)
 	var usage llm.Usage
 	var err error
+	commands := 0
 	for range maxAttempts {
-		call.Timeout = time.Until(deadline)
-		var res llmcall.Result
-		res, err = llmcall.Call(ctx, r.adapter, call)
-		usage = addUsage(usage, res.Usage)
+		var t turn
+		t, err = r.turn(ctx, call, base, req.Run, deadline)
+		usage = addUsage(usage, t.usage)
+		commands += t.commands
 		if err != nil && !errors.Is(err, llmcall.ErrNoText) {
 			break
 		}
 		if err == nil {
 			var v Verdict
-			if v, err = Parse(res.Text); err == nil {
-				v.Usage = usage
+			if v, err = Parse(t.text); err == nil {
+				v.Usage, v.Delta, v.Forked, v.Commands = usage, delta, !trunk, commands
+				next = &checkpoint{
+					key: cp.key, history: append(base, t.items...), cursor: req.Transcript.End(),
+					reviews: cp.reviews + 1, reminded: delta || cp.reminded, tokens: t.lastInput,
+				}
 
 				return v
 			}
@@ -207,8 +241,59 @@ func (r *Reviewer) review(ctx context.Context, req Request) Verdict {
 			break
 		}
 	}
+	v := failed(err, usage)
+	v.Delta, v.Forked, v.Commands = delta, !trunk, commands
 
-	return failed(err, usage)
+	return v
+}
+
+// turn is one attempt's model calls and commands.
+type turn struct {
+	// items are the attempt's output: the model's items and the commands'
+	// results.
+	items    []llm.Item
+	text     string
+	usage    llm.Usage
+	commands int
+	// lastInput is the last call's input tokens.
+	lastInput int64
+}
+
+// turn calls the model on base until it answers in text, running the
+// commands it asks for on the way.
+func (r *Reviewer) turn(ctx context.Context, call llmcall.Request, base []llm.Item, run Runner, deadline time.Time) (turn, error) {
+	var t turn
+	for round := 0; ; round++ {
+		call.Input = slices.Concat(base, t.items)
+		call.Timeout = time.Until(deadline)
+		res, err := llmcall.Call(ctx, r.adapter, call)
+		t.usage = addUsage(t.usage, res.Usage)
+		t.lastInput = res.Usage.InputTokens
+		if err != nil {
+			return t, err
+		}
+		t.items = append(t.items, res.Output...)
+		if len(res.Calls) == 0 || run == nil {
+			t.text = res.Text
+
+			return t, nil
+		}
+		if round+1 == maxRounds {
+			return t, fmt.Errorf("the reviewer ran commands for %d rounds without answering", maxRounds)
+		}
+		for _, c := range res.Calls {
+			t.items = append(t.items, runCall(ctx, run, c, r.cfg.Limits))
+			t.commands++
+		}
+	}
+}
+
+// settingsKey identifies what a conversation was made with: a review with
+// other settings starts a new one.
+func settingsKey(cfg Config, instructions string) string {
+	sum := sha256.Sum256([]byte(instructions))
+
+	return cfg.Model + "\x00" + string(cfg.Effort) + "\x00" + hex.EncodeToString(sum[:8])
 }
 
 // failed is the fail-closed verdict for a review that did not finish.

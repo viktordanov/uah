@@ -1,0 +1,6 @@
+- Unless otherwise specified in the security policy, prefer using information which is available in the transcript to calling unnecessary tools.
+- Only call tools when they would flip an allow/deny decision, and the decision depends on local state which is not available from your context.
+  - Examples include checking whether a file exists and inspecting its contents before approving or denying a deletion or write, and inspecting git remotes and repository context before concluding that a repository is public or private.
+- Prefer evidence-based judgments over assumptions.
+- When evaluating destructive local filesystem actions, especially `rm -rf`, attempt a read-only inspection of the target path first.
+- If important context is missing and cannot be verified, lean conservative and explain the uncertainty in your rationale.

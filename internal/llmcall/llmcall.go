@@ -1,5 +1,5 @@
 // Package llmcall makes one model call outside the agent loop: items in, text
-// out. It runs over any runner llm.Adapter, so every provider the embedded
+// (or, when the call offers tools, tool calls) out. It runs over any runner llm.Adapter, so every provider the embedded
 // engine supports works, and each call picks its model, effort, and timeout.
 // Compaction summaries use it, and so can other one-shot calls such as a
 // command reviewer.
@@ -39,6 +39,9 @@ type Request struct {
 	Timeout time.Duration
 	// CacheKey is passed to the provider for prompt caching.
 	CacheKey string
+	// Tools, when set, are offered to the model; the caller runs the calls
+	// it makes and calls again with their results.
+	Tools []llm.Tool
 }
 
 // Result is the model's answer.
@@ -46,9 +49,14 @@ type Result struct {
 	// Text is the assistant's messages, joined by blank lines.
 	Text  string
 	Usage llm.Usage
+	// Output is the response's items, to keep in a conversation, and Calls
+	// its tool calls.
+	Output []llm.Item
+	Calls  []llm.ToolCall
 }
 
-// Call sends the request without tools and returns the assistant's text.
+// Call sends the request and returns the assistant's text, or the tool
+// calls when the request offered tools.
 func Call(ctx context.Context, adapter llm.Adapter, req Request) (Result, error) {
 	timeout := req.Timeout
 	if timeout <= 0 {
@@ -63,7 +71,7 @@ func Call(ctx context.Context, adapter llm.Adapter, req Request) (Result, error)
 	input = append(input, req.Input...)
 	resp, err := adapter.Respond(ctx, llm.Request{
 		Model: llm.Model{ID: req.Model, ReasoningEffort: req.Effort},
-		Input: input,
+		Input: input, Tools: req.Tools,
 	}, llm.RequestOptions{CacheKey: req.CacheKey})
 	if err != nil {
 		if overflow(err.Error()) {
@@ -79,12 +87,17 @@ func Call(ctx context.Context, adapter llm.Adapter, req Request) (Result, error)
 
 		return Result{}, fmt.Errorf("failed to call the model: %s: %s", f.Code, f.Message)
 	}
-	text := Text(resp)
-	if text == "" {
+	res := Result{Text: Text(resp), Usage: resp.Usage, Output: resp.Output}
+	for _, item := range resp.Output {
+		if call, ok := item.Data.(llm.ToolCall); ok && item.Type == llm.ItemToolCall {
+			res.Calls = append(res.Calls, call)
+		}
+	}
+	if res.Text == "" && (len(res.Calls) == 0 || len(req.Tools) == 0) {
 		return Result{Usage: resp.Usage}, ErrNoText
 	}
 
-	return Result{Text: text, Usage: resp.Usage}, nil
+	return res, nil
 }
 
 // overflowSigns are how providers report an input over the window: the
