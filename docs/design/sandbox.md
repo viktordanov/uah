@@ -108,6 +108,14 @@ Each phase ships on its own: after phase 1, commands are sandboxed and escalatio
 - **Configuration.** `approval_policy` (and `--ask`, `UAH_ASK`); `[approvals] allow` and `forbid` are command prefixes that become rules. A trusted project may set the policy and adds prefixes, rules files, and writable roots.
 - **TUI.** The overlay replaces the queue panel: "Run outside the sandbox?" (or "Run this command?" for a `prompt` rule), the reason, `$ command`, and `y`, `s`, `n`/esc. The answer is recorded as a transcript line.
 
+### Hardening (1.8.4)
+
+A code review found three ways around the sandbox and the rules; each is closed in general, not only for the case reported.
+
+- **The sandboxing scripts.** They run outside the sandbox, and `uah exec --ephemeral` kept them in its run directory under `$TMPDIR`, which workspace-write commands write; an existing script was trusted because it existed, so a command could replace it and the next command ran unsandboxed. The scripts now live in the state directory (never a run's), the directory is a `Policy.ReadOnly` path in every policy (read-only inside any writable root that holds it, and its parents below the root cannot be renamed: Seatbelt denies their unlink, bwrap binds them over themselves), and a script is reused only when it is a private regular file of the user's with the expected content. A child in full access already runs unsandboxed, so it gains nothing from the scripts.
+- **Patches and symlinks.** The patch job wrote with ordinary file calls after the check, so a command could swap a checked directory for a symlink in between. Now the check resolves each path once and the job writes exactly that path through directory handles with `O_NOFOLLOW` at every step (`patch.Targets`): a symlink put in since fails the patch, and the all-or-nothing undo puts back what was written.
+- **Forbid rules and patches.** A patch inside the writable roots, and every patch in full access, skipped the approver and so the forbid rules. Forbid rules now come first for every patch (`Approver.Forbidden`), on the whole patch and on each path, as named and resolved; Bash already checked them first. MCP tools have no command rules; their `approval_mode` is their only gate.
+
 ### Open (defaults taken)
 
 - "No, and tell the agent what to do differently" declines with a fixed reason; the user types the instruction as the next message. Codex opens a text field.

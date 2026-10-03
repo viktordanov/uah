@@ -65,6 +65,12 @@ type Policy struct {
 	// command Shell runs, in every mode, so $TMPDIR names the same directory
 	// inside and outside the sandbox.
 	TempDir string
+	// ReadOnly are more absolute paths that stay read-only inside every
+	// writable root, as the protected names do, and whose directories
+	// between the root and the path cannot be renamed: the directory of
+	// the sandboxing scripts, which run outside the sandbox. Shell adds
+	// its own directory.
+	ReadOnly []string
 }
 
 // Writable returns the directories a command may write under the policy,
@@ -113,6 +119,34 @@ func Protected(root string) []string {
 	}
 	if target := gitdirTarget(filepath.Join(root, ".git")); target != "" {
 		out = append(out, target)
+	}
+
+	return out
+}
+
+// protectedIn returns the paths inside root that stay read-only: Protected
+// and the policy's ReadOnly paths at or under root, resolved.
+func (p Policy) protectedIn(root string) []string {
+	out := Protected(root)
+	for _, path := range p.readOnlyIn(root) {
+		if !slices.Contains(out, path) {
+			out = append(out, path)
+		}
+	}
+
+	return out
+}
+
+// readOnlyIn returns the policy's ReadOnly paths at or under root, resolved.
+func (p Policy) readOnlyIn(root string) []string {
+	var out []string
+	for _, path := range p.ReadOnly {
+		if path == "" {
+			continue
+		}
+		if path = ResolvePath(path); within(path, root) && !slices.Contains(out, path) {
+			out = append(out, path)
+		}
 	}
 
 	return out

@@ -17,7 +17,8 @@ import (
 //	--new-session --die-with-parent
 //	--ro-bind / / --dev /dev                   the whole disk read-only, a minimal /dev
 //	--bind R R                                 each existing writable root, shallowest first
-//	  --ro-bind P P                            each existing protected path in R
+//	  --bind D D                               each directory between R and a ReadOnly path in it
+//	  --ro-bind P P                            each existing protected path in R, and ReadOnly path
 //	--ro-bind G G                              a worktree's gitdir inside a writable root, after every bind
 //	--unshare-user --unshare-pid --unshare-ipc
 //	--unshare-net                              unless the policy has network
@@ -57,8 +58,16 @@ func bwrapLayout(p Policy, mountProc bool) []string {
 	var later []string
 	for _, root := range roots {
 		args = append(args, "--bind", root, root)
-		protected := Protected(root)
+		protected := p.protectedIn(root)
 		slices.SortStableFunc(protected, byDepth)
+		// A directory between the root and a ReadOnly path is bound over
+		// itself first: a mount point cannot be renamed (EBUSY), so a
+		// command cannot move the protected path away and put its own in
+		// its place. Each comes before every read-only bind, which it
+		// would otherwise cover.
+		for _, dir := range readOnlyAncestors(root, p.readOnlyIn(root)) {
+			args = append(args, "--bind", dir, dir)
+		}
 		for _, path := range protected {
 			if under(path, []string{root}) {
 				args = protect(args, path)
@@ -82,6 +91,22 @@ func bwrapLayout(p Policy, mountProc bool) []string {
 	args = append(args, "--cap-drop", "ALL")
 
 	return args
+}
+
+// readOnlyAncestors returns the existing directories strictly between root
+// and each of paths, shallowest first and without duplicates.
+func readOnlyAncestors(root string, paths []string) []string {
+	var out []string
+	for _, path := range paths {
+		for dir := filepath.Dir(path); dir != root && under(dir, []string{root}); dir = filepath.Dir(dir) {
+			if exists(dir) && !slices.Contains(out, dir) {
+				out = append(out, dir)
+			}
+		}
+	}
+	slices.SortStableFunc(out, byDepth)
+
+	return out
 }
 
 // protect binds an existing path read-only over itself inside a writable

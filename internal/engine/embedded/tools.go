@@ -161,11 +161,16 @@ func (w *wiring) mcpTools(ctx context.Context) ([]mcp.Tool, error) {
 }
 
 // policy is the configured sandbox policy for the request's workspace,
-// with the session's private temporary directory.
+// with the session's private temporary directory and the sandbox scripts
+// read-only.
 func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 	p := *w.e.cfg.Sandbox
 	p.Mode, p.Workspace = mode, req.Workspace
 	p.TempDir = uahsession.TempDir(w.l.SessionsDir, req.SessionID)
+	if dir := w.e.cfg.SandboxDir; dir != "" {
+		// The sandbox scripts run outside the sandbox (sandbox.Shell).
+		p.ReadOnly = append(slices.Clip(p.ReadOnly), dir)
+	}
 
 	return p
 }

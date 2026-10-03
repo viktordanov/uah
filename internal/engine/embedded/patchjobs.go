@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync/atomic"
 
 	"github.com/viktordanov/uah-core/harness/operation"
 
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/patch"
 )
+
+// errPatchUnconfined fails a job whose plan names no targets, one an older
+// uah approved: the job writes only at approved targets.
+var errPatchUnconfined = errors.New("the patch has no approved paths; apply it again")
 
 var errPatchInterrupted = errors.New("interrupted: the run stopped before this patch was applied; check the files before applying it again")
 
@@ -72,19 +77,30 @@ func (j *patchJobs) run(op operation.Operation, state operation.RemoteJobState, 
 	j.finish(operation.UpdateRemoteJob(op, state, operation.StatusCompleted))
 }
 
+// beforePatchWrite, when set, runs after the patch was approved and
+// before the job reads and writes its files: tests change the files there.
+var beforePatchWrite atomic.Pointer[func(plan patchPlan)]
+
 // applyPatch computes the changes from the files as they are now and
-// writes them.
+// writes them, each only at the target it was approved at.
 func applyPatch(plan patchPlan) ([]patch.Change, error) {
 	hunks, err := patch.Parse(plan.Patch)
 	if err != nil {
 		return nil, err // Codex's message
 	}
-	changes, err := patch.Compute(plan.Cwd, hunks)
+	if plan.Targets == nil {
+		return nil, errPatchUnconfined
+	}
+	if hook := beforePatchWrite.Load(); hook != nil {
+		(*hook)(plan)
+	}
+	targets := patch.Targets(plan.Targets)
+	changes, err := targets.Compute(plan.Cwd, hunks)
 	if err != nil {
 		return nil, err // Codex's message
 	}
 
-	return changes, patch.Write(changes) // Codex's message
+	return changes, targets.Write(changes) // Codex's message
 }
 
 func (j *patchJobs) finish(step operation.Step, err error) {

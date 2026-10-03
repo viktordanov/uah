@@ -23,10 +23,13 @@ import (
 
 const patchPlanVersion operation.RemoteJobPlanVersion = 1
 
-// patchPlan is the remote job's plan: the patch and where it applies.
+// patchPlan is the remote job's plan: the patch, where it applies, and
+// the path each of its files was approved at (patch.Targets), which the
+// job writes without following symlinks.
 type patchPlan struct {
-	Patch string `json:"patch"`
-	Cwd   string `json:"cwd"`
+	Patch   string            `json:"patch"`
+	Cwd     string            `json:"cwd"`
+	Targets map[string]string `json:"targets,omitempty"`
 }
 
 // patchRegistry offers Codex's apply_patch tool, a custom tool whose input
@@ -116,10 +119,11 @@ func (t patchTranslator) decide(ctx context.Context, call llm.ToolCall) submit {
 	if err != nil {
 		return refuse(tool.ErrorStatus("apply_patch verification failed: "+err.Error(), 0))
 	}
-	if reason := t.gate.check(ctx, hunks, call.Arguments); reason != "" {
+	targets, reason := t.gate.check(ctx, hunks, call.Arguments)
+	if reason != "" {
 		return refuse(tool.ErrorStatus(reason, 0))
 	}
-	data, err := json.Marshal(patchPlan{Patch: text, Cwd: t.gate.cwd})
+	data, err := json.Marshal(patchPlan{Patch: text, Cwd: t.gate.cwd, Targets: targets})
 	if err != nil {
 		return refuse(tool.ErrorStatus(fmt.Sprintf("failed to encode the patch: %v", err), 0))
 	}
@@ -175,7 +179,8 @@ func (patchTranslator) fromHookInput(updated json.RawMessage) (string, error) {
 // patchGate decides whether a patch applies without asking: writes inside
 // the writable roots apply, as Codex auto-approves a patch constrained to
 // writable paths (assess_patch_safety in codex-rs/core/src/safety.rs); any
-// other write goes through the approver like a Bash escalation.
+// other write goes through the approver like a Bash escalation. A forbid
+// rule refuses a patch before either, in every mode.
 type patchGate struct {
 	// ctx bounds the approval of a patch decided in Translate.
 	ctx context.Context
@@ -187,24 +192,36 @@ type patchGate struct {
 	ask      approval.Ask
 }
 
-// check returns why the patch may not apply, or "". It blocks while the
-// user decides, at most until ctx ends.
-func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments string) string {
+// check returns the patch's targets, or why the patch may not apply. The
+// targets are its paths with their symlinks resolved, as the sandbox checks
+// them; the job writes there without following symlinks, so a directory a
+// command swaps for a symlink after the check fails the patch instead of
+// leading it out of the checked directories. check blocks while the user
+// decides, at most until ctx ends.
+func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments string) (patch.Targets, string) {
+	paths := patch.Paths(g.cwd, hunks)
+	targets := patch.Targets{}
+	for _, p := range paths {
+		targets[p] = sandbox.ResolvePath(p)
+	}
+	if reason := g.forbidden(paths, targets); reason != "" {
+		return nil, reason
+	}
 	if g.policy == nil {
-		return ""
+		return targets, ""
 	}
 	policy := g.policy()
 	if policy.Mode == sandbox.FullAccess {
-		return ""
+		return targets, ""
 	}
 	var outside []string
-	for _, p := range patch.Paths(g.cwd, hunks) {
-		if !policy.CanWrite(p) {
+	for _, p := range paths {
+		if !policy.CanWriteResolved(targets[p]) {
 			outside = append(outside, p)
 		}
 	}
 	if len(outside) == 0 {
-		return ""
+		return targets, ""
 	}
 	why := "the patch writes outside the writable roots"
 	if policy.Mode == sandbox.ReadOnly {
@@ -215,11 +232,35 @@ func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments stri
 		Tool: patch.ToolName, Input: patch.HookInput(arguments), Approved: hookAllowed(ctx),
 	}
 	if g.approver == nil {
-		return "apply_patch rejected: " + why + ", and no one can approve it."
+		return nil, "apply_patch rejected: " + why + ", and no one can approve it."
 	}
 	d := g.approver.Decide(ctx, req, g.ask)
 	if d.Run == approval.Deny {
-		return d.Reason
+		return nil, d.Reason
+	}
+
+	return targets, ""
+}
+
+// forbidden returns why a forbid rule refuses the patch, or "": checked
+// on the whole patch and on each path alone, as the patch names it and
+// with its symlinks resolved, so a rule on any one path, or reached
+// through a link, applies wherever that path is in the patch.
+func (g patchGate) forbidden(paths []string, targets patch.Targets) string {
+	if g.approver == nil {
+		return ""
+	}
+	commands := []string{patchCommand(paths)}
+	for _, p := range paths {
+		commands = append(commands, patchCommand([]string{p}))
+		if targets[p] != p {
+			commands = append(commands, patchCommand([]string{targets[p]}))
+		}
+	}
+	for _, c := range commands {
+		if reason, ok := g.approver.Forbidden(c); ok {
+			return reason
+		}
 	}
 
 	return ""

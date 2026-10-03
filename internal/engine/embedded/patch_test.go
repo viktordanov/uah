@@ -16,6 +16,7 @@ import (
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/hooks"
+	"github.com/viktordanov/uah/internal/rules"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/testing/fakellm"
@@ -35,6 +36,8 @@ type patchOpts struct {
 	mode        sandbox.Mode
 	interactive bool
 	hooks       []hooks.Hook
+	// rules are the command rules for the workspace.
+	rules func(ws string) []rules.Rule
 }
 
 // applyPatch is a model that applies the patch, its input the raw patch,
@@ -51,6 +54,10 @@ func newPatchEnv(t *testing.T, o patchOpts, replies func(ws, outside string) []f
 	e := &patchEnv{env: newEnv(t), outside: outside}
 	e.llm = fakellm.New(t, replies(e.Workspace, outside)...)
 	policy := sandbox.Policy{Mode: o.mode, Workspace: e.Workspace}
+	var ruleSet []rules.Rule
+	if o.rules != nil {
+		ruleSet = o.rules(e.Workspace)
+	}
 	var runner *hooks.Runner
 	var err error
 	if len(o.hooks) > 0 {
@@ -60,7 +67,7 @@ func newPatchEnv(t *testing.T, o patchOpts, replies func(ws, outside string) []f
 	eng := embedded.New(embedded.Config{
 		StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, Hooks: runner,
 		Sandbox: &policy, SandboxDir: filepath.Join(e.StateDir, "sandbox"),
-		Approver: approval.New(approval.Config{}),
+		Approver: approval.New(approval.Config{Rules: ruleSet}),
 	})
 	e.s, err = session.Open(context.Background(), eng, session.Options{Settings: e.settings(), Interactive: o.interactive, Hooks: runner})
 	require.NoError(t, err)
@@ -263,4 +270,66 @@ func TestPatch_FollowsTheMode(t *testing.T) {
 	assert.Equal(t, 1, countKind[engine.AutoReviewed](e.ev.all))
 	assert.Equal(t, "the sandbox is read-only", req.Justification, "read only asks after the switch")
 	assert.NoFileExists(t, filepath.Join(e.Workspace, "in.txt"))
+}
+
+// TestPatch_SymlinkSwappedAfterApprovalFails swaps a workspace directory
+// for a symlink to a directory outside the sandbox after the patch passed
+// the sandbox check and before its job writes, as a concurrent command
+// could: the patch fails and nothing is written outside.
+func TestPatch_SymlinkSwappedAfterApprovalFails(t *testing.T) {
+	var ws, outside string
+	embedded.BeforePatchWrite(t, func() {
+		sub := filepath.Join(ws, "sub")
+		if err := os.Rename(sub, sub+".aside"); err != nil {
+			t.Error(err)
+		}
+		if err := os.Symlink(outside, sub); err != nil {
+			t.Error(err)
+		}
+	})
+	e := newPatchEnv(t, patchOpts{mode: sandbox.WorkspaceWrite}, func(w, o string) []fakellm.Reply {
+		ws, outside = w, o
+		require.NoError(t, os.WriteFile(filepath.Join(ws, "a.txt"), []byte("one\n"), 0o644))
+		require.NoError(t, os.Mkdir(filepath.Join(ws, "sub"), 0o755))
+
+		return applyPatch("*** Update File: a.txt\n@@\n-one\n+uno\n*** Add File: sub/x.txt\n+evil")
+	})
+	e.ev.finished()
+
+	assert.Contains(t, e.lastOutput(), "symlink")
+	assert.NoFileExists(t, filepath.Join(outside, "x.txt"))
+	assert.Equal(t, "one\n", readFile(t, filepath.Join(ws, "a.txt")), "all or nothing")
+	assert.Equal(t, 0, count(e.ev.all, isA[engine.PatchApplied]))
+}
+
+// TestPatch_ForbidRuleRefusesInEveryMode checks that a forbid rule on
+// apply_patch refuses a patch that the sandbox would let through without
+// asking: inside the workspace, and in full access (yolo), also when the
+// forbidden path is not the patch's first.
+func TestPatch_ForbidRuleRefusesInEveryMode(t *testing.T) {
+	for _, mode := range []sandbox.Mode{sandbox.WorkspaceWrite, sandbox.FullAccess} {
+		t.Run(string(mode)+"/any patch", func(t *testing.T) {
+			e := newPatchEnv(t, patchOpts{mode: mode, rules: func(string) []rules.Rule {
+				return []rules.Rule{{Pattern: [][]string{{"apply_patch"}}, Decision: rules.Forbidden, Justification: "no edits"}}
+			}}, func(string, string) []fakellm.Reply {
+				return applyPatch("*** Add File: a.txt\n+hi")
+			})
+			e.ev.finished()
+
+			assert.Contains(t, e.lastOutput(), "not run: a rule forbids this command: no edits.")
+			assert.NoFileExists(t, filepath.Join(e.Workspace, "a.txt"))
+		})
+		t.Run(string(mode)+"/a later path", func(t *testing.T) {
+			e := newPatchEnv(t, patchOpts{mode: mode, rules: func(ws string) []rules.Rule {
+				return []rules.Rule{{Pattern: [][]string{{"apply_patch"}, {filepath.Join(ws, "secret.txt")}}, Decision: rules.Forbidden}}
+			}}, func(string, string) []fakellm.Reply {
+				return applyPatch("*** Add File: a.txt\n+hi\n*** Add File: secret.txt\n+leak")
+			})
+			e.ev.finished()
+
+			assert.Contains(t, e.lastOutput(), "not run: a rule forbids this command.")
+			assert.NoFileExists(t, filepath.Join(e.Workspace, "a.txt"))
+			assert.NoFileExists(t, filepath.Join(e.Workspace, "secret.txt"))
+		})
+	}
 }

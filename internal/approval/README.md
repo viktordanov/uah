@@ -42,7 +42,7 @@ The same ask (steps 8 to 10) serves [patches](#patches) that write outside the s
 <!-- memoria:section id="patches" files="approval.go" -->
 ## Patches
 
-An `apply_patch` call (see [patches](../patch/README.md)) goes through the same pipeline, as Codex's patch approval does (`assess_patch_safety` in `codex-rs/core/src/safety.rs`). The engine checks each path the patch writes, move destinations included, against the sandbox policy of the run's current permission mode (`sandbox.Policy.CanWrite`):
+An `apply_patch` call (see [patches](../patch/README.md)) goes through the same pipeline, as Codex's patch approval does (`assess_patch_safety` in `codex-rs/core/src/safety.rs`). Forbid rules come first, in every mode, yolo included (`Approver.Forbidden`): the engine checks `apply_patch <paths>` for the whole patch and `apply_patch <path>` for each path alone, as the patch names it and with its symlinks resolved, so a rule on one path refuses a patch wherever that path is in it. Then the engine checks each path the patch writes, move destinations included, against the sandbox policy of the run's current permission mode (`sandbox.Policy.CanWriteResolved`):
 
 | Mode | A write inside the writable roots | Any other write |
 | --- | --- | --- |
@@ -51,7 +51,7 @@ An `apply_patch` call (see [patches](../patch/README.md)) goes through the same 
 | Auto | Applies | The auto-reviewer decides |
 | Yolo | Applies | Applies |
 
-A protected path (`.git`, `.uah`, `.uagent`, `.agents`, `.codex`) is not inside the writable roots, and a symlink is followed before the check. A patch that needs approval becomes a `Request` with `Command` `apply_patch <paths>` (so a rule on the prefix `apply_patch` allows or forbids such patches), `Escalated`, the reason (`the patch writes outside the writable roots`, or `the sandbox is read-only`), and `Tool` and `Input` set. PermissionRequest hooks then see `tool_name` `apply_patch` with Codex's `{"command": "<patch>"}`, and the auto-reviewer sees the patch. A decline, or no one to ask, is the tool's error, and nothing is written. A patch that cannot apply fails before anyone is asked.
+A protected path (`.git`, `.uah`, `.uagent`, `.agents`, `.codex`, and the sandbox scripts' directory) is not inside the writable roots. Each path's symlinks are resolved once, before the check (`sandbox.ResolvePath`), and the patch job writes exactly that path without following symlinks (`patch.Targets`), so a directory a command swaps for a symlink after the check fails the patch instead of leading it outside the roots. A patch that needs approval becomes a `Request` with `Command` `apply_patch <paths>` (so a rule on the prefix `apply_patch` allows or forbids such patches), `Escalated`, the reason (`the patch writes outside the writable roots`, or `the sandbox is read-only`), and `Tool` and `Input` set. PermissionRequest hooks then see `tool_name` `apply_patch` with Codex's `{"command": "<patch>"}`, and the auto-reviewer sees the patch. A decline, or no one to ask, is the tool's error, and nothing is written. A patch that cannot apply fails before anyone is asked.
 <!-- /memoria:section -->
 
 <!-- memoria:section id="modes" files="mode.go" -->
@@ -111,6 +111,8 @@ Asked one at a time, a second command that the new rule covers would not have be
 
 `DecideTyped(command)` decides a command the user typed in the TUI's shell mode when `user_shell_sandbox = true`: a `forbidden` rule refuses it and an `allow` rule runs it outside the sandbox, as for the agent; anything else runs in the sandbox without asking, since typing it was the approval. By default the user's commands skip the rules and the sandbox, as in Codex ([shell mode](../../docs/design/shell-mode.md)).
 
+`Forbidden(command)` applies only the `forbidden` rules, with `Decide`'s handling of a command that does not split, and asks no one. A caller that lets some actions through without `Decide` checks it first: the patch gate, for a patch inside the writable roots and for every patch in yolo mode, so a forbid rule refuses in every mode ([patches](#patches)).
+
 `Ask` is built in layers: the embedded engine wraps the session's ask with the auto-reviewer (`internal/engine/embedded/autoreview.go`), and the session's ask tries PermissionRequest hooks, then the user (`internal/session/approvals.go`).
 <!-- /memoria:section -->
 
@@ -127,5 +129,5 @@ Asked one at a time, a second command that the new rule covers would not have be
 <!-- memoria:section id="tests" files="approval_test.go mode_test.go typed_test.go withdraw_test.go" -->
 ## Tests
 
-`approval_test.go` pins the decision table: each rule decision, escalation with and without a sandbox, the policies, headless denial, and "don't ask again". `mode_test.go` pins the modes' sandboxes, who decides, and the cycle. `typed_test.go` pins `DecideTyped`. `withdraw_test.go` pins that "don't ask again" on one prompt settles a concurrent one with `ErrNowAllowed`, and `AskUnless` without a change. `internal/engine/embedded/approval_test.go` runs the pipeline end to end on the embedded engine with `testing/fakellm`, including PermissionRequest hooks and auto-review, and `internal/engine/embedded/mode_test.go` the modes: a live switch to read only, and Auto mode deciding without the user.
+`approval_test.go` pins the decision table: each rule decision, escalation with and without a sandbox, the policies, headless denial, and "don't ask again"; and `Forbidden`, which sees only forbid rules, also in a command that does not split. `mode_test.go` pins the modes' sandboxes, who decides, and the cycle. `typed_test.go` pins `DecideTyped`. `withdraw_test.go` pins that "don't ask again" on one prompt settles a concurrent one with `ErrNowAllowed`, and `AskUnless` without a change. `internal/engine/embedded/approval_test.go` runs the pipeline end to end on the embedded engine with `testing/fakellm`, including PermissionRequest hooks and auto-review, and `internal/engine/embedded/mode_test.go` the modes: a live switch to read only, and Auto mode deciding without the user.
 <!-- /memoria:section -->

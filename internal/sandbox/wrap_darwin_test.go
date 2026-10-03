@@ -305,3 +305,51 @@ func TestShellSeatbeltTempDirGoBuild(t *testing.T) {
 	assert.Zero(t, code, out)
 	assert.NotEmpty(t, strings.TrimSpace(out), "the build fills the cache under $TMPDIR")
 }
+
+// TestSeatbeltShellScriptsStayReadOnly checks that a sandboxed command
+// cannot replace the sandboxing scripts, or move their directory or one of
+// its parents aside to put its own in place, also when the directory is
+// under $TMPDIR, a writable root: the next command would run that script
+// outside the sandbox.
+func TestSeatbeltShellScriptsStayReadOnly(t *testing.T) {
+	ws := workspace(t, false)
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	home := filepath.Join(tmp, "home")
+	dir := filepath.Join(home, "state", "sandbox")
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws}
+	shell, err := sandbox.Shell(dir, p, sandbox.EnvPolicy{}, "/bin/sh")
+	require.NoError(t, err)
+	want, err := os.ReadFile(shell)
+	require.NoError(t, err)
+	shRun := func(command string) (int, string) {
+		cmd := exec.CommandContext(t.Context(), shell, "-c", command)
+		cmd.Dir = ws
+		out, err := cmd.CombinedOutput()
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return exitErr.ExitCode(), string(out)
+		}
+		require.NoError(t, err)
+
+		return 0, string(out)
+	}
+
+	code, out := shRun("echo hi > a && echo hi > " + filepath.Join(tmp, "b"))
+	require.Equal(t, 0, code, "the workspace and $TMPDIR stay writable: %s", out)
+	for _, command := range []string{
+		"printf '#!/bin/sh\\nexec /bin/sh \"$@\"\\n' > " + shell,
+		"rm " + shell,
+		"touch " + filepath.Join(dir, "sh-new"),
+		"mv " + dir + " " + dir + ".moved",
+		"mv " + home + " " + home + ".moved",
+		"mv " + filepath.Join(home, "state") + " " + filepath.Join(home, "state.moved"),
+	} {
+		code, out := shRun(command)
+		assert.NotEqual(t, 0, code, "%s: %s", command, out)
+	}
+	got, err := os.ReadFile(shell)
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(got))
+	assert.NoDirExists(t, home+".moved")
+}

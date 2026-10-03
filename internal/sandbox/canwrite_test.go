@@ -39,3 +39,17 @@ func TestPolicy_CanWrite(t *testing.T) {
 	p.Mode = sandbox.FullAccess
 	assert.True(t, p.CanWrite(outside))
 }
+
+// TestCanWriteReadOnly checks that a ReadOnly path, such as the sandbox
+// scripts' directory, stays read-only inside a writable root.
+func TestCanWriteReadOnly(t *testing.T) {
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	scripts := filepath.Join(ws, "home", "state", "sandbox")
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, ReadOnly: []string{scripts}}
+	assert.False(t, p.CanWrite(scripts))
+	assert.False(t, p.CanWrite(filepath.Join(scripts, "sh-0123")))
+	assert.True(t, p.CanWrite(filepath.Join(ws, "home", "state", "other")))
+	p.Mode = sandbox.FullAccess
+	assert.True(t, p.CanWrite(filepath.Join(scripts, "sh-0123")), "full access has no sandbox")
+}

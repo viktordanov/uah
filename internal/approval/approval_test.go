@@ -139,3 +139,28 @@ func TestParsePolicy(t *testing.T) {
 	_, err := approval.ParsePolicy("untrusted")
 	require.Error(t, err)
 }
+
+// TestForbidden checks that Forbidden applies only the forbidden rules,
+// also to a command that does not split, and leaves allow and prompt
+// rules alone.
+func TestForbidden(t *testing.T) {
+	parsed, err := rules.Parse("test.rules", []byte(ruleSrc))
+	require.NoError(t, err)
+	a := approval.New(approval.Config{Rules: parsed})
+	for command, want := range map[string]bool{
+		"rm -rf build":            true,
+		"ls && rm -rf build":      true,
+		"rm -rf $DIR > /dev/null": true,
+		"git push":                false,
+		"go test ./...":           false,
+		"ls":                      false,
+	} {
+		reason, forbidden := a.Forbidden(command)
+		assert.Equal(t, want, forbidden, command)
+		if want {
+			assert.Contains(t, reason, "not run:", command)
+		} else {
+			assert.Empty(t, reason, command)
+		}
+	}
+}

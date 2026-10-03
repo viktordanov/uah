@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 // Shell returns a shell for the runner that runs every command under the
@@ -20,7 +21,18 @@ import (
 // the policy's TempDir (mode 0700) and sets TMPDIR, TMP, TEMP, and zsh's
 // TMPPREFIX into it. With FullAccess, the default environment policy, and
 // no TempDir it returns realShell.
+//
+// The scripts run outside the sandbox, so a sandboxed command must not
+// change them: Shell makes dir a private directory (0700, the user's own)
+// and adds it to the policy's ReadOnly paths, so it stays read-only also
+// when it lies in a writable root, such as $TMPDIR. A script already in dir
+// is used only when it is the user's, private, and has the content Shell
+// would write; any other file is replaced.
 func Shell(dir string, p Policy, env EnvPolicy, realShell string) (string, error) {
+	if err := privateDir(dir); err != nil {
+		return "", err
+	}
+	p.ReadOnly = append(slices.Clip(p.ReadOnly), dir)
 	if p.TempDir != "" {
 		// The sandbox can only grant a directory that exists: Seatbelt
 		// matches resolved paths and bwrap binds existing ones.
@@ -67,17 +79,15 @@ func Shell(dir string, p Policy, env EnvPolicy, realShell string) (string, error
 var tempVars = []string{"TMPDIR", "TMP", "TEMP", "TMPPREFIX"}
 
 // writeScript writes an executable script into dir, named by its content
-// (sh-<hash>), unless it is there already, and returns its path.
+// (sh-<hash>), and returns its path. A file already there is kept only when
+// it is a regular file of the user's, mode 0700, with exactly this content;
+// anything else, such as a script a command replaced or a symlink, is
+// replaced by a fresh copy.
 func writeScript(dir, script string) (string, error) {
 	sum := sha256.Sum256([]byte(script))
 	path := filepath.Join(dir, "sh-"+hex.EncodeToString(sum[:8]))
-	if _, err := os.Stat(path); err == nil {
+	if trusted(path, script) {
 		return path, nil
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("failed to check the sandbox shell: %w", err)
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("failed to create %s: %w", dir, err)
 	}
 	tmp, err := os.CreateTemp(dir, ".sh-*")
 	if err != nil {
@@ -90,10 +100,53 @@ func writeScript(dir, script string) (string, error) {
 		return "", fmt.Errorf("failed to write the sandbox shell: %w", err)
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
+		_ = os.Remove(tmp.Name())
+
 		return "", fmt.Errorf("failed to save the sandbox shell: %w", err)
 	}
 
 	return path, nil
+}
+
+// trusted reports whether path is a script Shell wrote with this content:
+// a regular file (not a symlink) owned by the user, mode 0700.
+func trusted(path, script string) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o700 || !ownedByUser(info) {
+		return false
+	}
+	data, err := os.ReadFile(path)
+
+	return err == nil && string(data) == script
+}
+
+// privateDir creates dir (mode 0700) when it is missing and makes sure it is
+// a directory of the user's that no one else can write.
+func privateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("failed to create %s: %w", dir, err)
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("failed to check %s: %w", dir, err)
+	}
+	if !info.IsDir() || !ownedByUser(info) {
+		return fmt.Errorf("the sandbox shell directory %s is not a directory of the current user", dir)
+	}
+	if info.Mode().Perm() != 0o700 {
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return fmt.Errorf("failed to make %s private: %w", dir, err)
+		}
+	}
+
+	return nil
+}
+
+// ownedByUser reports whether the file belongs to the current user.
+func ownedByUser(info fs.FileInfo) bool {
+	st, ok := info.Sys().(*syscall.Stat_t)
+
+	return ok && int(st.Uid) == os.Getuid()
 }
 
 // Quote quotes s for /bin/sh.

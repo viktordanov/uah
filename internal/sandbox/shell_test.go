@@ -81,3 +81,47 @@ func TestShellTempDir(t *testing.T) {
 	assert.True(t, info.IsDir())
 	assert.Equal(t, os.FileMode(0o700), info.Mode().Perm())
 }
+
+// TestShellReplacesAChangedScript checks that a script already in the
+// directory is used only when it is still the one Shell writes: a changed
+// script, a symlink, or a script others can write is replaced, and the
+// directory is made private again.
+func TestShellReplacesAChangedScript(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sandbox")
+	p := sandbox.Policy{Mode: sandbox.FullAccess, TempDir: filepath.Join(t.TempDir(), "tmp")}
+	path, err := sandbox.Shell(dir, p, sandbox.EnvPolicy{}, "/bin/sh")
+	require.NoError(t, err)
+	want, err := os.ReadFile(path)
+	require.NoError(t, err)
+	evil := []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n")
+	other := filepath.Join(t.TempDir(), "evil")
+	require.NoError(t, os.WriteFile(other, evil, 0o700))
+
+	for name, tamper := range map[string]func(){
+		"changed content": func() { require.NoError(t, os.WriteFile(path, evil, 0o700)) },
+		"symlink": func() {
+			require.NoError(t, os.Remove(path))
+			require.NoError(t, os.Symlink(other, path))
+		},
+		"writable by others": func() { require.NoError(t, os.Chmod(path, 0o777)) },
+		"open directory":     func() { require.NoError(t, os.Chmod(dir, 0o777)) },
+	} {
+		tamper()
+		again, err := sandbox.Shell(dir, p, sandbox.EnvPolicy{}, "/bin/sh")
+		require.NoError(t, err, name)
+		assert.Equal(t, path, again, name)
+		info, err := os.Lstat(again)
+		require.NoError(t, err, name)
+		assert.True(t, info.Mode().IsRegular(), name)
+		assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), name)
+		got, err := os.ReadFile(again)
+		require.NoError(t, err, name)
+		assert.Equal(t, string(want), string(got), name)
+		info, err = os.Stat(dir)
+		require.NoError(t, err, name)
+		assert.Equal(t, os.FileMode(0o700), info.Mode().Perm(), name)
+	}
+	data, err := os.ReadFile(other)
+	require.NoError(t, err)
+	assert.Equal(t, evil, data, "the symlink's target is left alone")
+}

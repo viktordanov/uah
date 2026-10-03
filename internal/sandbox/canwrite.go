@@ -12,18 +12,24 @@ import (
 // that is not a protected path. Symlinks in the path's existing part are
 // resolved first, so a link cannot lead out of a root.
 func (p Policy) CanWrite(path string) bool {
+	return p.CanWriteResolved(ResolvePath(path))
+}
+
+// CanWriteResolved is CanWrite for a path ResolvePath returned: it takes
+// path as it is, without following its symlinks again, for a caller that
+// then writes that exact path without following symlinks.
+func (p Policy) CanWriteResolved(path string) bool {
 	if p.Mode == FullAccess {
 		return true
 	}
-	path = resolvePath(path)
 	roots := p.Writable()
 	inside := false
 	for _, r := range roots {
 		if within(path, r) {
 			inside = true
 		}
-		for _, protected := range Protected(r) {
-			if within(path, resolvePath(protected)) {
+		for _, protected := range p.protectedIn(r) {
+			if within(path, ResolvePath(protected)) {
 				return false
 			}
 		}
@@ -32,9 +38,9 @@ func (p Policy) CanWrite(path string) bool {
 	return inside
 }
 
-// resolvePath makes path absolute and resolves the symlinks of its deepest
+// ResolvePath makes path absolute and resolves the symlinks of its deepest
 // existing ancestor; a dangling link is followed to its target.
-func resolvePath(path string) string {
+func ResolvePath(path string) string {
 	return resolveDepth(path, 0)
 }
 
@@ -64,7 +70,7 @@ func resolveDepth(path string, depth int) string {
 	}
 }
 
-// maxLinks bounds how many dangling links resolvePath follows.
+// maxLinks bounds how many dangling links ResolvePath follows.
 const maxLinks = 40
 
 // within reports whether path is root or under it.
