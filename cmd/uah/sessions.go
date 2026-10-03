@@ -19,6 +19,7 @@ import (
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/contextprep"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/images"
 	"github.com/viktordanov/uah/internal/patch"
@@ -253,6 +254,11 @@ func printTranscript(w io.Writer, info session.Info, runs []session.LoadedRun) {
 
 					continue
 				}
+				if note, ok := goalLabel(m.Text); ok {
+					fmt.Fprintf(w, "  (%s)\n", note)
+
+					continue
+				}
 				said[m.ID] = m.Text
 				fmt.Fprintf(w, "› %s\n", m.Text)
 			case core.ToolCalled:
@@ -316,10 +322,31 @@ func ago(t time.Time) string {
 	return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 }
 
+// goalLabel names one of the goal's messages (/goal), uah's rather than
+// the user's: "goal continuation, automatic" or the user's change.
+func goalLabel(text string) (string, bool) {
+	switch kind, body := goal.Parse(text); kind {
+	case goal.KindContinuation:
+		return "goal continuation, automatic", true
+	case goal.KindBudgetLimit:
+		return "goal budget reached", true
+	case goal.KindObjectiveUpdated:
+		return "goal objective updated", true
+	case goal.KindUser:
+		return "goal: " + strings.ReplaceAll(body, "\n", " · "), true
+	case goal.KindNone:
+	}
+
+	return "", false
+}
+
 // developerLabel names a developer message, uah's context for the model.
 func developerLabel(text string) string {
 	if contextprep.IsPrepared(text) {
 		return "prepared context"
+	}
+	if note, ok := goalLabel(text); ok {
+		return note
 	}
 
 	return "developer message"

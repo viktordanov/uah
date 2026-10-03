@@ -52,6 +52,7 @@ func (s *Session) Clear() error {
 
 func (s *Session) onClear() {
 	s.clearPending = true
+	s.clearGoal(false) // as Codex's /clear starts a thread without one
 	if s.state == StateRunning && s.run != nil {
 		_ = s.run.Clear() // a run that ended already leaves it to the next
 	}

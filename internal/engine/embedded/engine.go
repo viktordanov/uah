@@ -106,6 +106,10 @@ type Config struct {
 	// a user drives the sessions, as in the TUI. A run asks through
 	// Options.AskUser.
 	AskUser bool
+	// Goals offers Codex's goal tools (get_goal, create_goal, update_goal)
+	// to the main agent (and, refused, to its forks). A run applies them
+	// through Options.Goal.
+	Goals bool
 	// Subagents, when set, offers its tools to the runs it attaches and
 	// hears when the user interrupts a run; the engine closes it when it is
 	// an io.Closer.

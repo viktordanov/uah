@@ -11,6 +11,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/compaction"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/session"
 )
 
@@ -38,6 +39,9 @@ func (j *jsonlWriter) write(event core.Event) {
 	}
 	if !ok {
 		dto, ok = engineEventDTO(event)
+	}
+	if !ok {
+		dto, ok = goalEventDTO(event)
 	}
 	if !ok {
 		return
@@ -159,6 +163,30 @@ func sessionEventDTO(event core.Event) (any, bool) {
 			Message string `json:"message"`
 			Error   string `json:"error"`
 		}{header("effort_updates_off", e.At), e.Text(), e.Err}, true
+	}
+
+	return nil, false
+}
+
+// goalEventDTO is the stream shape of the session's goal events (/goal).
+func goalEventDTO(event core.Event) (any, bool) {
+	switch e := event.(type) {
+	case session.GoalUpdated:
+		return struct {
+			sessionHeader
+
+			Goal   goal.Goal `json:"goal"`
+			Change string    `json:"change"`
+			By     string    `json:"by,omitempty"`
+		}{header("goal_updated", e.At), e.Goal, string(e.Change), e.By}, true
+	case session.GoalContinued:
+		return struct {
+			sessionHeader
+
+			Goal goal.Goal `json:"goal"`
+		}{header("goal_continued", e.At), e.Goal}, true
+	case session.GoalCleared:
+		return header("goal_cleared", e.At), true
 	}
 
 	return nil, false

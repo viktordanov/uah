@@ -16,6 +16,7 @@ Adapted in uah:
 | `internal/sandbox/bwrap.go` | `codex-rs/linux-sandbox/src/bwrap.rs` |
 | `internal/sandbox/env.go` | `codex-rs/protocol/src/shell_environment.rs`, `codex-rs/config/src/shell_environment_policy.rs` |
 | `internal/sandbox/denied.go` | `codex-rs/sandboxing/src/denial.rs` |
+| `internal/goal/prompts/*.md`, `internal/goal/context.go`, `internal/goal/tools.go` | The goal's continuation, budget-limit, and objective-updated templates verbatim, the `user_goal` record and the hidden-context wrapper, and the goal tools' names, descriptions, schemas, and messages, at `main` b741e48 (`codex-rs/ext/goal/templates/goals`, `codex-rs/ext/goal/src/spec.rs`, `tool.rs`, `codex-rs/core/src/context/user_goal.rs`, `internal_model_context.rs`) |
 | `internal/review/review.go` | The auto-review (guardian) prompt, `codex-rs/prompts/templates/guardian` |
 | `internal/compaction/compaction.go` | The compaction prompt and summary prefix, `codex-rs/prompts/templates/compact` |
 | `internal/codereview/prompts/rubric.md`, `exit_success.xml`, `exit_interrupted.xml`, `internal/codereview/codereview.go`, `output.go` | `/review`: the review rubric and the hand-over messages, verbatim (`codex-rs/prompts/templates/review`), the target prompts and hints (`codex-rs/prompts/src/review_request.rs`), and the findings format (`codex-rs/protocol/src/review_format.rs`) |

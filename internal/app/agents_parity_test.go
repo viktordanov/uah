@@ -18,6 +18,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/contextprep"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/instructions"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/testing/fakellm"
@@ -31,7 +32,8 @@ var agentTools = []string{"spawn_agent", "send_input", "wait_agent", "close_agen
 // way but what makes it a child: set up with instructions, a skill, an MCP
 // server, hooks, and fast mode, its model request carries the root's
 // system prompt, model, effort, service tier, and tools (less the agent
-// tools, at max_depth 1), and its session has the same hooks, of which it
+// tools, at max_depth 1, and the goal tools, since a goal is the root's
+// alone), and its session has the same hooks, of which it
 // fires the subagent ones only (see TestSetup_SubagentHooks).
 func TestSetup_SubagentParity(t *testing.T) {
 	e, in := setupEnv(t)
@@ -99,11 +101,11 @@ command = "grep -o '\"session_id\":\"[^\"]*\"' >> `+stops+`"
 	assert.Equal(t, [3]string{root.Model, root.Effort, root.ServiceTier}, [3]string{child.Model, child.Effort, child.ServiceTier})
 	assert.Equal(t, "priority", child.ServiceTier)
 	rootTools := maps.Clone(root.Tools)
-	for _, name := range agentTools {
+	for _, name := range slices.Concat(agentTools, goal.ToolNames) {
 		assert.Contains(t, rootTools, name)
 		delete(rootTools, name)
 	}
-	assert.Equal(t, rootTools, child.Tools, "the same tools with the same schemas")
+	assert.Equal(t, rootTools, child.Tools, "the same tools with the same schemas, less the goal's, which no child inherits")
 	assert.Contains(t, child.Tools, "mcp__test__echo")
 	assert.Contains(t, child.Tools, "SkillUse")
 

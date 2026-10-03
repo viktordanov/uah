@@ -11,6 +11,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/review"
 )
 
@@ -28,6 +29,27 @@ func TestTranscript_PerSession(t *testing.T) {
 	assert.Equal(t, []review.Entry{{Kind: review.EntryUser, Text: "the parent's task for the child"}}, e.transcript("child").snapshot().Entries)
 	assert.Equal(t, 1, parentResets, "the child's message did not reset the parent's reviewer")
 	assert.Same(t, e.transcript("parent"), e.transcript("parent"))
+}
+
+// TestTranscript_GoalMessages keeps the user's goal records as the user's
+// entries, so the reviewer knows the objective, and leaves out the goal's
+// continuation and steering, which are uah's: a continuation is a user
+// message, steering a developer message.
+func TestTranscript_GoalMessages(t *testing.T) {
+	tr := newTranscript()
+	resets := 0
+	tr.onUser = func() { resets++ }
+	g := goal.Goal{Objective: "make the tests pass"}
+	tr.observe(core.UserMessage{Text: goal.UserSet(g.Objective, "")})
+	tr.observe(core.UserMessage{Text: goal.Continuation(g)})
+	tr.observe(core.DeveloperMessage{Text: goal.BudgetLimit(g)})
+	tr.observe(core.UserMessage{Text: goal.UserCleared()})
+
+	assert.Equal(t, []review.Entry{
+		{Kind: review.EntryUser, Text: goal.UserSet(g.Objective, "")},
+		{Kind: review.EntryUser, Text: goal.UserCleared()},
+	}, tr.snapshot().Entries)
+	assert.Equal(t, 2, resets, "only the user's goal changes reset the reviewer")
 }
 
 // TestTranscript_KeepsAnswers gives the auto-reviewer the user's answers to

@@ -69,6 +69,8 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 		return withSession(func(s *session.Session) error { return s.Rewind(e.ID) })
 	case state.EffCompact:
 		return withSession(func(s *session.Session) error { return s.CompactWith(e.Focus) })
+	case state.EffGoal:
+		return withSession(func(s *session.Session) error { return runGoal(s, e) })
 	case state.EffResolve:
 		return withSession(func(s *session.Session) error { return s.Resolve(e.ID, e.Answer) })
 	case state.EffAnswerQuestions:
@@ -219,4 +221,26 @@ func (m Model) switchTo(id string) tea.Cmd {
 
 		return next()
 	})
+}
+
+// runGoal changes the session's goal; the session reports the change.
+func runGoal(s *session.Session, e state.EffGoal) error {
+	var err error
+	switch e.Op {
+	case state.GoalOpSet:
+		_, err = s.SetGoal(e.Text)
+	case state.GoalOpEdit:
+		_, err = s.EditGoal(e.Text)
+	case state.GoalOpPause:
+		_, err = s.PauseGoal()
+	case state.GoalOpResume:
+		_, err = s.ResumeGoal()
+	case state.GoalOpClear:
+		var had bool
+		if had, err = s.ClearGoal(); err == nil && !had {
+			err = errors.New("no goal to clear")
+		}
+	}
+
+	return err
 }

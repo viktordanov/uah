@@ -15,6 +15,7 @@ import (
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/contextprep"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/review"
 )
 
@@ -52,6 +53,9 @@ func (t *transcript) observe(e core.Event) {
 	case core.UserMessage:
 		if contextprep.IsPrepared(v.Text) {
 			return // uah's, not the user's, in a session from before the developer role
+		}
+		if kind, _ := goal.Parse(v.Text); kind != goal.KindNone && kind != goal.KindUser {
+			return // the goal's continuation or steering, uah's; the user's goal change stays
 		}
 		t.addLocked(review.Entry{Kind: review.EntryUser, Text: v.Text})
 		if t.onUser != nil {

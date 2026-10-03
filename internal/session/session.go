@@ -19,6 +19,7 @@ import (
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/contextusage"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/usershell"
@@ -79,6 +80,9 @@ type Options struct {
 	// Yolo allows yolo mode (--yolo): without it, SetSettings refuses the
 	// mode.
 	Yolo bool
+	// Goals configures /goal ([goals]). A subagent's session (Parent set)
+	// never has a goal.
+	Goals goal.Settings
 }
 
 // Session is safe to use from any goroutine. All state lives on one internal
@@ -142,6 +146,8 @@ type Session struct {
 	afterTool  map[string]bool
 	modelBusy  bool
 	savedQueue []string // what the sidecar keeps as Queued
+	// goal is the session's goal and its accounting (goal.go).
+	goal goalState
 }
 
 // Open starts a session. Its first event is SessionOpened.
@@ -185,6 +191,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 		s.noteOpened(opts.FirstPrompt)
 		s.restoreQueue()
 	}
+	s.openGoal(opts.Goals, opts.Parent == "" && opts.Source != SourceSubagent)
 	for _, n := range opts.Notices {
 		s.out <- Notice{At: time.Now(), Level: LevelWarning, Message: n}
 	}

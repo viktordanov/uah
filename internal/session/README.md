@@ -4,7 +4,7 @@
 A session is the long-lived object the TUI and `uah exec` talk to. It owns the settings, a queue of messages, at most one live run, pending approvals, and the hooks, and it merges run events and its own events into one ordered stream.
 
 <!-- memoria:export id="summary" -->
-A session owns its settings, a message queue, at most one live run, pending approvals, and its hooks on one goroutine, and merges run events and its own events into one ordered stream. Messages queue while the agent works, a steer reaches the running agent when the engine allows it, and an interrupt keeps the queue.
+A session owns its settings, a message queue, at most one live run, pending approvals, and its hooks on one goroutine, and merges run events and its own events into one ordered stream. Messages queue while the agent works, a steer reaches the running agent when the engine allows it, and an interrupt keeps the queue. An active goal (`/goal`) keeps the agent working, run after run, until the model marks it complete or a guard stops it.
 <!-- /memoria:export -->
 
 1. [The loop](#the-loop)
@@ -12,9 +12,10 @@ A session owns its settings, a message queue, at most one live run, pending appr
 3. [Settings and compaction](#settings-and-compaction)
 4. [Approvals](#approvals)
 5. [Hooks](#hooks)
-6. [Files and history](#files-and-history)
-7. [Events](#events)
-8. [Tests](#tests)
+6. [Goals](#goals)
+7. [Files and history](#files-and-history)
+8. [Events](#events)
+9. [Tests](#tests)
 <!-- /memoria:section -->
 
 <!-- memoria:section id="loop" files="session.go loop.go runs.go mcp.go" -->
@@ -77,7 +78,7 @@ A message may carry images pasted in the TUI as tag lines at its end (`internal/
 
 The session keeps its provider, model, effort, fast mode, adaptive effort, and permission mode in its sidecar (`Saved`): when it opens and after each change. On resume, `ApplySidecar` puts them in the session's `Info` in place of its newest run's provider, model, and effort, and `internal/app` restores them ahead of the configuration; a flag still wins. A session whose sidecar has no settings (from before uah kept them) resumes with its newest run's, and one whose settings lack adaptive effort takes the configured `adaptive_effort`. A subagent's sidecar keeps its own settings.
 
-`Compact` marks a compaction as pending; `CompactWith(focus)` adds what the summary should focus on (`/compact <focus>`). While a run is live, the engine compacts before its next model request (`Run.Compact(focus)`); while idle, `engine.Options.Compact` and `CompactFocus` ask the next run to compact first. The pending flag clears when the engine reports a manual `CompactionStarted`. `Clear` (`/clear`) works the same way with `Run.Clear` and `engine.Options.Clear`: the model's next request starts fresh in the same session.
+`Compact` marks a compaction as pending; `CompactWith(focus)` adds what the summary should focus on (`/compact <focus>`). While a run is live, the engine compacts before its next model request (`Run.Compact(focus)`); while idle, `engine.Options.Compact` and `CompactFocus` ask the next run to compact first. The pending flag clears when the engine reports a manual `CompactionStarted`. `Clear` (`/clear`) works the same way with `Run.Clear` and `engine.Options.Clear`: the model's next request starts fresh in the same session, and the session drops its [goal](#goals), as Codex's `/clear` starts a thread without one.
 
 `Rewind(messageID)` goes back to before a message, as Codex's backtrack: the message and everything after it leave the agent's context, and the next message continues from there. It needs an idle session with nothing queued or waiting for its hooks (`ErrRewindBusy`) and an engine that implements `engine.Rewinder` (`ErrNoRewind` otherwise, as for a subagent's session). The engine records the cut next to the session file, which keeps every item, and returns `engine.Rewound`, which the session emits, and the texts that went to the agent in the same batch before the message (a notification, a shell command's record, an earlier queued message): the session holds them again, ahead of anything held since, so they go with the next message. A subagent the cut branch started keeps running, and its notification still reaches the agent with a later message. `Load` adds each saved rewind as `engine.Rewound` to the run before it. See the [rewind design](../../docs/design/rewind.md).
 <!-- /memoria:section -->
@@ -107,11 +108,46 @@ The session runs the hooks of its events; `internal/hooks` runs the commands. A 
 | `SessionStart` | In `Open`, with `source` startup or resume. Its context is added to the first message |
 | `UserPromptSubmit` | Before each message is dispatched. While hooks run, the message waits in `checking`; later messages wait behind it, so order is kept. A block reports `InputFailed` |
 | `PostToolUse` | After each `ToolFinished`; it only observes |
-| `Stop` | When a run ends with nothing queued. A block with a reason sends the reason as the next message, at most 5 times in a row. A new message cancels a pending Stop decision |
+| `Stop` | When a run ends with nothing queued. A block with a reason sends the reason as the next message, at most 5 times in a row. A new message cancels a pending Stop decision. An active [goal](#goals) continues only after the Stop hooks let the run end |
 | `SessionEnd` | In `Close`, with at most a second per hook |
 | `PermissionRequest` | In the approval ask, above |
 
 PreToolUse and PreCompact hooks run in the engine, on the coordinator's goroutine. Each hook run is reported as `HookRan`, once with outcome `running` as it starts and once with its result. The hook contract and trust are in [internal/hooks](../hooks/README.md).
+<!-- /memoria:section -->
+
+<!-- memoria:section id="goals" files="goal.go runs.go loop.go" -->
+## Goals
+
+The session keeps Codex's `/goal` (`goal.go`; the [goal package](../goal/README.md) holds the texts and the [design record](../../docs/design/goal.md) the decisions): one goal, in the sidecar's `goal` field, restored when the session opens (`GoalUpdated` with `GoalRestored`, after `SessionOpened`). `Options.Goals` gives the `[goals]` settings; a session with a `Parent` (a subagent's, `/review`'s reviewer) has no goal and refuses every call with `ErrGoalsOff`, as `[features] goals = false` does.
+
+| Method | Does |
+| --- | --- |
+| `SetGoal(objective)` | A new active goal, with `[goals] max_goal_token_budget` as its budget and `max_continuations` as its cap; refused while an unfinished goal exists. While idle it starts a run at once |
+| `EditGoal(objective)` | The new objective, the usage kept; a finished goal becomes active again. A live goal run gets Codex's `objective_updated` message |
+| `PauseGoal`, `ResumeGoal` | The status; a resume clears the continuation count and the guards' counts, and starts a run while idle. A complete goal, or one over its token budget, does not resume |
+| `ClearGoal` | Drops the goal; `/clear` (`Clear`) drops it too |
+| `Goal` | The goal, with the live run's time counted |
+
+Each change the user makes is held as Codex's `user_goal` record and goes to the agent with the next run, as `Inject` holds a message.
+
+**Continuing.** When a run ends (`onEnded`) and the session would report `Idle`, after the queue, the messages waiting for their hooks, and the Stop hooks, `goIdle` asks `continueGoal`: with the goal active, it counts a continuation, emits `GoalContinued`, and starts a run whose message is Codex's continuation (`goal.Continuation`) instead of reporting `Idle`. A user's stop (esc esc, `/stop`) never continues. A run that starts while the goal is active is a goal run (`noteGoalRun`), so a message the user sends during a goal is work on it, and the goal continues after it.
+
+**Accounting** (`onGoalRunEvent`, `endGoalRun`). Each `ModelResponded` of a goal run adds its tokens (`goal.TokenDelta`) and emits `GoalUpdated` (`GoalUsage`); each run's end adds its time. The guards, each with its `Reason`:
+
+| Guard | Status |
+| --- | --- |
+| The tokens reach the budget | `budget_limited`; the live run gets Codex's budget message |
+| A goal is out of continuations when it would continue | `budget_limited`, and a warning notice |
+| The run ends with an error, at the disk limit, or past a timeout | `blocked` |
+| Three automatic runs in a row made no tool call but the goal tools | `blocked` |
+| Three goal runs in a row where a `Bash` command failed and no tool call succeeded | `blocked` |
+| `Interrupt` while the goal is active and a run is live or starting | `paused` (`By` user) |
+
+**Steering a live run** (`steerGoal`): the budget message and the edited objective go to the run as developer messages (`core.RoleDeveloper`), which ask for no response and so cancel no model request; each rides the run's next request. They are not marked sent: a run that ends first leaves the message in the history.
+
+**The tools.** Each run gets `engine.Options.Goal` (`goalTool`), which the engine calls for `get_goal`, `create_goal`, and `update_goal`; the call reaches the loop as `cmdGoalTool` and gets Codex's result or refusal (`onGoalTool`). A goal the model creates makes the live run a goal run, with the default budget unless the call names one; `update_goal` sets `complete` from any status and `blocked` or `paused` only from `active`, so a budget limit stays.
+
+Events: `GoalUpdated` (the goal, the `Change`: set, edited, status, usage, or restored, and `By`: user, model, or uah), `GoalContinued` (a run the session started for the goal), and `GoalCleared`.
 <!-- /memoria:section -->
 
 <!-- memoria:section id="files" files="sidecar.go lookup.go unused.go remove.go tempdir.go history.go agentwatch.go patches.go cachestats.go" -->
@@ -124,10 +160,11 @@ The runner's session files and uagent's run records are the source of truth; the
   | Field | Written |
   | --- | --- |
   | `workspace` | The absolute workspace, when the session opens and at the end of each run |
-  | `first_prompt` | The first message, cut to 200 characters (`FirstPromptMax`), when a new session's first run starts. It leaves out the injected messages that go before it, and shows pasted images as their placeholders |
+  | `first_prompt` | The first message, cut to 200 characters (`FirstPromptMax`), when a new session's first run starts. It leaves out the injected messages that go before it, and shows pasted images as their placeholders; a session that starts with `/goal` records the objective |
   | `last_activity` | The `RecordedAt` of the session file's last item, when the session opens and at the end of each run |
   | `last_sequence` | The `Sequence` of that item, at the same times. It does not change while a run is live, so it changes only when the session does |
   | `queued` | The texts of the unsent messages, in order, whenever they change (`saveQueue`); absent when none. See [Messages](#messages-queue-steer-interrupt) |
+  | `goal` | The session's goal, whenever it changes; absent when none. See [Goals](#goals) |
 
   A sidecar from before uah kept these fields gets them when the session resumes: `first_prompt` from its runs (`Options.FirstPrompt`, which `internal/app` sets), and the rest from the session file. `ApplySidecar` puts `last_sequence` in `Info.LastSequence`, and `last_activity` in `Info.LastActivity` when it is later than the runs'. `ActiveSince` keeps the sessions active after a time, for `uah sessions --since`. The [session file](../sessionfile/README.md) documents the items. `Interactive` drops `run` and `subagent` sessions from the resume picker, as Codex hides `codex exec` sessions, and `Tree` lists subagents under their parents.
 - **A session that never ran.** A session writes its sidecar when it opens, and the runner writes the session file when the first run starts, so a session stopped before its first message has only the sidecar (`unused.go`). `Unused` lists these sessions from their sidecars: no runs, no first prompt, `last_sequence` 0, and the creation time as `Started` and `LastActivity`; `WithUnused` adds them to a list of sessions with runs. `internal/app`'s `FindSession` and `uah sessions` use it, so `uah resume <id>` finds such a session and resumes it under its ID; the resume picker and `--last` list sessions with runs only. A resumed session without a first message records its first one. `Used` reports whether a session has history (an item in its session file, or a run), which `--session-id` checks: an ID without history is taken again, and one with history is refused, so a session file with items is never replaced. The [session file](../sessionfile/README.md#a-session-that-never-ran) states this as part of the format.
@@ -158,6 +195,7 @@ Listing and search go through the rebuildable SQLite index in [internal/store](.
 | `ShellStarted`, `ShellOutput`, `ShellFinished` | A command the user typed (`RunShell`): its start, its output as it arrives, and its result with the record the agent gets |
 | `ReviewStarted`, `ReviewActivity`, `ReviewFinished` | A `/review` (`Review`): what it looks at, the reviewer's tool events, and its findings or how it ended |
 | `MCPStarted` | An interactive session connected its MCP servers: each one's state, after the notices for those that did not start |
+| `GoalUpdated`, `GoalContinued`, `GoalCleared` | The [goal](#goals): a change and its cause, a run the session started for it, and its end |
 | `Idle` | The session has nothing to do |
 
 `uah exec --json` writes them as JSONL, and the TUI reduces them into its state.
@@ -168,5 +206,5 @@ Listing and search go through the rebuildable SQLite index in [internal/store](.
 <!-- memoria:section id="tests" files="session_test.go queue_test.go steerqueued_test.go hooks_test.go runner_test.go compact_test.go history_test.go sidecar_test.go saved_test.go shell_test.go rewind_test.go cachestats_test.go" -->
 ## Tests
 
-`session_test.go` and `hooks_test.go` drive a session with a scripted fake engine, so each state transition can be held open: queueing while running, steering while starting, interrupts that keep the queue, a second interrupt that kills a run slow to stop, messages the run never read, withdrawal, live settings (a failed one not stopping the rest), failures, and every hook event. `steerqueued_test.go` pins `SteerQueued`: the queue reaches a live run in order with its IDs and image tags, waits for a run that is starting, restarts a run without live input, starts a run from a queue an interrupt kept, and turns a message waiting for its hooks into a steer. `TestSession_RunHasNoDeadline` pins that the engine gets no timeout and a context with no deadline, and `internal/app/deadline_test.go` that a run on the embedded engine reaches uagent's harness with none. `saved_test.go` pins the settings kept in the sidecar and a live mode change, and `queue_test.go` the queue kept there: saved as it changes, a withdrawn or sent message removed, kept through a close, queued again in order and unsent on resume, and never in a new session; `internal/tui/bubble/keepqueue_test.go` quits the TUI with a queued message, resumes, sees `↳ queued:`, and sends it with enter on the empty composer (fakellm). `runner_test.go` runs a session on uagent's fake runner through `harnesstest.RunnerEngine`, which takes nothing live: a steer that restarts the run, and what the session does for any engine (the host prompt, the session-level hooks, and the saved settings and when they apply). Resuming with the saved settings is tested end to end in `internal/app/resume_test.go`, and the sidecar's lookup fields in `internal/app/lookup_test.go`: on the embedded engine, `last_sequence` stays while a turn runs and follows the session file when it ends, and an older sidecar gets the fields on resume. `rewind_test.go` pins `Rewind` on the fake engine: refused without the engine or while a run is live, and the held texts going first with the next message; `internal/engine/embedded/rewind_test.go` pins the cut on the real engine. `shell_test.go` pins `RunShell`: no run starts, the record goes first with the next message (on the fake engine and on the fake runner), a command during a live run is not sent into it, and an interrupt stops it; `internal/app/usershell_test.go` runs it on the embedded engine with `testing/fakellm` (the next request carries Codex's format) and with `user_shell_sandbox` (a `forbid` rule refuses, the mode picks the sandbox), and `internal/usershell` tests a write outside the workspace failing in workspace mode. `cachestats_test.go` reads cache requests from run events and a `stderr.log`: the effort of each request's successful turn attempt, the settings' effort without one, a failed response left out, and a compaction marking the next request; with effort updates, the request's effort as the key, so a switch by update is no effort miss.
+`session_test.go` and `hooks_test.go` drive a session with a scripted fake engine, so each state transition can be held open: queueing while running, steering while starting, interrupts that keep the queue, a second interrupt that kills a run slow to stop, messages the run never read, withdrawal, live settings (a failed one not stopping the rest), failures, and every hook event. `steerqueued_test.go` pins `SteerQueued`: the queue reaches a live run in order with its IDs and image tags, waits for a run that is starting, restarts a run without live input, starts a run from a queue an interrupt kept, and turns a message waiting for its hooks into a steer. `TestSession_RunHasNoDeadline` pins that the engine gets no timeout and a context with no deadline, and `internal/app/deadline_test.go` that a run on the embedded engine reaches uagent's harness with none. `saved_test.go` pins the settings kept in the sidecar and a live mode change, and `queue_test.go` the queue kept there: saved as it changes, a withdrawn or sent message removed, kept through a close, queued again in order and unsent on resume, and never in a new session; `internal/tui/bubble/keepqueue_test.go` quits the TUI with a queued message, resumes, sees `↳ queued:`, and sends it with enter on the empty composer (fakellm). `runner_test.go` runs a session on uagent's fake runner through `harnesstest.RunnerEngine`, which takes nothing live: a steer that restarts the run, and what the session does for any engine (the host prompt, the session-level hooks, and the saved settings and when they apply). Resuming with the saved settings is tested end to end in `internal/app/resume_test.go`, and the sidecar's lookup fields in `internal/app/lookup_test.go`: on the embedded engine, `last_sequence` stays while a turn runs and follows the session file when it ends, and an older sidecar gets the fields on resume. `rewind_test.go` pins `Rewind` on the fake engine: refused without the engine or while a run is live, and the held texts going first with the next message; `internal/engine/embedded/rewind_test.go` pins the cut on the real engine. `shell_test.go` pins `RunShell`: no run starts, the record goes first with the next message (on the fake engine and on the fake runner), a command during a live run is not sent into it, and an interrupt stops it; `internal/app/usershell_test.go` runs it on the embedded engine with `testing/fakellm` (the next request carries Codex's format) and with `user_shell_sandbox` (a `forbid` rule refuses, the mode picks the sandbox), and `internal/usershell` tests a write outside the workspace failing in workspace mode. The goal loop runs end to end on the embedded engine with `testing/fakellm` in `internal/app/goal_test.go`: a goal continued until the model calls `update_goal` complete, each request extending the one before; the token budget, the continuation cap, three runs without a tool call, and a failed run stopping it; an interrupt pausing it, a restart keeping it, `/goal resume` continuing it and `/clear` dropping it; a goal the model creates; an edit during a run; and `[features] goals = false`. `cachestats_test.go` reads cache requests from run events and a `stderr.log`: the effort of each request's successful turn attempt, the settings' effort without one, a failed response left out, and a compaction marking the next request; with effort updates, the request's effort as the key, so a switch by update is no effort miss.
 <!-- /memoria:section -->

@@ -20,6 +20,7 @@ Section IDs identify a concern within a README. Keep the ID stable when a headin
 | `auth` | Authorization, logins, and where credentials are stored |
 | `extending` | Where and how to add to a package |
 | `subagents` | Subagent tools, `[agents]` keys, and role files |
+| `goals`, `goal`, `texts`, `display` | Goals (`/goal`): the root README's task and summary, the session's and the TUI's sections, and the goal package's README: the goal, the texts the model reads, and what the user sees |
 | `seam`, `parity`, `lifecycle`, `tools`, `events`, `fork`, `watch`, `resume`, `limits`, `roles`, `extending` | The subagent package's README: its contract with the engine, a child's parity with the root session, a child's lifecycle, the tools, events and hooks, forking, watching a child, resume, limits, roles, and how to extend it |
 | `configuration` | Configuration files and precedence |
 | `development` | Building, testing, linting, and CI |

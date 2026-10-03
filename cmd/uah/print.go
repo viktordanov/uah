@@ -10,6 +10,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/session"
 )
 
@@ -69,6 +70,14 @@ func (p *printer) print(event core.Event) { //nolint:gocyclo // a dispatch switc
 		p.say(e.Level + ": " + e.Message)
 	case session.Idle:
 		p.say("· idle")
+	case session.GoalUpdated:
+		if e.Change != session.GoalUsage {
+			p.say(goal.Line(e.Goal))
+		}
+	case session.GoalContinued:
+		p.say(fmt.Sprintf("↻ continuing the goal automatically (%s)", continuationCount(e.Goal)))
+	case session.GoalCleared:
+		p.say("goal cleared")
 	case core.RunStarted:
 		p.running = true
 		p.say("run " + e.RunID)
@@ -201,4 +210,13 @@ func compactedLine(e engine.Compacted) string {
 	}
 
 	return fmt.Sprintf("context compacted (%s, %d-char summary)", e.Trigger, len(e.Summary))
+}
+
+// continuationCount is "3 of 50", or "3" without a cap.
+func continuationCount(g goal.Goal) string {
+	if g.MaxContinuations > 0 {
+		return fmt.Sprintf("%d of %d", g.Continuations, g.MaxContinuations)
+	}
+
+	return strconv.Itoa(g.Continuations)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/engine/embedded"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/rules"
 	"github.com/viktordanov/uah/internal/sandbox"
@@ -134,6 +135,8 @@ type Resolved struct {
 	// model on openai-codex or openai: Settings.Model is then the provider's
 	// fallback until SettleModel sees the provider's list.
 	DefaultModel bool
+	// Goals are the [goals] settings, for /goal and the goal tools.
+	Goals goal.Settings
 }
 
 // UsageError is an error in what the user asked for, such as an invalid
@@ -223,7 +226,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 	if err != nil {
 		return Resolved{}, err
 	}
-	questions, err := pickOnOff(in.RequestUserInput, EnvRequestUserInput, cfg.RequestUserInputEnabled())
+	questions, goals, err := pickTools(in, cfg)
 	if err != nil {
 		return Resolved{}, err
 	}
@@ -232,7 +235,36 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 		Settings: s, MaxDisk: maxDisk, Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: questions,
 		Sandbox: policy, Env: envPolicy, Compaction: compact, CompactPromptFile: promptFile, Approval: approvalPolicy, Rules: configured,
 		ApprovalsReviewer: reviewer, Review: reviewCfg, Agents: agentSettings, WebSearch: webSearch, Verbosity: verbosity, DefaultModel: defaulted,
+		Goals: goals,
 	}, nil
+}
+
+// pickTools is whether the question tool is on, and the goal settings.
+func pickTools(in Inputs, cfg config.Config) (bool, goal.Settings, error) {
+	questions, err := pickOnOff(in.RequestUserInput, EnvRequestUserInput, cfg.RequestUserInputEnabled())
+	if err != nil {
+		return false, goal.Settings{}, err
+	}
+	goals, err := pickGoals(cfg)
+
+	return questions, goals, err
+}
+
+// pickGoals is [features] goals and the [goals] table, with uah's default
+// cap on continuations.
+func pickGoals(cfg config.Config) (goal.Settings, error) {
+	g := goal.Settings{Disabled: !cfg.GoalsEnabled(), MaxTokenBudget: cfg.Goals.MaxGoalTokenBudget, MaxContinuations: goal.DefaultMaxContinuations}
+	if g.MaxTokenBudget < 0 {
+		return goal.Settings{}, usage(fmt.Errorf("invalid [goals] max_goal_token_budget %d (want a positive number, or 0 for none)", g.MaxTokenBudget))
+	}
+	if m := cfg.Goals.MaxContinuations; m != nil {
+		if *m < 0 {
+			return goal.Settings{}, usage(fmt.Errorf("invalid [goals] max_continuations %d (want a positive number, or 0 for no limit)", *m))
+		}
+		g.MaxContinuations = *m
+	}
+
+	return g, nil
 }
 
 // pickContextPreparation is the flag or its variable, on or off, else
