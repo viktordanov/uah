@@ -97,6 +97,9 @@ type When struct {
 	// InstructionsOmitted is whether the system prompt leaves the
 	// instruction files out on purpose.
 	InstructionsOmitted *bool `yaml:"instructions_omitted"`
+	// InstructionsOff is whether loading instruction files is turned off
+	// (--no-instructions, or instructions.enabled = false).
+	InstructionsOff *bool `yaml:"instructions_off"`
 }
 
 // Keys of When and placeholders that share a name.

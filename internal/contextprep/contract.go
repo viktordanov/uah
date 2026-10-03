@@ -18,6 +18,11 @@ type Facts struct {
 	// system prompt replaces uah's, such as /review's reviewer, has the
 	// workspace's files here instead of in InstructionFiles.
 	OmittedInstructionFiles []string
+	// InstructionsOff is true when loading instruction files is turned
+	// off (--no-instructions, or instructions.enabled = false): the
+	// workspace's files are not looked for, so the lists above are empty
+	// whether or not it has any.
+	InstructionsOff bool
 	// Shell is the shell commands run in, a path such as /bin/zsh.
 	Shell string
 	// GOOS is the operating system, as runtime.GOOS names it.

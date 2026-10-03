@@ -2,6 +2,10 @@ package session_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -88,4 +92,54 @@ func TestSession_KeepsTheQueueAcrossRestarts(t *testing.T) {
 	_, err = fresh.Submit("hello")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"hello"}, texts(h.nextRun().req.Messages), "a new session queues nothing of another's")
+}
+
+// TestSession_RestoresAQueueLongerThanTheEventBuffer pins that resuming a
+// session that kept more messages than Events buffers does not block Open,
+// which reports them before its caller can read Events, nor a message sent
+// before the caller reads them, as `uah exec` sends its prompt.
+func TestSession_RestoresAQueueLongerThanTheEventBuffer(t *testing.T) {
+	dir := t.TempDir()
+	id := "long-queue"
+	queued := make([]string, 5000)
+	for i := range queued {
+		queued[i] = fmt.Sprintf("message %d", i)
+	}
+	data, err := json.Marshal(session.Sidecar{Source: session.SourceRun, Queued: queued})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, id+".uah.json"), data, 0o600))
+	eng := newFakeEngine(fakeCaps{})
+
+	opened := make(chan *session.Session, 1)
+	go func() {
+		s, err := session.Open(context.Background(), eng, session.Options{ID: id, Resumed: true, Settings: settings(), SessionsDir: dir, Source: session.SourceRun})
+		assert.NoError(t, err)
+		if err == nil {
+			_, err = s.Submit("next")
+			assert.NoError(t, err)
+		}
+		opened <- s
+	}()
+	var s *session.Session
+	select {
+	case s = <-opened:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Open or the first Submit blocked on the restored queue")
+	}
+	require.NotNil(t, s)
+	t.Cleanup(func() { _ = s.Close() })
+	h := &harness{t: t, eng: eng, s: s}
+	run := h.nextRun()
+	h.until(isType[session.InputSent])
+	var shown []string
+	for _, e := range h.events {
+		if q, ok := e.(session.InputQueued); ok {
+			shown = append(shown, q.Input.Text)
+		}
+	}
+	want := append(queued, "next")
+	assert.True(t, slices.Equal(want, shown), "each kept message is shown as queued, in order, then the next")
+	assert.True(t, slices.Equal(want, texts(run.req.Messages)), "they go out with the next message")
+	run.finish(core.StatusOK)
+	h.until(isType[session.Idle])
 }

@@ -145,10 +145,11 @@ func (s *Session) saveQueue() {
 	}))
 }
 
-// restoreQueue queues again the messages the session kept when it closed.
-// They wait, as after an interrupt, for the next message or SteerQueued.
-func (s *Session) restoreQueue() {
-	sc, _, err := ReadSidecar(s.sessionsDir, s.id)
+// restoreQueue queues again the messages the session kept when it closed
+// (sc, read with err). They wait, as after an interrupt, for the next
+// message or SteerQueued. Open calls it before the caller can read Events,
+// so Open makes room for its events in the stream (queuedRoom).
+func (s *Session) restoreQueue(sc Sidecar, err error) {
 	s.warnIf(err)
 	for _, text := range sc.Queued {
 		in := core.UserInput{ID: uuid.NewString(), Text: text}
@@ -158,4 +159,14 @@ func (s *Session) restoreQueue() {
 	if s.savedQueue = sc.Queued; len(sc.Queued) > 0 {
 		s.emit(Idle{At: time.Now()})
 	}
+}
+
+// queuedRoom is the room restoreQueue needs in Events beyond eventBuffer:
+// an InputQueued for each kept message and an Idle.
+func queuedRoom(sc Sidecar) int {
+	if len(sc.Queued) == 0 {
+		return 0
+	}
+
+	return len(sc.Queued) + 1
 }

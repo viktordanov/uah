@@ -30,7 +30,7 @@ var blocks = []block{
 	{keySandbox, []string{
 		"sandbox/read-only", "sandbox/workspace-write", "sandbox/tmpdir", "sandbox/bash-heredoc", "sandbox/processes", "sandbox/local-sockets",
 	}},
-	{"agent files", []string{"agent-files", "agent-files-omitted", "agent-files-none"}},
+	{"agent files", []string{"agent-files", "agent-files-omitted", "agent-files-off", "agent-files-none"}},
 	{"harness", []string{"harness/output"}},
 }
 
@@ -257,6 +257,13 @@ func (w When) mismatch(f Facts) string {
 		}
 
 		return "when.instructions_omitted: no instruction files were left out"
+	}
+	if w.InstructionsOff != nil && *w.InstructionsOff != f.InstructionsOff {
+		if f.InstructionsOff {
+			return "when.instructions_off: loading instruction files is turned off"
+		}
+
+		return "when.instructions_off: loading instruction files is on"
 	}
 
 	return ""
