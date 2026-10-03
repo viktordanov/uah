@@ -87,15 +87,15 @@ type Scope struct {
 // AgentParent is a parent session's live run.
 type AgentParent struct {
 	SessionID string
-	// Request, ServiceTier, and AdaptiveEffort are the parent run's: its
-	// children start with the same settings.
-	Request        core.Request
-	ServiceTier    string
-	AdaptiveEffort string
-	// Mode is the parent run's permission mode now: a child starts with
-	// it, so a stricter mode chosen during the run holds for new children
-	// too (nil: the engine's configured sandbox).
-	Mode func() approval.Mode
+	// Request is the parent run's request as it started: its provider,
+	// workspace, and system prompt hold for the run.
+	Request core.Request
+	// Settings are the parent's model, effort, service tier, adaptive
+	// effort, and permission mode now, with the changes made during the
+	// run (/model, /effort, /fast, a stricter mode): a child starts with
+	// them, read when it is spawned or resumed (nil: the request's model and
+	// effort).
+	Settings func() LiveSettings
 	// Ask asks the parent's user, also after the parent's run ends (nil:
 	// no one can, so children are declined).
 	Ask approval.Ask

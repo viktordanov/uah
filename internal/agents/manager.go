@@ -261,18 +261,24 @@ func (m *Manager) role(name string) (Role, error) {
 }
 
 // childOptions are a child's session options: the process's, as the root
-// session opens with, and the parent run's settings. Only what makes it a
-// child differs: its ID, its sidecar's source and parent, approvals asked
-// through the parent, the parent run's permission mode as it is now, and
-// the model, effort, and instructions the spawn
-// call, the role, and the configured defaults override, in that order.
+// session opens with, and the parent's settings as they are now (see
+// liveSettings). Only what makes it a child differs: its ID, its sidecar's
+// source and parent, approvals asked through the parent, the parent's
+// permission mode, and its model and effort: the spawn call's, else the
+// role's, else the configured defaults, else the parent's. A fork takes
+// the spawn call's, else the parent's: its request is to share the
+// parent's prefix, which neither a role nor a default may change. A
+// resumed child (saved, from its sidecar) gets back the model, effort,
+// fast mode, and adaptive effort it last used, as a resumed root session
+// does, and the parent's permission mode, as Codex gives a resumed agent
+// its parent turn's approval policy and sandbox.
 // Its system prompt is the parent's, then the role's instructions; Codex's
 // note that its final answer reaches the parent follows its task instead
 // (firstNote), so the prompt and the parent's share a cache.
 // Hooks are the same, in a runner of its own. It holds m.mu.
-func (m *Manager) childOptions(p engine.AgentParent, c *child, role Role, rec record, resumed bool) session.Options {
+func (m *Manager) childOptions(p engine.AgentParent, c *child, role Role, rec record, saved *session.Saved) session.Options {
 	opts := m.tmpl
-	opts.ID, opts.Resumed, opts.Source, opts.Parent = c.id, resumed, session.SourceSubagent, c.parent
+	opts.ID, opts.Resumed, opts.Source, opts.Parent = c.id, saved != nil, session.SourceSubagent, c.parent
 	opts.Ask, opts.Hooks = m.askFor(c), opts.Hooks.Clone()
 	// A child's text never streams: neither its parent nor its view shows
 	// it as it arrives.
@@ -281,13 +287,21 @@ func (m *Manager) childOptions(p engine.AgentParent, c *child, role Role, rec re
 		role = Role{Name: role.Name, NicknameCandidates: role.NicknameCandidates}
 	}
 	s := opts.Settings.WithRequest(p.Request)
-	s.ServiceTier = m.serviceTier(p.ServiceTier, role)
-	s.AdaptiveEffort = p.AdaptiveEffort
-	if p.Mode != nil && p.Mode() != "" {
-		s = s.WithMode(p.Mode())
+	live := liveSettings(p)
+	s.Model, s.Effort, s.AdaptiveEffort = live.Model, live.Effort, live.AdaptiveEffort
+	s.ServiceTier = m.serviceTier(live.ServiceTier, role)
+	if live.Mode != "" {
+		s = s.WithMode(live.Mode)
 	}
-	s.Model = first(rec.Model, role.Model, m.cfg.Model, s.Model)
-	s.Effort = first(rec.Effort, role.Effort, m.cfg.Effort, s.Effort)
+	switch {
+	case saved != nil && *saved != session.Saved{}:
+		m.restore(&s, *saved)
+	case rec.Fork:
+		s.Model, s.Effort = first(rec.Model, s.Model), first(rec.Effort, s.Effort)
+	default:
+		s.Model = first(rec.Model, role.Model, m.cfg.Model, s.Model)
+		s.Effort = first(rec.Effort, role.Effort, m.cfg.Effort, s.Effort)
+	}
 	s.SystemPrompt = first(s.SystemPrompt, instructions.DefaultPrompt)
 	if role.DeveloperInstructions != "" {
 		s.SystemPrompt += "\n\n" + strings.TrimSpace(role.DeveloperInstructions)
@@ -295,6 +309,32 @@ func (m *Manager) childOptions(p engine.AgentParent, c *child, role Role, rec re
 	opts.Settings = s
 
 	return opts
+}
+
+// liveSettings are the parent's settings now: its session's, with the
+// changes made during its run, else its run's request's.
+func liveSettings(p engine.AgentParent) engine.LiveSettings {
+	if p.Settings != nil {
+		return p.Settings()
+	}
+
+	return engine.LiveSettings{Model: p.Request.Model, Effort: p.Request.Effort}
+}
+
+// restore gives a resumed child the settings its sidecar saved, but its
+// permission mode: the model when it is on the parent's provider (the
+// child runs on the parent's engine), the effort, fast mode when the
+// engine serves it, and adaptive effort. It holds m.mu.
+func (m *Manager) restore(s *session.Settings, saved session.Saved) {
+	if saved.Provider == "" || saved.Provider == s.Provider {
+		s.Model = first(saved.Model, s.Model)
+	}
+	s.Effort = first(saved.Effort, s.Effort)
+	s.ServiceTier = ""
+	if saved.Fast && m.eng != nil && m.eng.Priority() {
+		s.ServiceTier = TierPriority
+	}
+	s.AdaptiveEffort = first(saved.AdaptiveEffort, s.AdaptiveEffort)
 }
 
 // scope narrows a child's tools and pre-approves its actions as its role
@@ -316,7 +356,7 @@ func (m *Manager) scope(id string, role Role, rec record) {
 }
 
 // serviceTier is the child's service tier: the role's when the engine can
-// serve it, else the parent run's. It holds m.mu.
+// serve it, else the parent's now. It holds m.mu.
 func (m *Manager) serviceTier(parent string, role Role) string {
 	switch {
 	case role.ServiceTier == TierDefault:

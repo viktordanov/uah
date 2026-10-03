@@ -23,7 +23,7 @@ Without it, a model writes POSIX `sh` in fish, uses GNU flags on macOS, writes i
 
 ## What the model receives
 
-When a new session starts, uah sends one developer message before the first user message. This includes a subagent's session. A resumed or forked session gets no new message, because its history already has one. The model reads a developer message as the harness's, not the user's.
+When a new session starts, uah sends one developer message before the first user message. This includes a subagent's session. A resumed or forked session gets no new message, because its history already has one. A fork's copied message is its parent's and names the parent's `$TMPDIR`, so the fork's first run adds one sentence of its own, after the copied history: its own `$TMPDIR`, and that the parent's is not its own. The model reads a developer message as the harness's, not the user's.
 
 ```text
 <context_preparation>

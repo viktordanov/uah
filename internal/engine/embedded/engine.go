@@ -130,15 +130,20 @@ type Engine struct {
 	// cacheKeys are the sessions whose prompt cache key is not their ID;
 	// scopes the sessions with a Scope (engine.Scoper).
 	cacheKeys, scopes sync.Map
+	// forkTemps are the forks whose copied history names their parent's
+	// $TMPDIR, by the child's ID, until their first run records the
+	// correction (forkNote).
+	forkTemps sync.Map
 	// transports are the model clients' connections, shared by every run.
 	transports transports
 }
 
 // Forget drops what the engine kept for a session that closed: the
 // auto-reviewer's transcript, the last request for /context, and a cache
-// key or scope it may have (engine.Forgetter).
+// key, scope, or fork correction it may have (engine.Forgetter).
 func (e *Engine) Forget(sessionID string) {
 	e.transcripts.Delete(sessionID)
+	e.forkTemps.Delete(sessionID)
 	e.cacheKeys.Delete(sessionID)
 	e.scopes.Delete(sessionID)
 	e.last.forget(sessionID)

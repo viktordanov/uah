@@ -97,11 +97,29 @@ func (w *wiring) withAgents(registry tool.Registry, req core.Request) tool.Regis
 		emit = func(core.Event) {}
 	}
 	offered := a.Attach(engine.AgentParent{
-		SessionID: req.SessionID, Request: req, ServiceTier: w.tier, AdaptiveEffort: w.adaptive, Mode: w.mode.get,
+		SessionID: req.SessionID, Request: req, Settings: w.parentSettings(req),
 		Ask: w.askAnytime, Emit: emit, Inject: w.inject,
 	})
 
 	return withAgents(registry, offered, a.ToolNames(), req.DisallowedTools)
+}
+
+// parentSettings are the settings the run's children start with: the
+// session's as they are when a child starts, or, for a run without them,
+// the run's model, effort, service tier, and adaptive effort as it started
+// and its permission mode now.
+func (w *wiring) parentSettings(req core.Request) func() engine.LiveSettings {
+	if w.settings != nil {
+		return w.settings
+	}
+	start := engine.LiveSettings{Model: req.Model, Effort: req.Effort, ServiceTier: w.tier, AdaptiveEffort: w.adaptive}
+
+	return func() engine.LiveSettings {
+		s := start
+		s.Mode = w.mode.get()
+
+		return s
+	}
 }
 
 // translators returns the built-in tools. Bash runs in the workspace with

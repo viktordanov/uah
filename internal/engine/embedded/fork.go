@@ -1,6 +1,7 @@
 package embedded
 
 import (
+	"bytes"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/compaction"
 	"github.com/viktordanov/uah/internal/engine"
+	uahsession "github.com/viktordanov/uah/internal/session"
 )
 
 var _ engine.Forker = (*Engine)(nil)
@@ -69,8 +71,29 @@ func (e *Engine) Fork(ctx context.Context, parentID, childID, callID string) err
 	if err := copyUpdatesRejected(dir, parentID, childID); err != nil {
 		return err
 	}
+	if err := copySearches(dir, parentID, childID); err != nil {
+		return err
+	}
+	if temp := uahsession.TempDir(dir, parentID); namesPath(items[:cut], temp) {
+		e.forkTemps.Store(childID, temp)
+	}
 
-	return copySearches(dir, parentID, childID)
+	return nil
+}
+
+// namesPath reports whether a developer message of the items, such as the
+// prepared context, names path.
+func namesPath(items []sessionstore.Item, path string) bool {
+	quoted, err := json.Marshal(path)
+	if err != nil {
+		return false
+	}
+	needle := quoted[1 : len(quoted)-1] // as the payload, a JSON string, spells it
+
+	return slices.ContainsFunc(items, func(item sessionstore.Item) bool {
+		in, ok := item.Data.(inbox.Input)
+		return ok && in.Kind == inbox.InputDeveloper && bytes.Contains(in.Payload, needle)
+	})
 }
 
 // SetCacheKey makes the session's model requests use key as their prompt
