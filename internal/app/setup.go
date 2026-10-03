@@ -119,6 +119,12 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 		return Result{}, err
 	}
 	r.Sandbox = absPolicy(r.Sandbox, in.Workspace)
+	// The sandbox scripts run outside the sandbox, so they live in the
+	// state directory, never in runDir (an ephemeral run's is under
+	// $TMPDIR, which sandboxed commands write), and stay read-only to
+	// sandboxed commands and patches wherever the state directory is.
+	sandboxDir := filepath.Join(stateDir, "sandbox")
+	r.Sandbox.ReadOnly = append(r.Sandbox.ReadOnly, sandboxDir)
 	logger := slog.New(slog.NewTextHandler(logOutput, &slog.HandlerOptions{Level: LogLevels[in.LogLevel]}))
 	servers, err := mcpManager(cfg, in.Workspace, logger, in.ConfigPath)
 	if err != nil {
@@ -129,9 +135,9 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 		return Result{}, err
 	}
 	subagents := newAgents(r, cfg, in.Workspace, &opts, catalog)
-	eng := newEngine(r, runDir, logger, parts{servers: servers, approver: approver, subagents: subagents, models: catalog, context: ContextSettings(in.ConfigPath, cfg), askUser: in.Interactive && r.RequestUserInput}, &opts)
+	eng := newEngine(r, runDir, sandboxDir, logger, parts{servers: servers, approver: approver, subagents: subagents, models: catalog, context: ContextSettings(in.ConfigPath, cfg), askUser: in.Interactive && r.RequestUserInput}, &opts)
 	subagents.Bind(eng, opts) // children open exactly as this session does
-	opts.Shell = userShell(r, cfg, runDir, approver)
+	opts.Shell = userShell(r, cfg, sandboxDir, approver)
 
 	return Result{StateDir: stateDir, Engine: eng, Options: opts, Config: cfg, Models: catalog, Usage: NewUsage(r.Settings, os.Getenv), Sandbox: r.Sandbox}, nil
 }
@@ -169,11 +175,12 @@ type parts struct {
 	askUser bool
 }
 
-// newEngine builds the embedded engine for the resolved settings.
-func newEngine(r Resolved, stateDir string, logger *slog.Logger, p parts, opts *session.Options) engine.Engine {
+// newEngine builds the embedded engine for the resolved settings, with the
+// run's state in stateDir and the sandbox scripts in sandboxDir.
+func newEngine(r Resolved, stateDir, sandboxDir string, logger *slog.Logger, p parts, opts *session.Options) engine.Engine {
 	ecfg := embedded.Config{
 		StateDir: stateDir, MaxDisk: r.MaxDisk, Logger: logger, Provider: r.Settings.Provider, Hooks: opts.Hooks,
-		Sandbox: &r.Sandbox, SandboxDir: filepath.Join(stateDir, "sandbox"), Env: r.Env, MCP: p.servers, Approver: p.approver, Models: p.models,
+		Sandbox: &r.Sandbox, SandboxDir: sandboxDir, Env: r.Env, MCP: p.servers, Approver: p.approver, Models: p.models,
 		ContextPreparation: r.ContextPreparation, ContextModules: p.context, EffortUpdates: r.EffortUpdates,
 		AutoReview: r.ApprovalsReviewer == review.ReviewerAuto, Review: r.Review, WebSearch: r.WebSearch == WebSearchLive, Verbosity: r.Verbosity,
 		InstructionFiles: instructionFiles(opts.Instructions), InstructionsOff: !r.Instructions,

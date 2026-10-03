@@ -16,6 +16,7 @@ import (
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/instructions"
+	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
 
@@ -187,4 +188,24 @@ func TestSetup_OldProjectDirectory(t *testing.T) {
 	assert.NotEqual(t, "low", res.Options.Settings.Effort, "a trusted workspace's .uagent is not read")
 	assert.DirExists(t, filepath.Join(e.Workspace, ".uagent"))
 	assert.NoDirExists(t, filepath.Join(e.Workspace, ".uah"))
+}
+
+// TestSetup_SandboxScriptsStayInTheStateDir checks that an ephemeral run
+// (a RunStateDir under $TMPDIR, which sandboxed commands write) keeps the
+// sandboxing scripts in the state directory, and that the session's
+// policy keeps their directory read-only.
+func TestSetup_SandboxScriptsStayInTheStateDir(t *testing.T) {
+	e, in := setupEnv(t)
+	in.RunStateDir = t.TempDir()
+	res, err := app.Setup(context.Background(), in, io.Discard)
+	require.NoError(t, err)
+
+	scripts := filepath.Join(e.StateDir, "sandbox")
+	assert.Equal(t, filepath.Join(in.RunStateDir, "sessions"), res.Options.SessionsDir)
+	require.NotNil(t, res.Options.Shell)
+	assert.Equal(t, scripts, res.Options.Shell.Dir)
+	assert.Contains(t, res.Sandbox.ReadOnly, scripts)
+	ws := res.Sandbox
+	ws.Mode = sandbox.WorkspaceWrite
+	assert.False(t, ws.CanWrite(filepath.Join(scripts, "sh-0123")))
 }

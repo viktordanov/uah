@@ -12,18 +12,24 @@ import (
 // that is not a protected path. Symlinks in the path's existing part are
 // resolved first, so a link cannot lead out of a root.
 func (p Policy) CanWrite(path string) bool {
+	return p.CanWriteResolved(ResolvePath(path))
+}
+
+// CanWriteResolved is CanWrite for a path ResolvePath returned: it takes
+// path as it is, without following its symlinks again, for a caller that
+// then writes that exact path without following symlinks.
+func (p Policy) CanWriteResolved(path string) bool {
 	if p.Mode == FullAccess {
 		return true
 	}
-	path = resolvePath(path)
 	roots := p.Writable()
 	inside := false
 	for _, r := range roots {
 		if within(path, r) {
 			inside = true
 		}
-		for _, protected := range Protected(r) {
-			if within(path, resolvePath(protected)) {
+		for _, protected := range p.protectedIn(r) {
+			if protects(ResolvePath(protected), path) {
 				return false
 			}
 		}
@@ -32,9 +38,49 @@ func (p Policy) CanWrite(path string) bool {
 	return inside
 }
 
-// resolvePath makes path absolute and resolves the symlinks of its deepest
+// protects reports whether the protected path covers path: path is it or
+// inside it, its names compared without case, as macOS's default file
+// system and Linux's casefold directories compare them; or path, or one of
+// its existing directories, is the protected file itself under another
+// name. A case alias such as .GIT or SANDBOX then cannot lead a write
+// into a protected directory.
+func protects(protected, path string) bool {
+	if withinFold(path, protected) {
+		return true
+	}
+	target, err := os.Stat(protected)
+	if err != nil {
+		return false
+	}
+	for dir := path; ; dir = filepath.Dir(dir) {
+		if info, err := os.Stat(dir); err == nil && os.SameFile(info, target) {
+			return true
+		}
+		if filepath.Dir(dir) == dir {
+			return false
+		}
+	}
+}
+
+// withinFold is within with each name compared without case.
+func withinFold(path, root string) bool {
+	names := strings.Split(filepath.Clean(path), string(filepath.Separator))
+	rootNames := strings.Split(filepath.Clean(root), string(filepath.Separator))
+	if len(names) < len(rootNames) {
+		return false
+	}
+	for i, name := range rootNames {
+		if !strings.EqualFold(name, names[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// ResolvePath makes path absolute and resolves the symlinks of its deepest
 // existing ancestor; a dangling link is followed to its target.
-func resolvePath(path string) string {
+func ResolvePath(path string) string {
 	return resolveDepth(path, 0)
 }
 
@@ -64,7 +110,7 @@ func resolveDepth(path string, depth int) string {
 	}
 }
 
-// maxLinks bounds how many dangling links resolvePath follows.
+// maxLinks bounds how many dangling links ResolvePath follows.
 const maxLinks = 40
 
 // within reports whether path is root or under it.

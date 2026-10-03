@@ -23,15 +23,32 @@ func apply(t *testing.T, dir, body string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	changes, err := patch.Compute(dir, hunks)
+	targets := targetsFor(t, dir, hunks)
+	changes, err := targets.Compute(dir, hunks)
 	if err != nil {
 		return "", err
 	}
-	if err := patch.Write(changes); err != nil {
+	if err := targets.Write(changes); err != nil {
 		return "", err
 	}
 
 	return patch.Summary(changes), nil
+}
+
+// targetsFor approves the patch's paths in dir at themselves, with dir's
+// symlinks (such as macOS's /var) resolved, as the engine resolves them.
+func targetsFor(t *testing.T, dir string, hunks []patch.Hunk) patch.Targets {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
+	targets := patch.Targets{}
+	for _, p := range patch.Paths(dir, hunks) {
+		rel, err := filepath.Rel(dir, p)
+		require.NoError(t, err)
+		targets[p] = filepath.Join(resolved, rel)
+	}
+
+	return targets
 }
 
 func write(t *testing.T, path, text string) {

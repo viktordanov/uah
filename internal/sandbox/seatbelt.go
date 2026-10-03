@@ -44,7 +44,7 @@ type seatbeltParam struct {
 // sandbox-exec arguments ("-DKEY=value"). All paths go through parameters,
 // never into the profile text.
 func SeatbeltProfile(p Policy) (profile string, params []string) {
-	writePolicy, writeParams := seatbeltWritePolicy(p.Writable())
+	writePolicy, writeParams := seatbeltWritePolicy(p, p.Writable())
 	sections := []string{
 		seatbeltBase,
 		"; allow read-only file operations\n(allow file-read*)",
@@ -76,8 +76,9 @@ func seatbeltNetworkPolicy(enabled bool) string {
 }
 
 // seatbeltWritePolicy allows writes under each root except its protected
-// paths, as Codex's build_seatbelt_access_policy does for write roots.
-func seatbeltWritePolicy(roots []string) (string, []seatbeltParam) {
+// paths (p.protectedIn), as Codex's build_seatbelt_access_policy does for
+// write roots.
+func seatbeltWritePolicy(p Policy, roots []string) (string, []seatbeltParam) {
 	var (
 		components, anchors, ancestorDenies []string
 		params, ancestors                   []seatbeltParam
@@ -87,7 +88,7 @@ func seatbeltWritePolicy(roots []string) (string, []seatbeltParam) {
 	// get its .git back through the $TMPDIR grant.
 	var protected []string
 	for _, root := range roots {
-		protected = append(protected, Protected(root)...)
+		protected = append(protected, p.protectedIn(root)...)
 	}
 	for i, root := range roots {
 		rootKey := fmt.Sprintf("WRITABLE_ROOT_%d", i)

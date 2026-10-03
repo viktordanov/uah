@@ -210,3 +210,49 @@ EOF`)
 		assert.True(t, sandbox.Denied(code, out), out)
 	}
 }
+
+// TestLinuxShellScriptsStayReadOnly checks that a sandboxed command cannot
+// replace the sandboxing scripts, or move their directory or one of its
+// parents aside to put its own in place, also when the directory is under
+// $TMPDIR, a writable root: the next command would run that script outside
+// the sandbox.
+func TestLinuxShellScriptsStayReadOnly(t *testing.T) {
+	r := newLinuxRun(t)
+	tmp := filepath.Join(r.base, "tmpdir")
+	home := filepath.Join(tmp, "home")
+	dir := filepath.Join(home, "state", "sandbox")
+	shell, err := sandbox.Shell(dir, r.policy(sandbox.WorkspaceWrite, false), sandbox.EnvPolicy{}, "/bin/sh")
+	require.NoError(t, err)
+	want, err := os.ReadFile(shell)
+	require.NoError(t, err)
+	shRun := func(command string) (int, string) {
+		cmd := exec.Command(shell, "-c", command)
+		cmd.Dir = r.ws
+		out, err := cmd.CombinedOutput()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return exit.ExitCode(), string(out)
+		}
+		require.NoError(t, err)
+
+		return 0, string(out)
+	}
+
+	code, out := shRun("echo hi > a && echo hi > " + filepath.Join(tmp, "b"))
+	require.Equal(t, 0, code, "the workspace and $TMPDIR stay writable: %s", out)
+	for _, command := range []string{
+		"printf '#!/bin/sh\\nexec /bin/sh \"$@\"\\n' > " + shell,
+		"rm " + shell,
+		"touch " + filepath.Join(dir, "sh-new"),
+		"mv " + dir + " " + dir + ".moved",
+		"mv " + home + " " + home + ".moved",
+		"mv " + filepath.Join(home, "state") + " " + filepath.Join(home, "state.moved"),
+	} {
+		code, out := shRun(command)
+		assert.NotEqual(t, 0, code, "%s: %s", command, out)
+	}
+	got, err := os.ReadFile(shell)
+	require.NoError(t, err)
+	assert.Equal(t, string(want), string(got))
+	assert.NoDirExists(t, home+".moved")
+}

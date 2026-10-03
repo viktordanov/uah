@@ -194,7 +194,7 @@ uah exec --json "..."                             # JSONL events for scripts, wi
 uah exec --ephemeral -o answer.md "..."           # keep no session; write the final answer to a file
 ```
 
-`--ephemeral` keeps nothing: the session runs in a temporary directory that uah removes at exit, so `sessions/`, `runs/`, and the index do not change and `uah sessions` does not list it. It starts a new session, so it cannot be used with `--last` or `--session`. `-o` (`--output-last-message`) writes the last run's answer to the file at exit; with no answer, it writes an empty file and warns on stderr, as Codex does.
+`--ephemeral` keeps nothing: the session runs in a temporary directory that uah removes at exit, so `sessions/`, `runs/`, and the index do not change and `uah sessions` does not list it. The model cache and the small scripts that start the sandbox stay in the state directory: sandboxed commands can write the temporary directory, and a script there could be swapped for one that runs outside the sandbox. It starts a new session, so it cannot be used with `--last` or `--session`. `-o` (`--output-last-message`) writes the last run's answer to the file at exit; with no answer, it writes an empty file and warns on stderr, as Codex does.
 
 The TUI shows the answer as the model writes it, and `--json` adds `text_delta`, `reasoning_delta`, and `stream_reset` events before the final `assistant_message`. A [web search](#web-search) is a `web_search` event when it starts and when it ends, with its query or URL. A compaction is `compaction_started`, then `compacted` with its `stats`: the strategy, the tokens before and after, and the summary call's usage. Each auto-review is `auto_reviewed`: the command, the verdict, its risk and reason, how long the review took, and the reviewer's tokens. A [goal](#goals) adds `goal_updated` (the goal, what changed, and who changed it), `goal_continued` before each run uah starts for it, and `goal_cleared`; the progress lines say each change. Plain `uah exec` prints each answer once, when it is complete. See the [streaming design](docs/design/streaming.md).
 
@@ -521,7 +521,7 @@ The embedded engine runs uah-core's packages inside uah, so messages, model, eff
 ### File edits and diffs
 
 <!-- memoria:import src="internal/patch/README.md#summary" -->
-Models edit files with Codex's `apply_patch` tool: a patch of `*** Add File`, `*** Update File` (with `*** Move to`), and `*** Delete File` sections with `@@` hunks, parsed and applied as Codex does, with its lenient context matching and its messages. The embedded engine applies patches inside the writable roots at once, and asks for any other write as for a Bash escalation; the diff it records shows under the call in the TUI and in `uah sessions show`.
+Models edit files with Codex's `apply_patch` tool: a patch of `*** Add File`, `*** Update File` (with `*** Move to`), and `*** Delete File` sections with `@@` hunks, parsed and applied as Codex does, with its lenient context matching and its messages. The embedded engine applies patches inside the writable roots at once, and asks for any other write as for a Bash escalation; forbid rules refuse first in every mode, and a patch writes only the paths it was approved at, never through a symlink put in since; the diff it records shows under the call in the TUI and in `uah sessions show`.
 <!-- /memoria:import -->
 
 Read more: [patches](internal/patch/README.md), and how patches are approved in [approvals](internal/approval/README.md#patches).

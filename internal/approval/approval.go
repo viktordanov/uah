@@ -215,6 +215,24 @@ func (a *Approver) Decide(ctx context.Context, req Request, ask Ask) Decision {
 	return a.answer(answer, p, run)
 }
 
+// Forbidden reports whether a forbid rule refuses the command, or may
+// refuse it (as Decide does for a command that does not split), and why.
+// It applies no other rule and asks no one: a caller that runs some
+// actions without Decide, such as a patch inside the writable roots or
+// any patch in yolo mode, checks it first, so forbid rules refuse in every
+// mode.
+func (a *Approver) Forbidden(command string) (reason string, forbidden bool) {
+	commands, ok := rules.Split(command)
+	if d, denied := a.forbidsUnsplit(command, ok); denied {
+		return d.Reason, true
+	}
+	if rule, matched := a.policy().Check(commands); matched && rule.Decision == rules.Forbidden {
+		return forbiddenReason(rule), true
+	}
+
+	return "", false
+}
+
 // byRule decides without asking when a rule settles it, or when nothing
 // needs approval; done is false when the user must be asked.
 func byRule(req Request, rule rules.Rule, matched bool) (d Decision, done bool) {
