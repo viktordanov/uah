@@ -104,10 +104,11 @@ func usable(c Credentials) bool {
 // DiscoverOAuth reports whether the server advertises OAuth: protected
 // resource metadata (RFC 9728) at its well-known places, or authorization
 // server metadata at its origin (the 2025-03-26 fallback). It gives up
-// after 5 s.
+// after 5 s, and follows redirects only within an origin.
 func DiscoverOAuth(ctx context.Context, serverURL string, client *http.Client) bool {
 	ctx, cancel := context.WithTimeout(ctx, discoveryTimeout)
 	defer cancel()
+	client = oauthClient(client)
 	u, err := url.Parse(serverURL)
 	if err != nil {
 		return false
@@ -149,7 +150,7 @@ type storedAuth struct {
 var _ auth.OAuthHandler = (*storedAuth)(nil)
 
 func newStoredAuth(name, url string, opts Options) *storedAuth {
-	return &storedAuth{name: name, url: url, store: opts.Credentials, client: opts.HTTPClient, logger: opts.Logger}
+	return &storedAuth{name: name, url: url, store: opts.Credentials, client: oauthClient(opts.HTTPClient), logger: opts.Logger}
 }
 
 func (a *storedAuth) TokenSource(context.Context) (oauth2.TokenSource, error) {
