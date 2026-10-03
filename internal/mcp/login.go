@@ -45,7 +45,8 @@ type LoginOptions struct {
 	// Getenv reads env_http_headers (default os.Getenv).
 	Getenv func(string) string
 	// HTTPClient makes the discovery, registration, and token requests
-	// (default http.DefaultClient).
+	// (default http.DefaultClient), following redirects only within an
+	// origin; its transport also carries the requests to the server.
 	HTTPClient *http.Client
 	// Timeout bounds the wait for the browser (default 300 s).
 	Timeout time.Duration
@@ -77,10 +78,7 @@ func Login(ctx context.Context, name string, c ServerConfig, opts LoginOptions) 
 	if opts.Out == nil {
 		opts.Out = io.Discard
 	}
-	client := opts.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client := oauthClient(opts.HTTPClient)
 	cb, err := listenCallback(ctx, c.OAuth, opts.Settings)
 	if err != nil {
 		return err
@@ -103,9 +101,12 @@ func Login(ctx context.Context, name string, c ServerConfig, opts LoginOptions) 
 	if base == nil {
 		base = http.DefaultTransport
 	}
+	server, err := serverClient(c.URL, base, headers)
+	if err != nil {
+		return err
+	}
 	t := &sdk.StreamableClientTransport{
-		Endpoint:     c.URL,
-		HTTPClient:   &http.Client{Transport: headerTransport{base: base, headers: headers}},
+		Endpoint: c.URL, HTTPClient: server,
 		OAuthHandler: handler, DisableStandaloneSSE: true, MaxRetries: -1,
 	}
 	session, err := sdk.NewClient(implementation, nil).Connect(ctx, t, nil)
