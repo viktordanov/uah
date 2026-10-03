@@ -169,6 +169,9 @@ type runOutput struct {
 	// last is the newest run's result, nil when work sent after it failed
 	// (failure), so its answer is not taken for the later work's.
 	last *core.Result
+	// status is the newest run's status, which failed does not clear: an
+	// interrupt or the disk limit keeps its own exit code.
+	status core.Status
 	// failure is the first error of work that did not run or did not
 	// finish: a message that never reached the agent, a run that did not
 	// start or ended in an error, or stdin that could not be read. It
@@ -186,7 +189,7 @@ func (o *runOutput) handle(e core.Event) {
 	switch v := e.(type) {
 	case core.RunFinished:
 		result := v.Result
-		o.last = &result
+		o.last, o.status = &result, result.Status
 		if o.jsonl == nil && result.Answer != "" {
 			fmt.Fprintln(o.stdout, result.Answer)
 		}
@@ -218,8 +221,10 @@ func (o *runOutput) exit(interrupted bool) error {
 		return o.jsonl.err
 	}
 	switch {
-	case interrupted:
+	case interrupted || o.status == core.StatusInterrupted:
 		return cli.Exit("", exitInterrupt)
+	case o.status == core.StatusDiskLimit:
+		return cli.Exit("", exitDiskLimit)
 	case o.failure != "":
 		if o.progress != nil {
 			return cli.Exit("", exitFailed) // the progress lines said why
@@ -229,14 +234,10 @@ func (o *runOutput) exit(interrupted bool) error {
 	case o.last == nil:
 		return nil
 	}
-	switch o.last.Status {
+	switch o.status {
 	case core.StatusOK:
 		return nil
-	case core.StatusInterrupted:
-		return cli.Exit("", exitInterrupt)
-	case core.StatusDiskLimit:
-		return cli.Exit("", exitDiskLimit)
-	case core.StatusRunning, core.StatusTimeout, core.StatusFailed:
+	case core.StatusRunning, core.StatusTimeout, core.StatusFailed, core.StatusInterrupted, core.StatusDiskLimit:
 	}
 
 	return cli.Exit("", exitFailed)

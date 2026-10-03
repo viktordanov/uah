@@ -92,6 +92,17 @@ func TestRunOutputFailures(t *testing.T) {
 		assert.Empty(t, exit.Error(), "the progress lines already said why")
 	})
 
+	t.Run("the disk limit keeps its exit code", func(t *testing.T) {
+		t.Parallel()
+		o := runOutput{stdout: io.Discard}
+		o.handle(core.RunFinished{Result: core.Result{Status: core.StatusDiskLimit}})
+		o.handle(session.InputFailed{IDs: []string{"2"}, Reason: "the run ended (disk_limit) before the runner accepted them"})
+		var exit cli.ExitCoder
+		require.ErrorAs(t, o.exit(false), &exit)
+		assert.Equal(t, exitDiskLimit, exit.ExitCode())
+		assert.Nil(t, o.last)
+	})
+
 	t.Run("an interrupt still wins", func(t *testing.T) {
 		t.Parallel()
 		o := runOutput{stdout: io.Discard}
