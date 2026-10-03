@@ -55,6 +55,7 @@ func (w *wiring) facts(req core.Request) contextprep.Facts {
 		Workspace: req.Workspace, Shell: w.shell(), GOOS: runtime.GOOS,
 		MaxOutputLength: operation.DefaultMaxOutputLength,
 		Subagent:        strings.HasPrefix(req.SessionID, session.SubagentIDPrefix),
+		InstructionsOff: w.e.cfg.InstructionsOff,
 	}
 	if instructions.HasProject(req.SystemPrompt) {
 		f.InstructionFiles = w.e.cfg.InstructionFiles

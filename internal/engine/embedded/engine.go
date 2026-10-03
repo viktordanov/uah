@@ -73,6 +73,11 @@ type Config struct {
 	// InstructionFiles are the instruction files in the host prompt, in
 	// order, so /context can list them.
 	InstructionFiles []string
+	// InstructionsOff is true when loading instruction files is turned off
+	// (--no-instructions, or instructions.enabled = false), so context
+	// preparation does not take the empty InstructionFiles for a workspace
+	// without any.
+	InstructionsOff bool
 	// ContextModules are where context preparation's modules come from
 	// besides the built-ins.
 	ContextModules contextprep.Settings

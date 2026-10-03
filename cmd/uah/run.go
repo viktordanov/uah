@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
@@ -85,7 +87,7 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 	case !cmd.Bool("quiet"):
 		out.progress = newPrinter(os.Stderr, cmd.Bool("verbose"))
 	}
-	var lines <-chan string
+	var lines <-chan stdinLine
 	if followStdin {
 		lines = readLines(os.Stdin)
 	}
@@ -100,8 +102,9 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 // drive feeds stdin lines into the session and prints its events until the
-// session is idle with no more input, or the context ends.
-func drive(ctx context.Context, s *session.Session, lines <-chan string, busy bool, out *runOutput) error {
+// session is idle with no more input, or the context ends. A line that
+// cannot be read or sent fails the command; the work already sent goes on.
+func drive(ctx context.Context, s *session.Session, lines <-chan stdinLine, busy bool, out *runOutput) error {
 	events := s.Events()
 	closing := false
 	closeSession := func() {
@@ -122,6 +125,10 @@ func drive(ctx context.Context, s *session.Session, lines <-chan string, busy bo
 			interrupted = true
 			closeSession()
 		case line, ok := <-lines:
+			if ok && line.err != nil {
+				out.fail(fmt.Sprintf("failed to read stdin: %v", line.err))
+				ok = false // nothing after it can be read
+			}
 			if !ok {
 				lines = nil
 				if !busy {
@@ -130,12 +137,15 @@ func drive(ctx context.Context, s *session.Session, lines <-chan string, busy bo
 
 				continue
 			}
-			if strings.TrimSpace(line) == "" || closing {
+			if strings.TrimSpace(line.text) == "" || closing {
 				continue
 			}
-			if _, err := s.Submit(line); err == nil {
-				busy = true
+			if _, err := s.Submit(line.text); err != nil {
+				out.fail(fmt.Sprintf("failed to send a message from stdin: %v", err))
+
+				continue
 			}
+			busy = true
 		case e, ok := <-events:
 			if !ok {
 				return out.exit(interrupted)
@@ -153,11 +163,20 @@ func drive(ctx context.Context, s *session.Session, lines <-chan string, busy bo
 
 // runOutput prints events and remembers what decides the exit code.
 type runOutput struct {
-	stdout     io.Writer
-	progress   *printer
-	jsonl      *jsonlWriter
-	last       *core.Result
-	startError bool
+	stdout   io.Writer
+	progress *printer
+	jsonl    *jsonlWriter
+	// last is the newest run's result, nil when work sent after it failed
+	// (failure), so its answer is not taken for the later work's.
+	last *core.Result
+	// status is the newest run's status, which failed does not clear: an
+	// interrupt or the disk limit keeps its own exit code.
+	status core.Status
+	// failure is the first error of work that did not run or did not
+	// finish: a message that never reached the agent, a run that did not
+	// start or ended in an error, or stdin that could not be read. It
+	// fails the command even when a later run succeeds.
+	failure string
 }
 
 func (o *runOutput) handle(e core.Event) {
@@ -170,15 +189,31 @@ func (o *runOutput) handle(e core.Event) {
 	switch v := e.(type) {
 	case core.RunFinished:
 		result := v.Result
-		o.last = &result
+		o.last, o.status = &result, result.Status
 		if o.jsonl == nil && result.Answer != "" {
 			fmt.Fprintln(o.stdout, result.Answer)
 		}
+	case session.InputFailed:
+		o.failed("not delivered: " + v.Reason)
 	case session.Notice:
-		if v.Level == session.LevelError && o.last == nil {
-			o.startError = true
+		if v.Level == session.LevelError {
+			o.failed(v.Message)
 		}
 	}
+}
+
+// failed records an error of the work sent last.
+func (o *runOutput) failed(reason string) {
+	o.last = nil
+	if o.failure == "" {
+		o.failure = reason
+	}
+}
+
+// fail reports an error of the command itself, such as unreadable stdin,
+// as an error notice: on stderr, or as a JSON event with --json.
+func (o *runOutput) fail(reason string) {
+	o.handle(session.Notice{At: time.Now(), Level: session.LevelError, Message: reason})
 }
 
 func (o *runOutput) exit(interrupted bool) error {
@@ -186,35 +221,54 @@ func (o *runOutput) exit(interrupted bool) error {
 		return o.jsonl.err
 	}
 	switch {
-	case interrupted:
+	case interrupted || o.status == core.StatusInterrupted:
 		return cli.Exit("", exitInterrupt)
-	case o.last == nil && o.startError:
-		return cli.Exit("", exitFailed)
+	case o.status == core.StatusDiskLimit:
+		return cli.Exit("", exitDiskLimit)
+	case o.failure != "":
+		if o.progress != nil {
+			return cli.Exit("", exitFailed) // the progress lines said why
+		}
+
+		return cli.Exit(o.failure, exitFailed)
 	case o.last == nil:
 		return nil
 	}
-	switch o.last.Status {
+	switch o.status {
 	case core.StatusOK:
 		return nil
-	case core.StatusInterrupted:
-		return cli.Exit("", exitInterrupt)
-	case core.StatusDiskLimit:
-		return cli.Exit("", exitDiskLimit)
-	case core.StatusRunning, core.StatusTimeout, core.StatusFailed:
+	case core.StatusRunning, core.StatusTimeout, core.StatusFailed, core.StatusInterrupted, core.StatusDiskLimit:
 	}
 
 	return cli.Exit("", exitFailed)
 }
 
-// readLines streams lines from r and closes the channel at EOF.
-func readLines(r io.Reader) <-chan string {
-	lines := make(chan string)
+// stdinLine is a line of stdin without its line ending, or the error that
+// ended reading.
+type stdinLine struct {
+	text string
+	err  error
+}
+
+// readLines streams lines from r, of any length, and closes the channel at
+// EOF. A read error is the last item.
+func readLines(r io.Reader) <-chan stdinLine {
+	lines := make(chan stdinLine)
 	go func() {
 		defer close(lines)
-		sc := bufio.NewScanner(r)
-		sc.Buffer(make([]byte, 64*1024), 1<<20)
-		for sc.Scan() {
-			lines <- sc.Text()
+		br := bufio.NewReader(r)
+		for {
+			text, err := br.ReadString('\n')
+			if text != "" {
+				lines <- stdinLine{text: strings.TrimSuffix(strings.TrimSuffix(text, "\n"), "\r")}
+			}
+			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					lines <- stdinLine{err: err}
+				}
+
+				return
+			}
 		}
 	}()
 

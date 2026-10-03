@@ -124,3 +124,45 @@ func TestExecYolo(t *testing.T) {
 		assert.Contains(t, res.stderr, "takes no --sandbox or --ask")
 	}
 }
+
+// TestExecStdinLongLine pins that a --stdin line over 1 MiB is a message,
+// and that the lines after it are too.
+func TestExecStdinLongLine(t *testing.T) {
+	t.Parallel()
+	llm := fakellm.New(t, fakellm.Reply{Text: "one"}, fakellm.Reply{Text: "two"}, fakellm.Reply{Text: "three"})
+	e, env := modelEnv(t, llm)
+	long := strings.Repeat("y", 2<<20)
+
+	res := uahWith(t, env, long+"\nafter it\n", "exec", "-q", "--stdin", "-C", e.Workspace, "hi")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	var sent []string
+	for _, r := range llm.Requests() {
+		sent = append(sent, r.UserTexts...)
+	}
+	assert.Contains(t, sent, "after it")
+	found := false
+	for _, s := range sent {
+		found = found || s == long
+	}
+	assert.True(t, found, "the long line reached the model whole")
+}
+
+// TestExecNoInstructionsContext pins that with --no-instructions the
+// prepared context says loading instruction files is off, not that the
+// workspace has none.
+func TestExecNoInstructionsContext(t *testing.T) {
+	t.Parallel()
+	llm := fakellm.New(t, fakellm.Reply{Text: "ok"})
+	e, env := modelEnv(t, llm)
+	require.NoError(t, os.WriteFile(filepath.Join(e.Workspace, "AGENTS.md"), []byte("Run make check.\n"), 0o600))
+
+	res := uahWith(t, env, "", "exec", "-q", "--no-instructions", "-C", e.Workspace, "hi")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	req := lastRequest(t, llm)
+	assert.NotContains(t, req.System, "Run make check.")
+	context := strings.Join(req.DeveloperTexts, "\n")
+	assert.Contains(t, context, "Loading instruction files (AGENTS.md) is turned off for this session")
+	assert.NotContains(t, context, "none to search for")
+}

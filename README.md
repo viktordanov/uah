@@ -189,7 +189,7 @@ The terminal's title shows the session's state and its workspace: `uah · api` w
 uah exec "Fix the failing test in pkg/foo"
 uah exec --last "Now update the changelog"       # continue this directory's latest session
 git diff | uah exec -                             # all of stdin is one message
-printf 'first\nsecond\n' | uah exec --stdin       # each line is a message; lines queue while the agent works
+printf 'first\nsecond\n' | uah exec --stdin       # each line, of any length, is a message; lines queue while the agent works
 uah exec --json "..."                             # JSONL events for scripts, with the answer as it arrives (also --stream)
 uah exec --ephemeral -o answer.md "..."           # keep no session; write the final answer to a file
 ```
@@ -198,7 +198,7 @@ uah exec --ephemeral -o answer.md "..."           # keep no session; write the f
 
 The TUI shows the answer as the model writes it, and `--json` adds `text_delta`, `reasoning_delta`, and `stream_reset` events before the final `assistant_message`. A [web search](#web-search) is a `web_search` event when it starts and when it ends, with its query or URL. A compaction is `compaction_started`, then `compacted` with its `stats`: the strategy, the tokens before and after, and the summary call's usage. Each auto-review is `auto_reviewed`: the command, the verdict, its risk and reason, how long the review took, and the reviewer's tokens. A [goal](#goals) adds `goal_updated` (the goal, what changed, and who changed it), `goal_continued` before each run uah starts for it, and `goal_cleared`; the progress lines say each change. Plain `uah exec` prints each answer once, when it is complete. See the [streaming design](docs/design/streaming.md).
 
-It exits 0 when the run succeeds, 1 when it fails, 2 on a usage error, 3 at the disk limit, and 130 on an interrupt. A run has no time limit; a script that needs one wraps it, as in `timeout 30m uah exec …` with GNU coreutils, which exits 124. Nobody can answer an approval headless, so commands that need one are declined with a reason. Nor can anyone answer the agent's questions, so `uah exec` does not offer the question tool, and the agent asks in its answer. `uah exec --help` lists the flags.
+It exits 0 when the run succeeds, 1 when it fails, 2 on a usage error, 3 at the disk limit, and 130 on an interrupt. It also exits 1 when any message did not reach the agent (a run that did not start, or a message a hook blocked), when a run ended in an error, or when stdin could not be read, unless the last run stopped at the disk limit (3) or was interrupted (130); the error is on stderr, or an `error` notice with `--json`, and the work already sent still finishes. After such a failure, `-o` writes an answer only when a later run gives one, never an earlier run's. A run has no time limit; a script that needs one wraps it, as in `timeout 30m uah exec …` with GNU coreutils, which exits 124. Nobody can answer an approval headless, so commands that need one are declined with a reason. Nor can anyone answer the agent's questions, so `uah exec` does not offer the question tool, and the agent asks in its answer. `uah exec --help` lists the flags.
 
 ### Search old sessions
 

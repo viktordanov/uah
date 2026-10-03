@@ -162,10 +162,17 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 	if id == "" {
 		id = uuid.NewString()
 	}
+	// The kept queue is read first: Open reports it before it returns, so
+	// Events must hold all of it, however long.
+	var sc Sidecar
+	var scErr error
+	if opts.SessionsDir != "" {
+		sc, _, scErr = ReadSidecar(opts.SessionsDir, id)
+	}
 	runCtx, stop := context.WithCancel(ctx)
 	s := &Session{
 		id: id, eng: eng, priority: eng.Priority(), yolo: opts.Yolo,
-		in: make(chan any, eventBuffer), out: make(chan core.Event, eventBuffer),
+		in: make(chan any, eventBuffer), out: make(chan core.Event, eventBuffer+queuedRoom(sc)),
 		ctx: runCtx, stop: stop, done: make(chan struct{}),
 		settings: opts.Settings, state: StateIdle, sent: map[string]bool{}, afterTool: map[string]bool{},
 		hooks:       hookState{runner: opts.Hooks, resumed: opts.Resumed, tools: map[string]core.ToolCalled{}},
@@ -189,7 +196,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 		}
 		s.saveSettings(opts.Settings)
 		s.noteOpened(opts.FirstPrompt)
-		s.restoreQueue()
+		s.restoreQueue(sc, scErr)
 	}
 	s.openGoal(opts.Goals, opts.Parent == "" && opts.Source != SourceSubagent)
 	for _, n := range opts.Notices {
