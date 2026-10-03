@@ -18,8 +18,8 @@ require (
 	github.com/sahilm/fuzzy v0.1.3
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli/v3 v3.13.0
-	github.com/viktordanov/uagent v0.7.0
-	github.com/viktordanov/uah-core v0.8.0
+	github.com/viktordanov/uagent v0.8.0
+	github.com/viktordanov/uah-core v0.9.0
 	github.com/yuin/goldmark v1.8.6
 	github.com/zalando/go-keyring v0.2.8
 	go.starlark.net v0.0.0-20260908191801-89a6a09411d5
