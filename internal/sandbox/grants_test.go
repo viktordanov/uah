@@ -124,8 +124,11 @@ func TestGrants_Replaced(t *testing.T) {
 	elsewhere := realPath(t, t.TempDir())
 	for name, replace := range map[string]func(dir string){
 		"removed": func(dir string) { require.NoError(t, os.Remove(dir)) },
+		// The old directory is moved aside, not removed: Linux may give a
+		// new directory the inode just freed, and the grant would then
+		// see the same directory.
 		"another directory": func(dir string) {
-			require.NoError(t, os.Remove(dir))
+			require.NoError(t, os.Rename(dir, dir+".old"))
 			require.NoError(t, os.Mkdir(dir, 0o755))
 		},
 		"a symlink": func(dir string) {
