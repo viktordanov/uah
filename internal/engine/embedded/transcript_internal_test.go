@@ -32,6 +32,25 @@ func TestTranscript_PerSession(t *testing.T) {
 	assert.Same(t, e.transcript("parent"), e.transcript("parent"))
 }
 
+// TestTranscript_RunUnsetsItsReset: a run's end unsets the breaker reset
+// it set, since the reviewer holds the run's history, and leaves a later
+// run's.
+func TestTranscript_RunUnsetsItsReset(t *testing.T) {
+	tr := newTranscript()
+	first, second := 0, 0
+	unsetFirst := tr.setOnUser(func() { first++ })
+	unsetSecond := tr.setOnUser(func() { second++ })
+	unsetFirst()
+	tr.observe(core.UserMessage{Text: "the next turn"})
+	assert.Equal(t, 0, first)
+	assert.Equal(t, 1, second, "the later run's reset stays")
+
+	unsetSecond()
+	tr.observe(core.UserMessage{Text: "another turn"})
+	assert.Equal(t, 1, second)
+	assert.Nil(t, tr.onUser, "no ended run's reviewer is kept")
+}
+
 // TestTranscript_GoalMessages keeps the user's goal records as the user's
 // entries, so the reviewer knows the objective, and leaves out the goal's
 // continuation and steering, which are uah's: a continuation is a user

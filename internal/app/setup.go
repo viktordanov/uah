@@ -186,7 +186,7 @@ func newEngine(r Resolved, stateDir, sandboxDir string, logger *slog.Logger, p p
 		InstructionFiles: instructionFiles(opts.Instructions), InstructionsOff: !r.Instructions,
 		Compaction: r.Compaction, ContextWindow: r.Settings.ContextWindow,
 		BeforeCompact: preCompactHook(opts.Hooks, r.Settings), Subagents: p.subagents, AskUser: p.askUser,
-		Goals: !r.Goals.Disabled,
+		Goals: !r.Goals.Disabled, ReturnMemory: true,
 	}
 
 	return embedded.New(ecfg)
