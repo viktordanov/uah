@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // merge returns base with every value set in over (a layer or a project
@@ -36,6 +37,10 @@ func merge(base, over Config) Config {
 	}
 	if over.Tools.ExperimentalRequestUserInput.Enabled != nil {
 		base.Tools.ExperimentalRequestUserInput.Enabled = over.Tools.ExperimentalRequestUserInput.Enabled
+	}
+	mergeToolPolicy(&base.Tools, over.Tools)
+	if over.Skills.Enabled != nil {
+		base.Skills.Enabled = over.Skills.Enabled
 	}
 	if over.Features.Goals != nil {
 		base.Features.Goals = over.Features.Goals
@@ -73,6 +78,33 @@ func merge(base, over Config) Config {
 	base.Projects = mergeMap(base.Projects, over.Projects, func(_, b Project) Project { return b })
 
 	return base
+}
+
+// mergeToolPolicy narrows the tool policy with a layer's: the allowlists
+// intersect and the denylists add up, so a layer never widens it.
+func mergeToolPolicy(base *Tools, over Tools) {
+	if over.Allow != nil {
+		allow := toolpolicy.Intersect(listOf(base.Allow), nonNil(*over.Allow))
+		base.Allow = &allow
+	}
+	base.Deny = toolpolicy.Union(base.Deny, over.Deny)
+}
+
+// listOf is an allowlist as set: nil when unset, never nil when set.
+func listOf(allow *[]string) []string {
+	if allow == nil {
+		return nil
+	}
+
+	return nonNil(*allow)
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+
+	return s
 }
 
 func set(dst *string, v string) {

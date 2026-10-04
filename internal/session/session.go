@@ -23,6 +23,7 @@ import (
 	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 	"github.com/viktordanov/uah/internal/usershell"
 )
 
@@ -84,6 +85,9 @@ type Options struct {
 	// Goals configures /goal ([goals]). A subagent's session (Parent set)
 	// never has a goal.
 	Goals goal.Settings
+	// Tools is the tool policy the engine applies, recorded in the
+	// sidecar when it restricts anything, so a resume keeps it.
+	Tools toolpolicy.Policy
 }
 
 // Session is safe to use from any goroutine. All state lives on one internal
@@ -200,6 +204,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 			}
 		}
 		s.saveSettings(opts.Settings)
+		s.saveTools(opts.Tools)
 		s.noteOpened(opts.FirstPrompt)
 		s.restoreQueue(sc, scErr)
 	}

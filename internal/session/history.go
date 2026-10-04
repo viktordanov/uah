@@ -16,6 +16,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/images"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // Info summarizes one session from its run records.
@@ -46,6 +47,9 @@ type Info struct {
 	// Saved reports whether the sidecar recorded the settings, which then
 	// replaced the provider, model, and effort of the newest run.
 	Saved bool
+	// Tools is the tool policy the session last ran under, from its
+	// sidecar (nil: none).
+	Tools *toolpolicy.Policy
 	// LastSequence is the sidecar's last_sequence: the Sequence of the
 	// session file's last item when the last turn ended (0: unknown).
 	LastSequence uint64

@@ -4,7 +4,7 @@ uah reads its configuration from TOML files and combines it with flags, the envi
 
 1. [Files](#files)
 2. [Precedence](#precedence)
-3. [Keys](#keys): [model](#model), [sandbox and approvals](#sandbox-and-approvals), [review](#review), [compaction](#compaction), [instructions and skills](#instructions-and-skills), [hooks](#hooks), [MCP servers](#mcp-servers), [subagents](#subagents), [goals](#goals), [TUI](#tui), [projects](#projects)
+3. [Keys](#keys): [model](#model), [sandbox and approvals](#sandbox-and-approvals), [review](#review), [compaction](#compaction), [instructions and skills](#instructions-and-skills), [tool policy](#tool-policy), [hooks](#hooks), [MCP servers](#mcp-servers), [subagents](#subagents), [goals](#goals), [TUI](#tui), [projects](#projects)
 4. [Environment variables](#environment-variables)
 5. [uah config](#uah-config)
 6. [Examples](#examples)
@@ -63,9 +63,11 @@ The exceptions, as the code applies them:
 - `--no-instructions` turns instructions off whatever the files say; no flag turns them on over `enabled = false`.
 - `--no-context-preparation` turns context preparation off; `UAH_CONTEXT_PREPARATION=on` turns it on over `context_preparation = false`.
 - `project_doc_max_bytes`, from any file, wins over `[instructions] max_bytes` from any file.
+- The [tool policy](#tool-policy) (`[tools] allow` and `deny`, `--tools`, `--deny-tools`) has no winner: every source narrows it. The allowlists of every file, the resumed session's, and `--tools` intersect, and the denylists add up, so no source can allow a tool that another leaves out.
+- `--no-skills` turns skills off whatever the files say; no flag turns them on over `[skills] enabled = false`.
 - Keys without a flag come only from the files and the defaults.
 
-Each layer, then the project file, merges into the files before it key by key, in one of four ways. The key tables below name the way for each key, in terms of a project file over the user file; a layer merges the same way.
+Each layer, then the project file, merges into the files before it key by key, in one of five ways. The key tables below name the way for each key, in terms of a project file over the user file; a layer merges the same way.
 
 | Merge | Rule |
 | --- | --- |
@@ -73,6 +75,7 @@ Each layer, then the project file, merges into the files before it key by key, i
 | append | The project list follows the user list. For `[shell_environment_policy] set`, the project's variables are added and replace the user's of the same name |
 | OR | True when either file says true; the project file cannot turn it off |
 | replace by name | A project `[mcp_servers.<name>]` replaces the user's server of the same name whole; other servers stay |
+| narrow | The project list can only take tools away: allowlists intersect, so a tool stays allowed only when both files allow it, and denylists add up. A file that does not set the key changes nothing |
 
 ## Keys
 
@@ -200,7 +203,52 @@ The permission modes:
 | `enabled` | bool | true | `--no-instructions` turns it off | override, can unset | Load AGENTS.md files into the system prompt |
 | `max_bytes` | integer | 32768 | none | override | The size cap, when `project_doc_max_bytes` is unset |
 
+`[skills]`:
+
+| Key | Type | Default | Flag | Merge | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| `enabled` | bool | true | `--no-skills` turns it off | override, can unset | Discover skills and offer them through `SkillUse`. Off, uah reads no skill folder, writes no system skills, and the prompt lists no skills. AGENTS.md files and `model_instructions_file` still apply. uah's key in Codex's `[skills]` table, whose other keys uah does not read |
+
 Discovery order and the skill folders are in the README's [Instructions and skills](../README.md#instructions-and-skills).
+
+### Tool policy
+
+The tool policy limits the tools the model may use, for example for a headless, read-only query that may use only one MCP read tool. It is off by default: without `allow` and `deny` in any file and without the flags, the model gets every tool, as before.
+
+`[tools]`:
+
+| Key | Type | Default | Flag | Merge | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| `allow` | list of strings | unset: every tool | `--tools a,b` | narrow | The only tools the model may use. `[]` (or `--tools ""`) allows no tools at all |
+| `deny` | list of strings | `[]` | `--deny-tools a,b` | narrow (append) | Tools the model may never use, even when `allow` names them |
+
+A name is one of these:
+
+1. A built-in tool: `Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `web_search`, `request_user_input`, the agent tools `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent`, the goal tools `get_goal`, `create_goal`, and `update_goal`, and the MCP resource tools `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource`.
+2. An MCP tool by the name the model sees, `mcp__<server>__<tool>`, as `/mcp` lists it.
+3. Every tool of one MCP server: `mcp__<server>__*`, or `mcp__<server>`. The pattern matches the tools of that server only, never of another server whose name starts the same way.
+
+Another name is an error, so a typo cannot deny nothing. Other tools' names are errors too, with a hint: `Edit` and `Write` are `apply_patch` in uah, and `Agent` is `spawn_agent`.
+
+Precedence. Every source can only narrow the policy; none widens it:
+
+1. The `allow` lists of the user file, each layer (`config.d/*.toml`, then `UAH_EXTRA_CONFIG`), and the trusted project file intersect. A file without `allow` changes nothing. The `deny` lists of all files add up.
+2. A resumed session keeps the policy it ran under: its sidecar records the policy, and resuming narrows the current policy with it. Resuming without the flags does not widen a session's tools.
+3. `--tools` intersects with the result, and `--deny-tools` adds to the denylist.
+4. A subagent's role (`tools` in its definition) narrows the policy for that subagent. A subagent, a fork, and `/review`'s reviewer run on the same engine, so they get the policy too. With `spawn_agent` not allowed, the model cannot start subagents.
+5. A PreToolUse hook cannot widen it. The policy refuses a call before any hook runs, so a hook's `"allow"` only skips the approval of a call the policy allows, and `updatedInput` changes the arguments, never the tool.
+
+What the policy does:
+
+- The model's tool definitions hold only the allowed tools, hosted `web_search` included. A call to any other tool, forced or made up, is refused with "the tool policy does not allow it" before a hook, an approval, or a job sees it.
+- The MCP resource tools reach only a server the policy allows as a whole (`mcp__<server>__*`), and must name it: `list_mcp_resources` without a server is refused.
+- The auto-reviewer runs no commands unless the policy allows `Bash`.
+- Without `request_user_input`, the default prompt does not mention the question tool.
+- A session under a policy fails closed when a hook fails: a PreToolUse or PermissionRequest hook that exits with a code other than 0 or 2, crashes, times out, prints invalid JSON, or answers a `permissionDecision` uah does not know blocks the call ([hook failures](#hooks)).
+
+The policy does not cover what the user does: commands typed in the TUI's shell mode (`!`), MCP resources attached with `@`, and MCP prompts used as slash commands. MCP servers still start, all of them, so a server whose tools are all denied still runs.
+
+`uah config` shows `tools.allow` and `tools.deny` with every source that narrowed them.
 
 #### The system prompt from a file
 
@@ -262,7 +310,9 @@ Each `[[hooks.<Event>]]` entry runs a command at an event. The events are `Sessi
 | `command` | string | required | The command, run with `/bin/sh -c` in the workspace |
 | `timeout` | duration | `60s` | The limit for one run of the hook |
 
-Merge: append, per event, the user file's hooks first, then each layer's, then the project file's. User and layer hooks run as written. Project hooks run only after `uah hooks trust` records their exact commands, for that workspace. A PreToolUse hook's `permissionDecision` `"allow"` approves the call without asking, in every mode and headless; a `forbid` rule still refuses it. `"deny"` and `"ask"` refuse the call.
+Merge: append, per event, the user file's hooks first, then each layer's, then the project file's. User and layer hooks run as written. Project hooks run only after `uah hooks trust` records their exact commands, for that workspace. A PreToolUse hook's `permissionDecision` `"allow"` approves the call without asking, in every mode and headless; a `forbid` rule still refuses it, and so does the [tool policy](#tool-policy). `"deny"` and `"ask"` refuse the call.
+
+A hook that fails (it exits with a code other than 0 or 2, crashes, times out, or prints invalid JSON) is reported and ignored, as in Claude Code and Codex: the call goes on. A session under a [tool policy](#tool-policy) fails closed instead: a failed PreToolUse or PermissionRequest hook blocks its call, and so does a `permissionDecision` uah does not know. The other events never block on a failure. The [hooks reference](../internal/hooks/README.md#output-and-decisions) has the details.
 
 ### MCP servers
 

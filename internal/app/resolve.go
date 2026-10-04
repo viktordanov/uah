@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/viktordanov/uah/internal/rules"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // Defaults when neither a flag, the resumed session, nor the configuration
@@ -85,6 +87,13 @@ type Inputs struct {
 	Interactive bool
 	// RequestUserInput is UAH_REQUEST_USER_INPUT, on or off ("": unset).
 	RequestUserInput string
+	// Tools is --tools, the only tools the model may use (nil: unset; an
+	// empty list allows none), and DenyTools is --deny-tools. They narrow
+	// [tools] allow and deny, never widen them.
+	Tools     []string
+	DenyTools []string
+	// NoSkills is --no-skills: no skill is discovered or offered.
+	NoSkills bool
 }
 
 // Resolved is what Resolve decides.
@@ -137,6 +146,13 @@ type Resolved struct {
 	DefaultModel bool
 	// Goals are the [goals] settings, for /goal and the goal tools.
 	Goals goal.Settings
+	// Tools is the tool policy: [tools] allow and deny of every
+	// configuration file, the resumed session's, and --tools and
+	// --deny-tools, each narrowing the others (pickToolPolicy).
+	Tools toolpolicy.Policy
+	// NoSkills turns skills off: none is discovered or offered
+	// (--no-skills, or [skills] enabled = false).
+	NoSkills bool
 }
 
 // UsageError is an error in what the user asked for, such as an invalid
@@ -226,28 +242,63 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 	if err != nil {
 		return Resolved{}, err
 	}
-	questions, goals, err := pickTools(in, cfg)
+	tools, err := pickTools(in, resumed, cfg)
 	if err != nil {
 		return Resolved{}, err
 	}
 
 	return Resolved{
-		Settings: s, MaxDisk: maxDisk, Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: questions,
+		Settings: s, MaxDisk: maxDisk, Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
 		Sandbox: policy, Env: envPolicy, Compaction: compact, CompactPromptFile: promptFile, Approval: approvalPolicy, Rules: configured,
 		ApprovalsReviewer: reviewer, Review: reviewCfg, Agents: agentSettings, WebSearch: webSearch, Verbosity: verbosity, DefaultModel: defaulted,
-		Goals: goals,
+		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills,
 	}, nil
 }
 
-// pickTools is whether the question tool is on, and the goal settings.
-func pickTools(in Inputs, cfg config.Config) (bool, goal.Settings, error) {
+// pickToolPolicy narrows [tools] allow and deny with the resumed session's
+// policy, then with --tools and --deny-tools: every source can only take
+// tools away.
+func pickToolPolicy(in Inputs, resumed session.Info, cfg config.Config) (toolpolicy.Policy, error) {
+	p := cfg.ToolPolicy()
+	if resumed.Tools != nil {
+		p = p.Narrow(*resumed.Tools)
+	}
+	if err := toolpolicy.Validate(append(slices.Clone(in.Tools), in.DenyTools...)); err != nil {
+		return toolpolicy.Policy{}, usage(fmt.Errorf("--tools or --deny-tools: %w", err))
+	}
+
+	return p.Narrow(toolpolicy.Policy{Allow: in.Tools, Deny: in.DenyTools}), nil
+}
+
+// toolSettings are what pickTools decides.
+type toolSettings struct {
+	questions bool
+	goals     goal.Settings
+	policy    toolpolicy.Policy
+	noSkills  bool
+}
+
+// pickTools is whether the question tool is on, the goal settings, the
+// tool policy, and whether skills are off. The default prompt names
+// request_user_input only when the policy lets the agent have it.
+func pickTools(in Inputs, resumed session.Info, cfg config.Config) (toolSettings, error) {
 	questions, err := pickOnOff(in.RequestUserInput, EnvRequestUserInput, cfg.RequestUserInputEnabled())
 	if err != nil {
-		return false, goal.Settings{}, err
+		return toolSettings{}, err
 	}
 	goals, err := pickGoals(cfg)
+	if err != nil {
+		return toolSettings{}, err
+	}
+	policy, err := pickToolPolicy(in, resumed, cfg)
+	if err != nil {
+		return toolSettings{}, err
+	}
 
-	return questions, goals, err
+	return toolSettings{
+		questions: questions && policy.Allows(engine.QuestionToolName), goals: goals, policy: policy,
+		noSkills: in.NoSkills || !cfg.SkillsEnabled(),
+	}, nil
 }
 
 // pickGoals is [features] goals and the [goals] table, with uah's default

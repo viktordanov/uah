@@ -213,7 +213,37 @@ func sessionSettings(in Inputs, o Origins, r Resolved, cfg config.Config) []Sett
 		one("approval_policy", string(r.Approval), pick(input(in.Ask, EnvAsk, env), overrides(l, func(c config.Config) any { return c.ApprovalPolicy }), FromDefault)),
 		one("model_context_window", compaction.ContextWindow(s.Model, s.ContextWindow, models.BundledWindow), pick(overrides(l, func(c config.Config) any { return c.ModelContextWindow }), FromDefault)),
 		{Key: "instructions.enabled", Value: r.Instructions, Sources: orSources(given(in.NoInstructions), []Source{overrides(l, func(c config.Config) any { return c.Instructions.Enabled })})},
+		{Key: "skills.enabled", Value: !r.NoSkills, Sources: orSources(given(in.NoSkills), []Source{overrides(l, func(c config.Config) any { return c.Skills.Enabled })})},
+		{Key: "tools.allow", Value: allowValue(r.Tools.Allow), Sources: policySources(l, resumed, in.Tools != nil, func(c config.Config) any { return c.Tools.Allow })},
+		{Key: "tools.deny", Value: list(r.Tools.Deny), Sources: policySources(l, resumed, len(in.DenyTools) > 0, func(c config.Config) any { return c.Tools.Deny })},
 	}
+}
+
+// allowValue is the allowlist, or "every tool" when there is none.
+func allowValue(allow []string) any {
+	if allow == nil {
+		return "every tool"
+	}
+
+	return list(allow)
+}
+
+// policySources are the sources a tool policy list is narrowed by: every
+// file that sets it, the resumed session's policy, and the flag, else the
+// default.
+func policySources(l config.Layers, resumed session.Info, flag bool, get func(config.Config) any) []Source {
+	out := fileSources(l, get)
+	if resumed.Tools != nil && resumed.Tools.Restricted() {
+		out = append(out, FromSession)
+	}
+	if flag {
+		out = append(out, FromFlag)
+	}
+	if len(out) == 0 {
+		return []Source{FromDefault}
+	}
+
+	return out
 }
 
 // modelVerbosity is the text.verbosity the session's model gets: the

@@ -200,6 +200,20 @@ The TUI shows the answer as the model writes it, and `--json` adds `text_delta`,
 
 It exits 0 when the run succeeds, 1 when it fails, 2 on a usage error, 3 at the disk limit, and 130 on an interrupt. It also exits 1 when any message did not reach the agent (a run that did not start, or a message a hook blocked), when a run ended in an error, or when stdin could not be read, unless the last run stopped at the disk limit (3) or was interrupted (130); the error is on stderr, or an `error` notice with `--json`, and the work already sent still finishes. After such a failure, `-o` writes an answer only when a later run gives one, never an earlier run's. A run has no time limit; a script that needs one wraps it, as in `timeout 30m uah exec …` with GNU coreutils, which exits 124. Nobody can answer an approval headless, so commands that need one are declined with a reason. Nor can anyone answer the agent's questions, so `uah exec` does not offer the question tool, and the agent asks in its answer. `uah exec --help` lists the flags.
 
+`--tools` limits the tools the model may use, and `--deny-tools` takes tools away; both narrow `[tools] allow` and `deny` and can never widen them ([tool policy](docs/configuration.md#tool-policy)). The model is offered only those tools, and a call to any other is refused before a hook, an approval, or a job sees it. Subagents get the same limit. `--tools ""` allows no tools at all. A quick, read-only query that may use one MCP read tool, with the caller's identity sent to the MCP server from the environment:
+
+```sh
+# ~/.uah/config.d/lookup.toml (or a file UAH_EXTRA_CONFIG names):
+#   [mcp_servers.crm]
+#   url = "https://crm.example.com/mcp"
+#   bearer_token_env_var = "CRM_TOKEN"                   # the caller's token
+#   env_http_headers = { "X-Caller" = "CRM_CALLER" }      # and identity
+CRM_TOKEN=… CRM_CALLER=alice uah exec --ephemeral --json --sandbox read-only \
+  --tools mcp__crm__lookup --no-skills "Who owns account 42?"
+```
+
+Under a tool policy, a PreToolUse or PermissionRequest hook that fails blocks its call instead of being ignored ([hooks](internal/hooks/README.md#output-and-decisions)). `--no-skills` (or `[skills] enabled = false`) leaves skills out of the prompt and the tools; AGENTS.md files still apply unless `--no-instructions` is given too.
+
 ### Search old sessions
 
 ```sh
@@ -426,7 +440,7 @@ Type `/config` in the TUI. It lists the basic settings (compaction, the model an
 
 ---
 
-<!-- memoria:section id="configuration" files="internal/config/config.go internal/config/layers.go internal/config/merge.go cmd/uah/flags.go cmd/uah/config.go internal/app/resolve.go internal/app/setup.go internal/app/explain.go internal/app/explain_files.go internal/app/compaction.go internal/app/configedit.go internal/app/websearch.go internal/config/edit.go internal/config/legacy.go internal/home/home.go internal/home/migrate/migrate.go .uah/config.toml" -->
+<!-- memoria:section id="configuration" files="internal/config/config.go internal/config/layers.go internal/config/merge.go cmd/uah/flags.go cmd/uah/config.go internal/app/resolve.go internal/app/setup.go internal/app/explain.go internal/app/explain_files.go internal/app/compaction.go internal/app/configedit.go internal/app/websearch.go internal/config/edit.go internal/config/legacy.go internal/home/home.go internal/home/migrate/migrate.go .uah/config.toml internal/toolpolicy/toolpolicy.go" -->
 ## Configuration
 
 Everything uah reads and writes lives in `~/.uah`, as Codex keeps `~/.codex`: the configuration, `AGENTS.md`, agents, prompts, skills, hook trust, MCP credentials, sessions, run records, the session index, pasted images, the model cache, and logs. `UAH_HOME` names another home; `--config` (`UAH_CONFIG`) and `--state-dir` (`UAH_STATE_DIR`) move just the user file or the state.
@@ -440,7 +454,7 @@ The TOML files, each merged over the ones before it:
 | The file `UAH_EXTRA_CONFIG` names | Every workspace | When the variable is set, as for one session's MCP servers and permissions |
 | `<workspace>/.uah/config.toml` | One workspace | The user file or a layer marks the workspace `trusted` under `[projects]`; its hooks also need `uah hooks trust` |
 
-A flag wins over the environment, which wins over a resumed session's settings (its provider, model, effort, fast mode, adaptive effort, and permission mode), then the project file, `UAH_EXTRA_CONFIG`, `config.d`, the user file, and the defaults. Unknown keys are errors, so a typo fails loudly.
+A flag wins over the environment, which wins over a resumed session's settings (its provider, model, effort, fast mode, adaptive effort, and permission mode), then the project file, `UAH_EXTRA_CONFIG`, `config.d`, the user file, and the defaults. The tool policy is the exception: every file, the resumed session, and the flags can only narrow it ([tool policy](docs/configuration.md#tool-policy)). Unknown keys are errors, so a typo fails loudly.
 
 Earlier versions used `~/.config/uagent`, `~/.local/state/unreal-agent`, and a project's `.uagent`. On its first start without `~/.uah`, uah copies the two folders into `~/.uah` and says so; the old folders are only read. It never moves a project's `.uagent`: uah and `uah doctor` show the `git mv .uagent .uah` that does. `UAGENT_CONFIG` and `UAGENT_STATE_DIR` are no longer read, and uah warns when either is set.
 
@@ -452,7 +466,8 @@ Earlier versions used `~/.config/uagent`, `~/.local/state/unreal-agent`, and a p
 | Sandbox | `permission_mode`, `sandbox_mode`, `user_shell_sandbox`; `[sandbox_workspace_write]` `network_access`, `writable_roots`; `[shell_environment_policy]` `inherit`, `ignore_default_excludes`, `exclude`, `include_only`, `set` |
 | Approvals | `approval_policy`, `approvals_reviewer`; `[approvals]` `allow`, `forbid`; `[review]` `model`, `effort`, `timeout`, `policy_file` |
 | Compaction | `auto_compact_percent`, `model_auto_compact_token_limit`, `model_context_window`, `compact_model`, `compact_effort`, `compact_prompt`, `experimental_compact_prompt_file`, `compact_user_message_max_tokens` |
-| Instructions and skills | `model_instructions_file`, `project_doc_fallback_filenames`, `project_root_markers`, `project_doc_max_bytes`; `[instructions]` `enabled`, `max_bytes` |
+| Instructions and skills | `model_instructions_file`, `project_doc_fallback_filenames`, `project_root_markers`, `project_doc_max_bytes`; `[instructions]` `enabled`, `max_bytes`; `[skills]` `enabled` |
+| Tool policy | `[tools]` `allow`, `deny` |
 | Hooks | `[[hooks.<Event>]]` `matcher`, `command`, `timeout` |
 | MCP servers | `[mcp_servers.<name>]` `command`, `args`, `env`, `env_vars`, `cwd`, `url`, `bearer_token_env_var`, `http_headers`, `env_http_headers`, `enabled`, `required`, `startup_timeout_sec`, `tool_timeout_sec`, `enabled_tools`, `disabled_tools`, `supports_parallel_tool_calls`, `default_tools_approval_mode`, `tools.<tool>.approval_mode`, `auth`, `scopes`, `oauth_resource`, `[oauth]`; `mcp_oauth_credentials_store`, `mcp_oauth_callback_port`, `mcp_oauth_callback_url` |
 | Subagents | `[agents]` `enabled`, `max_concurrent_threads_per_session`, `max_depth`, `default_subagent_model`, `default_subagent_reasoning_effort` |
@@ -534,7 +549,7 @@ Read more: [patches](internal/patch/README.md), and how patches are approved in 
 uah finds instruction files the way Codex does: the user's AGENTS.md, then one file per directory from the project root down to the workspace (AGENTS.override.md, else AGENTS.md, else a configured fallback such as CLAUDE.md). A line that is only `@path` in a file is replaced by that file's text, as Claude Code's imports are. They are joined, capped at 32 KiB, and placed after the base instructions (uah's default prompt, adapted from Codex's, or the file that Codex's `model_instructions_file` key names), and Codex's environment context (the workspace, shell, date, and time zone) follows them. Skills come from Codex's skill folders.
 <!-- /memoria:import -->
 
-`--no-instructions` turns this off. uah also ships skills of its own (`internal/systemskills`), embedded in the binary and listed after every other skill folder: `uah-customization` explains context preparation and the customization points, and a test holds its description of the module format to the code. Read more: [instructions](internal/instructions/README.md#skills).
+`--no-instructions` turns this off, and `--no-skills` (or `[skills] enabled = false`) turns the skills off. uah also ships skills of its own (`internal/systemskills`), embedded in the binary and listed after every other skill folder: `uah-customization` explains context preparation and the customization points, and a test holds its description of the module format to the code. Read more: [instructions](internal/instructions/README.md#skills).
 <!-- /memoria:section -->
 
 <!-- memoria:section id="contextprep" files="internal/app/resolve.go internal/config/config.go internal/app/context.go cmd/uah/context.go" -->
@@ -571,7 +586,7 @@ Read more: [approvals](internal/approval/README.md), [rules](internal/rules/READ
 ### Hooks
 
 <!-- memoria:import src="internal/hooks/README.md#summary" -->
-Hooks run a command at a session event with Claude Code's contract: the event arrives as JSON on stdin, exit 0 continues, exit 2 blocks with stderr as the reason, and any other exit is reported and ignored. Project hooks run only after `uah hooks trust` records their exact commands and the content of any local script they run.
+Hooks run a command at a session event with Claude Code's contract: the event arrives as JSON on stdin, exit 0 continues, exit 2 blocks with stderr as the reason, and any other exit is reported and ignored. In a session under a tool policy, a PreToolUse or PermissionRequest hook that fails blocks its call instead. Project hooks run only after `uah hooks trust` records their exact commands and the content of any local script they run.
 <!-- /memoria:import -->
 
 Read more: [hooks](internal/hooks/README.md), with every event and its payload.

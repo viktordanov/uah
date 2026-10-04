@@ -110,12 +110,12 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	} else {
 		catalog.Catalog(ctx, catalog.Provider(), models.Offline) // the cache only, no network
 	}
-	opts.Settings, opts.Yolo, opts.Goals = r.Settings, in.Yolo, r.Goals
+	opts.Settings, opts.Yolo, opts.Goals, opts.Tools = r.Settings, in.Yolo, r.Goals, r.Tools
 	opts.Notices = append(opts.Notices, modelNotices(catalog.Cached(r.Settings.Provider), r)...)
 	// The session's own files go to runDir; the model cache stays shared.
 	runDir := cmp.Or(in.RunStateDir, stateDir)
 	opts.SessionsDir = filepath.Join(runDir, "sessions")
-	if opts.Hooks, err = loadHooks(cfg, in.Workspace); err != nil {
+	if opts.Hooks, err = loadHooks(cfg, in.Workspace, r.Tools.Restricted()); err != nil {
 		return Result{}, err
 	}
 	r.Sandbox = absPolicy(r.Sandbox, in.Workspace)
@@ -143,8 +143,9 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 }
 
 // loadHooks builds the hook runner for the configured hooks (nil when there
-// are none).
-func loadHooks(cfg config.Config, workspace string) (*hooks.Runner, error) {
+// are none). With failClosed, as in a session under a tool policy, a
+// PreToolUse or PermissionRequest hook that fails blocks its call.
+func loadHooks(cfg config.Config, workspace string, failClosed bool) (*hooks.Runner, error) {
 	list, err := cfg.HookList()
 	if err != nil {
 		return nil, usage(err)
@@ -159,6 +160,9 @@ func loadHooks(cfg config.Config, workspace string) (*hooks.Runner, error) {
 	runner, err := hooks.New(list, trust, workspace)
 	if err != nil {
 		return nil, usage(err)
+	}
+	if failClosed {
+		runner.FailClosed()
 	}
 
 	return runner, nil
@@ -186,7 +190,7 @@ func newEngine(r Resolved, stateDir, sandboxDir string, logger *slog.Logger, p p
 		InstructionFiles: instructionFiles(opts.Instructions), InstructionsOff: !r.Instructions,
 		Compaction: r.Compaction, ContextWindow: r.Settings.ContextWindow,
 		BeforeCompact: preCompactHook(opts.Hooks, r.Settings), Subagents: p.subagents, AskUser: p.askUser,
-		Goals: !r.Goals.Disabled,
+		Goals: !r.Goals.Disabled, Tools: r.Tools, NoSkills: r.NoSkills,
 	}
 
 	return embedded.New(ecfg)
