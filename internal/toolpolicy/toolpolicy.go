@@ -78,13 +78,14 @@ func (p Policy) AllowsTool(name, server string) bool {
 // AllowsMCP reports whether the policy allows an MCP tool, named name and
 // tool by its server. A server pattern matches by the server. An exact name
 // allows the tool only when the name is unambiguous: the tool's own,
-// unhashed mcp__<server>__<tool>, with no "__" in the server's part. A
-// hashed or ambiguous name can pass to another tool when the tool lists
-// change (mcp's namer hands it out again), so such a tool needs its
-// server's pattern.
+// unhashed mcp__<server>__<tool>, with no "__" in the server's part, and
+// a tool name that needed no sanitizing. Any other name can pass to
+// another tool when the tool lists change (mcp's namer hands it out again:
+// read-file's name to read.file), so such a tool needs its server's
+// pattern.
 func (p Policy) AllowsMCP(name, server, tool string) bool {
 	s := mcp.Sanitize(server)
-	exact := name == mcp.Prefix+s+"__"+mcp.Sanitize(tool) && !strings.Contains(s, "__")
+	exact := name == mcp.Prefix+s+"__"+tool && mcp.Sanitize(tool) == tool && !strings.Contains(s, "__")
 
 	return p.allows(name, server, exact)
 }

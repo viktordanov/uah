@@ -137,6 +137,10 @@ func TestPolicy_AllowsMCP(t *testing.T) {
 	assert.True(t, exact.AllowsMCP("mcp__a__b__c", "a", "b__c"), "the server is the name's first part, so no other server's tool gets it")
 	assert.False(t, exact.AllowsMCP("mcp__docs__long_0123456789ab", "docs", "long"), "a hashed name")
 	assert.True(t, exact.Allows("mcp__a__b__c"), "by name alone it is in the list")
+	sanitized := toolpolicy.Policy{Allow: []string{"mcp__docs__read_file"}}
+	assert.True(t, sanitized.AllowsMCP("mcp__docs__read_file", "docs", "read_file"))
+	assert.False(t, sanitized.AllowsMCP("mcp__docs__read_file", "docs", "read-file"), "read.file could hold the name next")
+	assert.False(t, sanitized.AllowsMCP("mcp__docs__read_file", "docs", "read.file"))
 
 	pattern := toolpolicy.Policy{Allow: []string{"mcp__a__b__*"}}
 	assert.True(t, pattern.AllowsMCP("mcp__a__b__c", "a__b", "c"))
