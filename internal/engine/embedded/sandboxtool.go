@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/viktordanov/uah-core/harness/llm"
 	"github.com/viktordanov/uah-core/harness/operation"
@@ -148,23 +149,38 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 }
 
 // TranslateResult adds a hint when the sandbox likely blocked the command.
+// The hint goes by the shell the command ran in, not by the sandboxes of
+// this run: a resumed session renders its history again, and a saved
+// compaction covers it as it was (compaction.Record), so a result must not
+// change when a new policy or version gives the sandbox a new script.
 func (b sandboxedBash) TranslateResult(callID string, status tool.CallStatus, ops []operation.Operation) (llm.ToolResult, error) {
 	result, err := b.Translator.TranslateResult(callID, status, ops)
-	if err != nil || len(ops) != 1 || !b.available() {
+	if err != nil || len(ops) != 1 {
 		return result, err // the coordinator wraps tool errors
 	}
 	state, derr := operation.DecodeShellState(ops[0])
 	if derr != nil || state.Result == nil || state.Result.ExitCode == 0 || !sandbox.Denied(state.Result.ExitCode, state.Result.Out+"\n"+state.Result.Err) {
 		return result, nil
 	}
-	for mode, box := range b.boxes {
-		if box.shell != state.Input.Shell {
-			continue
-		}
+	if mode, ok := b.sandboxOf(state.Input.Shell); ok {
 		result.Output = append(result.Output, llm.ToolResultOutput{Kind: llm.ToolResultText, Value: fmt.Sprintf(
 			"\nuah: the %s sandbox likely blocked this. If the command needs more access, run it again with %s %q and a %s.",
 			mode, argSandboxPermissions, permEscalated, argJustification)})
 	}
 
 	return result, nil
+}
+
+// sandboxOf is the sandbox mode a command's shell ran it in: a sandboxing
+// shell of this run, or one uah wrote for an earlier policy (by its
+// header); ok is false outside a sandbox.
+func (b sandboxedBash) sandboxOf(shell string) (sandbox.Mode, bool) {
+	for mode, box := range b.boxes {
+		if box.shell == shell {
+			return mode, true
+		}
+	}
+	mode, ok := sandbox.ScriptMode(shell)
+
+	return mode, ok && slices.Contains(sandboxedModes, mode)
 }

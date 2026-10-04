@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -23,6 +24,10 @@ func (c *compactor) remoteCompact(ctx context.Context, req llm.Request, opts llm
 	}
 	call := &remoteCall{}
 	callCtx, input := c.applyPinned(context.WithValue(ctx, remoteCallKey{}, call), req.Input[:1+covered])
+	window := compaction.ContextWindow(c.next.currentModel(), c.window, c.windows)
+	if compaction.EstimateTokens(input) > window {
+		return compaction.Record{}, errRemoteTooLarge
+	}
 	resp, err := c.next.Respond(c.withItem(callCtx), llm.Request{Model: req.Model, Input: input, Tools: req.Tools}, opts)
 	if err != nil {
 		return compaction.Record{}, err // the coordinator's model errors read as they are
@@ -35,7 +40,6 @@ func (c *compactor) remoteCompact(ctx context.Context, req llm.Request, opts llm
 	if err != nil {
 		return compaction.Record{}, err
 	}
-	window := compaction.ContextWindow(c.next.currentModel(), c.window, c.windows)
 	rec.Remote, rec.Keep = item, c.settings.RemoteKeepFor(window)
 	c.carry(&rec, req.Input)
 	rec.Ledger = compaction.Ledger(req.Input[1+rec.Floor:1+rec.Covered], "")
@@ -51,6 +55,11 @@ func (c *compactor) remoteCompact(ctx context.Context, req llm.Request, opts llm
 
 	return rec, nil
 }
+
+// errRemoteTooLarge sends a history over the window to the local summary,
+// which drops its oldest items to fit, as Codex's local compaction does; the
+// provider would refuse it whole.
+var errRemoteTooLarge = errors.New("the history is larger than the model's window")
 
 // usesRemote reports whether a compaction goes to the provider: when the
 // provider can and remote_compaction is on, except a /compact with a focus,

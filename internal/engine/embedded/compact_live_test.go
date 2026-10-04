@@ -189,3 +189,60 @@ func TestEmbedded_ResumeSurvivesABadCompactionLog(t *testing.T) {
 	require.Len(t, done, 1, "the mismatch is reported once")
 	assert.Contains(t, done[0].Err, "no longer matches")
 }
+
+// TestEmbedded_AStaleCompactionCompactsAgain: when the saved compaction no
+// longer matches, the full history goes out, which the last response, made
+// with the compaction, did not measure. Estimated, it is over the automatic
+// limit, so the run compacts it again instead of overflowing the window.
+func TestEmbedded_AStaleCompactionCompactsAgain(t *testing.T) {
+	e := newEnv(t,
+		fakellm.Reply{Commands: []string{"head -c 40000 /dev/zero | tr '\\0' x"}, InputTokens: 100},
+		fakellm.Reply{Text: "answer one", InputTokens: 100},
+		fakellm.Reply{Text: "SUMMARY"},
+		fakellm.Reply{Text: "answer two"},
+	)
+	s, ev := e.open(t, e.embedded(), "")
+	ask(t, s, ev, "first")
+	id := s.ID()
+	require.NoError(t, s.Close())
+	stale := compaction.Record{Covered: 1, Hash: "other", Summary: "stale"}
+	require.NoError(t, compaction.OpenLog(filepath.Join(e.StateDir, "sessions"), id).Append(stale))
+
+	s2, ev2 := e.open(t, e.compactingIn(20_000, 50), id)
+	ask(t, s2, ev2, "second")
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 4)
+	assert.Equal(t, []string{"first", compaction.Prompt}, reqs[2].UserTexts, "the full history compacts again")
+	assert.Equal(t, []string{"first", summaryText("SUMMARY"), "second"}, reqs[3].UserTexts)
+	_, done := compactions(ev2.all)
+	require.Len(t, done, 2)
+	assert.Equal(t, "the saved compaction no longer matches the session; compacting the full history again", done[0].Err)
+	assert.Empty(t, done[1].Err)
+}
+
+// TestEmbedded_AHistoryOverTheWindowIsNotSent: when compacting fails and
+// the history is estimated to be over the model's window, the request does
+// not go out, and the run ends with why.
+func TestEmbedded_AHistoryOverTheWindowIsNotSent(t *testing.T) {
+	e := newEnv(t,
+		fakellm.Reply{Commands: []string{"head -c 40000 /dev/zero | tr '\\0' x"}, InputTokens: 100},
+		fakellm.Reply{Text: "answer one", InputTokens: 100},
+		fakellm.Reply{Fail: 400, FailCode: "invalid_prompt"},
+	)
+	s, ev := e.open(t, e.embedded(), "")
+	ask(t, s, ev, "first")
+	id := s.ID()
+	require.NoError(t, s.Close())
+
+	s2, ev2 := e.open(t, e.compactingIn(8_000, 0), id)
+	require.NoError(t, s2.Compact())
+	_, err := s2.Submit("second")
+	require.NoError(t, err)
+	result := ev2.finished()
+	ev2.idle()
+	assert.Len(t, e.llm.Requests(), 3, "no request after the failed summary")
+	assert.Equal(t, core.StatusFailed, result.Status)
+	require.NotEmpty(t, result.Stats.Errors)
+	assert.Contains(t, result.Stats.Errors[0], "does not fit the model's window")
+	assert.Contains(t, result.Stats.Errors[0], "invalid_prompt")
+}

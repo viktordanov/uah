@@ -74,6 +74,10 @@ var ErrMismatch = errors.New("the history does not match the compaction")
 // system message of every later request the context builder produces.
 type Record struct {
 	Covered int `json:"covered"`
+	// Shape is Shape of the covered items, which Apply checks. Hash, of the
+	// items with their tool outputs, is checked only for a record from
+	// before Shape, and still written for the uah versions before it.
+	Shape string `json:"shape,omitempty"`
 	// Floor is how many of the covered items a /clear dropped: they are
 	// left out entirely, with none of their user messages kept. A clear's
 	// Floor is its Covered; a later compaction carries the floor forward.
@@ -110,7 +114,8 @@ func (r Record) keepTokens() int {
 	return Settings{UserMessageMaxTokens: r.Keep}.KeepTokens()
 }
 
-// Hash fingerprints items, so a record applies only to the history it covers.
+// Hash fingerprints items with their tool outputs; a record from before
+// Shape applies only to the history whose Hash it has.
 func Hash(items []llm.Item) (string, error) {
 	sum := sha256.New()
 	for _, item := range items {
@@ -123,6 +128,40 @@ func Hash(items []llm.Item) (string, error) {
 	}
 
 	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+// Shape fingerprints items as Hash does, but each tool result by its call
+// alone: a resumed run renders every output again from its operation, with
+// the tools of the version and configuration that resume, so an output can
+// change (a new format, a sandbox hint) while the history stays the same.
+func Shape(items []llm.Item) (string, error) {
+	shaped := make([]llm.Item, len(items))
+	for i, item := range items {
+		if r, ok := item.Data.(llm.ToolResult); ok {
+			item.Data = llm.ToolResult{CallID: r.CallID}
+		}
+		shaped[i] = item
+	}
+
+	return Hash(shaped)
+}
+
+// matches reports whether covered are the items the record covers: by
+// Shape, or by Hash for a record from before Shape (ErrMismatch when not).
+func (r Record) matches(covered []llm.Item) error {
+	want, fingerprint := r.Hash, Hash
+	if r.Shape != "" {
+		want, fingerprint = r.Shape, Shape
+	}
+	got, err := fingerprint(covered)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return ErrMismatch
+	}
+
+	return nil
 }
 
 // Coverable is how many items after input's system message a compaction
@@ -145,12 +184,17 @@ func NewRecord(input []llm.Item, summary string, trigger Trigger, model string, 
 // NewRecordCovering covers the first covered items after input's system
 // message with the summary (see CoverableKeeping).
 func NewRecordCovering(input []llm.Item, covered int, summary string, trigger Trigger, model string, at time.Time) (Record, error) {
-	hash, err := Hash(input[min(1, len(input)) : 1+covered])
+	items := input[min(1, len(input)) : 1+covered]
+	hash, err := Hash(items)
+	if err != nil {
+		return Record{}, err
+	}
+	shape, err := Shape(items)
 	if err != nil {
 		return Record{}, err
 	}
 
-	return Record{Covered: covered, Hash: hash, Summary: summary, Trigger: trigger, Model: model, At: at}, nil
+	return Record{Covered: covered, Shape: shape, Hash: hash, Summary: summary, Trigger: trigger, Model: model, At: at}, nil
 }
 
 // Apply rewrites input, whose first item is the system message, with the
@@ -168,12 +212,8 @@ func Apply(input []llm.Item, rec Record) ([]llm.Item, error) {
 		return nil, fmt.Errorf("%w: it covers %d items, the history has %d", ErrMismatch, rec.Covered, len(input)-1)
 	}
 	covered, tail := input[1:1+rec.Covered], input[1+rec.Covered:]
-	hash, err := Hash(covered)
-	if err != nil {
+	if err := rec.matches(covered); err != nil {
 		return nil, err
-	}
-	if hash != rec.Hash {
-		return nil, ErrMismatch
 	}
 	developer := Developer(covered)
 	kept := Kept(covered[min(rec.Floor, len(covered)):], rec.keepTokens())

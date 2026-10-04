@@ -29,6 +29,9 @@ func (c *compactor) run(ctx context.Context, job *compactionJob, req llm.Request
 		if trigger == compaction.TriggerAuto && !interrupted {
 			c.autoFailures++
 		}
+		if !interrupted {
+			c.failed = err
+		}
 		c.mu.Unlock()
 		if interrupted {
 			err = fmt.Errorf("interrupted: %w", err)
@@ -41,7 +44,7 @@ func (c *compactor) run(ctx context.Context, job *compactionJob, req llm.Request
 	c.mu.Lock()
 	c.job = nil
 	c.record, c.stale, c.used = &rec, false, 0
-	c.autoFailures = 0
+	c.autoFailures, c.failed = 0, nil
 	if warning != "" {
 		// Another compaction cannot shrink what stays: the system prompt,
 		// the kept user messages, and a summary.
@@ -76,6 +79,12 @@ func (c *compactor) compact(ctx context.Context, req llm.Request, opts llm.Reque
 	start := time.Now()
 	if ask.trigger == compaction.TriggerClear {
 		return c.clear(req.Input, ask, start)
+	}
+	c.mu.Lock()
+	stale := c.stale
+	c.mu.Unlock()
+	if stale {
+		c.reportStale(compaction.ErrMismatch, true)
 	}
 	if c.before != nil {
 		if err := c.before(ctx, ask.trigger); err != nil {

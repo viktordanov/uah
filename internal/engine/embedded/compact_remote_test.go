@@ -132,3 +132,34 @@ func TestEmbedded_ACompactFocusUsesTheSummary(t *testing.T) {
 	assert.NotContains(t, inputTypes(t, reqs[2]), "compaction_trigger", "only a prompt can take a focus")
 	assert.True(t, strings.HasSuffix(reqs[2].UserTexts[1], "the failing test"))
 }
+
+// TestEmbedded_RemoteCompactionOverTheWindowSummarizesLocally: the provider
+// would refuse a history over the window whole, so it goes to the local
+// summary, which drops the oldest items to fit, with no remote call.
+func TestEmbedded_RemoteCompactionOverTheWindowSummarizesLocally(t *testing.T) {
+	e := newEnv(t,
+		fakellm.Reply{Commands: []string{"head -c 40000 /dev/zero | tr '\\0' x"}},
+		fakellm.Reply{Text: "answer one"},
+		fakellm.Reply{Text: "SUMMARY"},
+		fakellm.Reply{Text: "answer two"},
+	)
+	s, ev := e.open(t, e.embedded(), "")
+	ask(t, s, ev, "first")
+	id := s.ID()
+	require.NoError(t, s.Close())
+
+	eng := embedded.New(embedded.Config{StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, ContextWindow: 8_000, Compaction: compaction.Settings{Remote: true}})
+	s2, ev2 := e.open(t, eng, id)
+	require.NoError(t, s2.Compact())
+	ask(t, s2, ev2, "second")
+
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 4)
+	assert.NotContains(t, inputTypes(t, reqs[2]), "compaction_trigger", "no remote call")
+	assert.Contains(t, reqs[2].UserTexts, compaction.Prompt)
+	assert.Empty(t, reqs[2].ToolOutputs, "the oldest items, with the long output, were dropped to fit")
+	_, done := compactions(ev2.all)
+	require.Len(t, done, 1)
+	require.NotNil(t, done[0].Stats)
+	assert.Equal(t, compaction.StrategyLocal, done[0].Stats.Strategy)
+}
