@@ -919,3 +919,41 @@ func (panicking) SetStdin(io.Reader)  {}
 func (panicking) SetStdout(io.Writer) {}
 func (panicking) SetStderr(io.Writer) {}
 func (panicking) Run() error          { panic("exec panic") }
+
+// A program without ExecContext is not waited for after a stop; its panic
+// after Run ended is dropped, with no race on the program's state.
+func TestDetachedExecPanicAfterStop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	inR, inW := io.Pipe()
+	defer inW.Close()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	panicked := make(chan struct{})
+	p := NewProgram(counter{log: newEvents()}, Options{In: inR, Out: &output{}, Width: 10, Height: 2, Profile: colorprofile.TrueColor})
+	p.Send(execMsg{cmd: latePanic{started: started, release: release, panicked: panicked}})
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.Run(ctx)
+		done <- err
+	}()
+	<-started
+	cancel()
+	require.NoError(t, <-done)
+	close(release)
+	<-panicked
+	time.Sleep(10 * time.Millisecond) // the recovery runs after the close
+}
+
+// latePanic panics once released, after Run stopped waiting for it.
+type latePanic struct{ started, release, panicked chan struct{} }
+
+func (latePanic) SetStdin(io.Reader)  {}
+func (latePanic) SetStdout(io.Writer) {}
+func (latePanic) SetStderr(io.Writer) {}
+
+func (l latePanic) Run() error {
+	close(l.started)
+	<-l.release
+	close(l.panicked)
+	panic("late exec panic")
+}

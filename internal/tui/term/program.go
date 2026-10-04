@@ -392,32 +392,42 @@ func (p *Program) runExec(msg execMsg) {
 // SIGHUP; SIGINT is the program's ctrl+c) or the end of Run's context
 // ends the context c gets through ExecContext, which kills it, and
 // stopped is set; a program without one is not waited for then.
-func (p *Program) runReleased(c ExecCommand) (stopped bool, err error) {
+func (p *Program) runReleased(c ExecCommand) (bool, error) {
+	stopped := false
 	ctx, cancel := context.WithCancel(p.ctx)
 	defer cancel()
 	cc, killable := c.(ExecContext)
 	if killable {
 		cc.SetContext(ctx)
 	}
-	done := make(chan error, 1)
+	// A panic in the program comes back on done and is raised again on
+	// the loop, so Run restores the terminal and its callers' deferred
+	// calls run. A program not waited for after a stop (one without
+	// ExecContext) is detached: its later panic is dropped, as Run has
+	// ended.
+	type result struct {
+		err      error
+		panicked any
+	}
+	done := make(chan result, 1)
 	go func() {
-		// A panic in the program is raised again on the loop, so Run
-		// restores the terminal and its callers' deferred calls run.
 		defer func() {
 			if r := recover(); r != nil {
-				p.panicked = panicMsg{value: r, stack: debug.Stack()}.String()
-				done <- nil
+				done <- result{panicked: panicMsg{value: r, stack: debug.Stack()}.String()}
 			}
 		}()
-		done <- c.Run()
+		done <- result{err: c.Run()}
 	}()
 	ended := p.ctx.Done()
 	for {
 		select {
-		case err := <-done:
+		case res := <-done:
+			if res.panicked != nil {
+				p.panicked = res.panicked
+			}
 			// The context may have ended the program before this select
 			// saw it end.
-			return stopped || p.ctx.Err() != nil, err
+			return stopped || p.ctx.Err() != nil, res.err
 		case sig := <-p.term.stop:
 			if !p.term.stops(sig) {
 				continue
