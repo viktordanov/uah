@@ -66,8 +66,8 @@ func TestGrants_Add(t *testing.T) {
 }
 
 // TestGrants_Valid pins the check on resume: a worktree grant holds while
-// it is a worktree of the workspace's repository, an approved one while
-// its directory is there under the same real path.
+// it is a worktree of the workspace's repository, at the same real path;
+// an approved grant never holds, since nothing on disk proves it.
 func TestGrants_Valid(t *testing.T) {
 	r := newRepo(t)
 	g := sandbox.NewGrants(r.main, nil)
@@ -75,19 +75,18 @@ func TestGrants_Valid(t *testing.T) {
 	plain := realPath(t, t.TempDir())
 
 	assert.True(t, g.Valid(sandbox.Grant{Path: bar, Reason: sandbox.GrantWorktree}))
-	assert.True(t, g.Valid(sandbox.Grant{Path: plain, Reason: sandbox.GrantApproved}))
+	assert.False(t, g.Valid(sandbox.Grant{Path: bar, Reason: sandbox.GrantApproved}), "an approval is not kept")
 	assert.False(t, g.Valid(sandbox.Grant{Path: plain, Reason: sandbox.GrantWorktree}), "not a worktree")
 	assert.False(t, g.Valid(sandbox.Grant{Path: filepath.Join(bar, "sub"), Reason: sandbox.GrantWorktree}), "not its root")
-	assert.False(t, g.Valid(sandbox.Grant{Path: plain, Reason: "other"}))
+	assert.False(t, g.Valid(sandbox.Grant{Path: bar, Reason: "other"}))
 
-	assert.True(t, g.Keep(sandbox.Grant{Path: plain, Reason: sandbox.GrantApproved}))
-	assert.Equal(t, []string{plain}, g.Roots())
+	assert.True(t, g.Keep(sandbox.Grant{Path: bar, Reason: sandbox.GrantWorktree}))
+	assert.False(t, g.Keep(sandbox.Grant{Path: plain, Reason: sandbox.GrantApproved}))
+	assert.Equal(t, []string{bar}, g.Roots())
 
 	harnesstest.Git(t, r.main, "worktree", "remove", r.bar)
 	require.NoError(t, os.MkdirAll(r.bar, 0o755))
 	assert.False(t, sandbox.NewGrants(r.main, nil).Valid(sandbox.Grant{Path: bar, Reason: sandbox.GrantWorktree}), "removed, a plain directory in its place")
-	require.NoError(t, os.Remove(plain))
-	assert.False(t, g.Valid(sandbox.Grant{Path: plain, Reason: sandbox.GrantApproved}), "gone")
 }
 
 // TestGrantFor pins the directory an approval offers: the working tree

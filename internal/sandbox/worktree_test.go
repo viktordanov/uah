@@ -188,3 +188,28 @@ func TestWorktrees_CraftedGitFiles(t *testing.T) {
 	_, ok = w.Of(filepath.Join(r.bar, "a.txt"))
 	assert.True(t, ok, "the real worktree still is one")
 }
+
+// TestWorktrees_HoldingTheCommonDirectory: a worktree whose directory holds
+// the repository's common directory, other than as its own .git, is not
+// granted: the repository's hooks and configuration would be writable.
+func TestWorktrees_HoldingTheCommonDirectory(t *testing.T) {
+	base := realPath(t, t.TempDir())
+	outer := filepath.Join(base, "outer")
+	common := filepath.Join(outer, "inner.git")
+	ws, side := filepath.Join(base, "ws"), filepath.Join(base, "side")
+	for name, top := range map[string]string{"outer": outer, "ws": ws, "side": side} {
+		admin := filepath.Join(common, "worktrees", name)
+		require.NoError(t, os.MkdirAll(admin, 0o755))
+		require.NoError(t, os.MkdirAll(top, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(top, ".git"), []byte("gitdir: "+admin+"\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(admin, "gitdir"), []byte(filepath.Join(top, ".git")+"\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(admin, "commondir"), []byte("../..\n"), 0o644))
+	}
+	w := sandbox.NewWorktrees(ws)
+
+	_, ok := w.Of(filepath.Join(outer, "a.txt"))
+	assert.False(t, ok, "it holds the common directory")
+	root, ok := w.Of(filepath.Join(side, "a.txt"))
+	assert.True(t, ok, "a worktree beside it is one")
+	assert.Equal(t, side, root)
+}

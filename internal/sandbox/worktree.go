@@ -61,6 +61,11 @@ func (w *Worktrees) Of(path string) (string, bool) {
 	if common == "" || common != w.common {
 		return "", false
 	}
+	if within(common, t.top) && common != filepath.Join(t.top, ".git") {
+		// The repository's hooks and configuration would be writable
+		// under the grant, and git runs them outside the sandbox.
+		return "", false
+	}
 
 	return t.top, true
 }

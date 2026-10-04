@@ -42,9 +42,10 @@ func noticeMatching(text string) func(core.Event) bool {
 }
 
 // TestSession_GrantsKeptAndCheckedOnResume pins the grants' life: a
-// session gives its runs its grants, shows and keeps each new one in its
-// sidecar, and a resume gets back each that still holds, with a notice,
-// and drops one that no longer does, from the sidecar too.
+// session gives its runs its grants, shows each new one, and keeps each
+// worktree grant in its sidecar, not an approved one; a resume gets back
+// each that still holds, with a notice, and drops one that no longer
+// does, from the sidecar too.
 func TestSession_GrantsKeptAndCheckedOnResume(t *testing.T) {
 	dir := t.TempDir()
 	main, bar := grantRepo(t)
@@ -67,9 +68,13 @@ func TestSession_GrantsKeptAndCheckedOnResume(t *testing.T) {
 	require.NotNil(t, run.opts.Grants, "the run gets the session's grants")
 	require.True(t, run.opts.Grants.Add(bar, sandbox.GrantWorktree))
 	h.until(noticeMatching("writable for this session: " + bar + " (a git worktree of this repository)"))
+	approved, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	require.True(t, run.opts.Grants.Add(approved, sandbox.GrantApproved))
+	h.until(noticeMatching("writable for this session: " + approved + " (your approval)"))
 	sc, _, err := session.ReadSidecar(dir, s.ID())
 	require.NoError(t, err)
-	assert.Equal(t, []sandbox.Grant{{Path: bar, Reason: sandbox.GrantWorktree}}, sc.Grants)
+	assert.Equal(t, []sandbox.Grant{{Path: bar, Reason: sandbox.GrantWorktree}}, sc.Grants, "an approval is not kept")
 	id := s.ID()
 	require.NoError(t, s.Close())
 

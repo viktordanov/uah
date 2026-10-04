@@ -124,23 +124,18 @@ func (g *Grants) Version() uint64 {
 }
 
 // Valid reports whether a grant kept from before a resume still holds: a
-// worktree grant must still be a worktree of the workspace's repository,
-// rooted at the same directory, and an approved one must still be the same
-// directory under the same real path. Both must still be Grantable.
+// worktree grant that is still a worktree of the workspace's repository,
+// rooted at the same directory, and still Grantable. An approved grant is
+// never kept: it rests on the user's answer alone, which nothing on disk
+// can prove, and a sidecar a sandboxed command could write must not widen
+// what the session may write.
 func (g *Grants) Valid(gr Grant) bool {
-	if !Grantable(gr.Path) || resolveDir(gr.Path) != gr.Path {
+	if gr.Reason != GrantWorktree || !Grantable(gr.Path) || resolveDir(gr.Path) != gr.Path {
 		return false
 	}
-	switch gr.Reason {
-	case GrantWorktree:
-		root, ok := g.Worktrees.Of(gr.Path)
+	root, ok := g.Worktrees.Of(gr.Path)
 
-		return ok && root == gr.Path
-	case GrantApproved:
-		return true
-	}
-
-	return false
+	return ok && root == gr.Path
 }
 
 // GrantFor returns the directory an approval may offer to make writable for

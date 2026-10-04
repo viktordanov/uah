@@ -42,10 +42,11 @@ func (s *Session) openGrants(shared *sandbox.Grants, workspace string, sc Sideca
 	}
 }
 
-// onGrant keeps a new grant in the sidecar, when the session owns its
-// grants, and shows it.
+// onGrant shows a new grant and keeps a worktree grant in the sidecar,
+// when the session owns its grants. An approved grant is not kept: a
+// resume would not restore it (sandbox.Grants.Valid).
 func (s *Session) onGrant(g sandbox.Grant) {
-	if s.ownGrants && s.sessionsDir != "" {
+	if s.ownGrants && s.sessionsDir != "" && g.Reason == sandbox.GrantWorktree {
 		s.warnIf(updateSidecar(s.sessionsDir, s.id, func(c *Sidecar) bool {
 			if slices.Contains(c.Grants, g) {
 				return false
@@ -65,11 +66,7 @@ func grantLine(g sandbox.Grant) string {
 
 // droppedLine is the notice for a grant a resume did not keep.
 func droppedLine(g sandbox.Grant) string {
-	if g.Reason == sandbox.GrantWorktree {
-		return "no longer writable for this session: " + g.Path + " is not a git worktree of this repository now"
-	}
-
-	return "no longer writable for this session: " + g.Path + ", which you allowed, is gone, moved, or not allowed now"
+	return "no longer writable for this session: " + g.Path + " is not a git worktree of this repository now"
 }
 
 func reasonText(r sandbox.GrantReason) string {
