@@ -36,6 +36,7 @@ func Commands() []Command {
 		{Name: "stop", Help: "interrupt the live run; queued messages stay", WhileBusy: true, run: func(s *State, _ string) []Effect { return s.interrupt() }},
 		{Name: "clear", Help: "start the agent fresh in this session; the session keeps its history (embedded engine)", WhileBusy: true, run: cmdClear},
 		{Name: "rewind", Help: "go back to an earlier message and edit it; what followed leaves the context (esc esc; embedded engine)", run: cmdRewind},
+		{Name: "goal", Args: "[objective|edit|pause|resume|clear|status]", Help: "set or view the goal of a long task: the agent keeps working, turn after turn, until it marks the goal complete or a budget stops it", WhileBusy: true, Bare: true, run: cmdGoal},
 		{Name: "compact", Args: "[focus]", Help: "summarize the context to free it; your messages stay as written, and words after it steer the summary (embedded engine)", WhileBusy: true, run: cmdCompact},
 		{Name: "diff", Help: "the workspace's git changes, staged, unstaged, and untracked; not sent to the agent", WhileBusy: true, run: cmdDiff},
 		{Name: cmdReviewName, Args: "[target]", Help: "a read-only reviewer looks at your changes (uncommitted, branch <name>, commit <sha>, or instructions) and lists findings", run: cmdReview},
@@ -99,6 +100,9 @@ func isCommand(text string) bool { _, _, ok := commandLine(text); return ok }
 func (s *State) command(text string) (State, []Effect) {
 	name, args, _ := commandLine(text)
 	cmd, ok := FindCommand(name)
+	if p, isPrompt := s.findPrompt(name); !ok && isPrompt {
+		return *s, s.runPrompt(p, args)
+	}
 	if !ok {
 		s.notice(session.LevelError, fmt.Sprintf("unknown command /%s (see /help)", name))
 
@@ -217,6 +221,9 @@ func cmdStatus(s *State, _ string) []Effect {
 	}
 	s.notice(session.LevelInfo, fmt.Sprintf("%d runs · %d turns · %d tool calls (max %d parallel) · %d in / %d out tokens · tools overlapped the model %s", t.Runs, t.Turns, t.ToolCalls, t.MaxParallel, t.Tokens.InputTokens, t.Tokens.OutputTokens, t.Overlap.Round(100_000_000)))
 	s.notice(session.LevelInfo, "instructions: "+files)
+	if line := s.goalStatusLine(); line != "" {
+		s.notice(session.LevelInfo, line)
+	}
 	if w, ok := s.CurrentWait(); ok {
 		s.notice(session.LevelInfo, joinDetail("now: "+w.Text(), s.Live.Progress.Phase))
 	}
@@ -232,6 +239,13 @@ func cmdHelp(s *State, _ string) []Effect {
 			name += " " + c.Args
 		}
 		fmt.Fprintf(&b, "%-18s %s\n", name, c.Help)
+	}
+	for _, p := range s.Menu.Prompts {
+		name := "/" + p.Command
+		if usage := p.Usage(); usage != "" {
+			name += " " + usage
+		}
+		fmt.Fprintf(&b, "%-18s %s (MCP prompt)\n", name, p.Description)
 	}
 	b.WriteString("\n" + s.Keys.sendHelp() + "\n")
 	b.WriteString("esc esc interrupt, or while idle on an empty prompt go back to an earlier message (esc/↑ earlier, ↓ later, enter edit) · ↑ edit the last queued message, else earlier prompts (↓ later) · ctrl+r search earlier prompts · shift+tab permission mode · alt+, alt+. effort · alt+e adaptive effort · ctrl+s sessions · ctrl+n new · ctrl+g edit the prompt in $VISUAL or $EDITOR · ctrl+t details · wheel, shift+↑↓, pgup/pgdn scroll (end: bottom) · drag, double or triple click select and copy · ctrl+c ctrl+c quit")

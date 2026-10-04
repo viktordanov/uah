@@ -37,6 +37,15 @@ func merge(base, over Config) Config {
 	if over.Tools.ExperimentalRequestUserInput.Enabled != nil {
 		base.Tools.ExperimentalRequestUserInput.Enabled = over.Tools.ExperimentalRequestUserInput.Enabled
 	}
+	if over.Features.Goals != nil {
+		base.Features.Goals = over.Features.Goals
+	}
+	if over.Goals.MaxGoalTokenBudget != 0 {
+		base.Goals.MaxGoalTokenBudget = over.Goals.MaxGoalTokenBudget
+	}
+	if over.Goals.MaxContinuations != nil {
+		base.Goals.MaxContinuations = over.Goals.MaxContinuations
+	}
 	if over.Context.Modules != nil {
 		base.Context.Modules = over.Context.Modules
 	}

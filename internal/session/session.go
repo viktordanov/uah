@@ -10,6 +10,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,6 +20,7 @@ import (
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/contextusage"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/usershell"
@@ -79,6 +81,9 @@ type Options struct {
 	// Yolo allows yolo mode (--yolo): without it, SetSettings refuses the
 	// mode.
 	Yolo bool
+	// Goals configures /goal ([goals]). A subagent's session (Parent set)
+	// never has a goal.
+	Goals goal.Settings
 }
 
 // Session is safe to use from any goroutine. All state lives on one internal
@@ -95,6 +100,9 @@ type Session struct {
 	ctx  context.Context
 	stop context.CancelFunc
 	done chan struct{}
+	// current is settings as the loop last set them, for the engine to
+	// read from a run's goroutines (liveSettings).
+	current atomic.Pointer[Settings]
 
 	// Owned by the loop goroutine.
 	settings Settings
@@ -142,6 +150,8 @@ type Session struct {
 	afterTool  map[string]bool
 	modelBusy  bool
 	savedQueue []string // what the sidecar keeps as Queued
+	// goal is the session's goal and its accounting (goal.go).
+	goal goalState
 }
 
 // Open starts a session. Its first event is SessionOpened.
@@ -156,10 +166,17 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 	if id == "" {
 		id = uuid.NewString()
 	}
+	// The kept queue is read first: Open reports it before it returns, so
+	// Events must hold all of it, however long.
+	var sc Sidecar
+	var scErr error
+	if opts.SessionsDir != "" {
+		sc, _, scErr = ReadSidecar(opts.SessionsDir, id)
+	}
 	runCtx, stop := context.WithCancel(ctx)
 	s := &Session{
 		id: id, eng: eng, priority: eng.Priority(), yolo: opts.Yolo,
-		in: make(chan any, eventBuffer), out: make(chan core.Event, eventBuffer),
+		in: make(chan any, eventBuffer), out: make(chan core.Event, eventBuffer+queuedRoom(sc)),
 		ctx: runCtx, stop: stop, done: make(chan struct{}),
 		settings: opts.Settings, state: StateIdle, sent: map[string]bool{}, afterTool: map[string]bool{},
 		hooks:       hookState{runner: opts.Hooks, resumed: opts.Resumed, tools: map[string]core.ToolCalled{}},
@@ -168,6 +185,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 		// A resumed session that never ran has no first message yet.
 		firstPromptPending: !opts.Resumed || opts.FirstPrompt == "",
 	}
+	s.current.Store(&opts.Settings)
 	s.out <- SessionOpened{At: time.Now(), ID: id, Resumed: opts.Resumed, Engine: eng.Name(), Settings: opts.Settings}
 	if opts.Instructions != nil {
 		loaded := *opts.Instructions
@@ -183,8 +201,9 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 		}
 		s.saveSettings(opts.Settings)
 		s.noteOpened(opts.FirstPrompt)
-		s.restoreQueue()
+		s.restoreQueue(sc, scErr)
 	}
+	s.openGoal(opts.Goals, opts.Parent == "" && opts.Source != SourceSubagent)
 	for _, n := range opts.Notices {
 		s.out <- Notice{At: time.Now(), Level: LevelWarning, Message: n}
 	}
@@ -274,6 +293,16 @@ func (s *Session) MCPServers() (servers []mcp.ServerStatus, ok bool) {
 	}
 
 	return l.MCPServers(), true
+}
+
+// MCP is the engine's MCP servers, for their prompts and resources; nil
+// when the engine runs none.
+func (s *Session) MCP() *mcp.Manager {
+	if c, ok := s.eng.(engine.MCPClient); ok {
+		return c.MCP()
+	}
+
+	return nil
 }
 
 // ContextUsage breaks down the context of the last model request; ok is

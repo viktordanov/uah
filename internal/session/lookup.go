@@ -8,6 +8,7 @@ import (
 
 	"github.com/viktordanov/uagent/core"
 
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/images"
 	"github.com/viktordanov/uah/internal/sessionfile"
 )
@@ -37,7 +38,11 @@ func (s *Session) noteFirstPrompt(inputs []core.UserInput) {
 		return
 	}
 	s.firstPromptPending = false
-	text := cutPrompt(images.Display(inputs[0].Text))
+	text := inputs[0].Text
+	if goal.IsContext(text) && s.goal.g != nil {
+		text = s.goal.g.Objective // a session that starts with /goal
+	}
+	text = cutPrompt(images.Display(text))
 	s.warnIf(updateSidecar(s.sessionsDir, s.id, func(sc *Sidecar) bool {
 		if sc.FirstPrompt != "" {
 			return false

@@ -28,6 +28,14 @@ type ServerStatus struct {
 	Required bool
 	// Tools are the tools offered to the model, in name order.
 	Tools []Tool
+	// Prompts are the server's prompts, offered as slash commands.
+	Prompts []Prompt
+	// HasResources reports whether the server offers resources;
+	// Resources lists them when the caller asked (/mcp verbose).
+	HasResources bool
+	Resources    []ResourceRef
+	// Restarts counts the server's restarts in a row; see MaxRestarts.
+	Restarts int
 }
 
 // Transport is the server's transport name.
@@ -53,6 +61,7 @@ func (c ServerConfig) Target() string {
 // are named as if the others fail.
 func (m *Manager) Status() []ServerStatus {
 	m.Start()
+	m.relogin() // a server that now has a login shows as starting, then ready
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -88,8 +97,9 @@ func (m *Manager) Started(ctx context.Context) []ServerStatus {
 func (m *Manager) status() []ServerStatus {
 	tools := m.tools
 	if tools == nil {
-		tools = qualify(m.servers)
+		tools = m.qualify()
 	}
+	prompts := m.prompts()
 	out := make([]ServerStatus, 0, len(m.servers))
 	for _, name := range slices.Sorted(maps.Keys(m.servers)) {
 		s := m.servers[name]
@@ -104,6 +114,13 @@ func (m *Manager) status() []ServerStatus {
 				st.Tools = append(st.Tools, t)
 			}
 		}
+		for _, p := range prompts {
+			if p.Server == name {
+				st.Prompts = append(st.Prompts, p)
+			}
+		}
+		st.HasResources = s.caps != nil && s.caps.Resources != nil
+		st.Restarts = s.restarts
 		out = append(out, st)
 	}
 

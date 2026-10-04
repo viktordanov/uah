@@ -59,6 +59,13 @@ func TestPreviewContext(t *testing.T) {
 	p, err = app.PreviewContext(ctx, in, os.Getenv)
 	require.NoError(t, err)
 	assert.NotContains(t, p.Main, "A changed note.", "a changed module needs trust again")
+
+	in.NoInstructions = true
+	p, err = app.PreviewContext(ctx, in, os.Getenv)
+	require.NoError(t, err)
+	assert.Contains(t, p.Main, "Loading instruction files (AGENTS.md) is turned off", "as a session with --no-instructions gets it")
+	assert.NotContains(t, p.Main, "none to search for")
+	assert.Contains(t, p.Subagent, "Loading instruction files (AGENTS.md) is turned off")
 }
 
 // TestContextCheck runs a module's check in the read-only sandbox: it can

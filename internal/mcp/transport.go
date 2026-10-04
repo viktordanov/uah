@@ -3,7 +3,9 @@ package mcp
 import (
 	"fmt"
 	"maps"
+	"net"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"slices"
 	"strings"
@@ -23,12 +25,16 @@ func (m *Manager) transport(s *server) (sdk.Transport, error) {
 		if err != nil {
 			return nil, err
 		}
-		t := &sdk.StreamableClientTransport{
-			Endpoint:   c.URL,
-			HTTPClient: &http.Client{Transport: headerTransport{base: http.DefaultTransport, headers: headers}},
+		client, err := serverClient(c.URL, http.DefaultTransport, headers)
+		if err != nil {
+			return nil, err
 		}
-		if s.auth != nil {
-			t.OAuthHandler = s.auth
+		t := &sdk.StreamableClientTransport{Endpoint: c.URL, HTTPClient: client}
+		m.mu.Lock()
+		auth := s.auth // a new login replaces it
+		m.mu.Unlock()
+		if auth != nil {
+			t.OAuthHandler = auth
 		}
 
 		return t, nil
@@ -88,15 +94,80 @@ func httpHeaders(c ServerConfig, getenv func(string) string) (http.Header, error
 	return h, nil
 }
 
-// headerTransport adds fixed headers to every request.
+// maxRedirects is Go's and Codex's limit on redirects in one request.
+const maxRedirects = 10
+
+// serverClient is the HTTP client for a server at endpoint. It adds the
+// configured headers only to requests to the endpoint's origin, and it
+// follows redirects only within that origin, so neither the configured
+// headers nor what the SDK sets (the OAuth token, the session ID) reach
+// another origin, and https never becomes http. Codex's MCP client
+// refuses the same redirects (rmcp-client/src/http_client_redirect.rs).
+func serverClient(endpoint string, base http.RoundTripper, headers http.Header) (*http.Client, error) {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid MCP server URL: %w", err)
+	}
+
+	return &http.Client{Transport: headerTransport{base: base, headers: headers, origin: origin(u)}, CheckRedirect: sameOriginRedirect}, nil
+}
+
+// oauthClient is client for OAuth requests (discovery, registration, the
+// token endpoint): it follows redirects only within a request's origin, so
+// a code, refresh token, or client secret in a body a 307 or 308 replays
+// stays there, as Codex confines OAuth redirects. A nil client is
+// http.DefaultClient.
+func oauthClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	c := *client
+	c.CheckRedirect = sameOriginRedirect
+
+	return &c
+}
+
+// sameOriginRedirect is an http.Client's CheckRedirect that refuses a
+// redirect away from the origin of the first request.
+func sameOriginRedirect(r *http.Request, via []*http.Request) error {
+	if from, to := origin(via[0].URL), origin(r.URL); from != to {
+		return fmt.Errorf("refusing a redirect from %s to another origin, %s", from, to)
+	}
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+
+	return nil
+}
+
+// origin is the URL's scheme, host, and port, in lower case and with the
+// scheme's default port, so that equal origins compare equal.
+func origin(u *url.URL) string {
+	scheme, port := strings.ToLower(u.Scheme), u.Port()
+	switch {
+	case port != "":
+	case scheme == "https":
+		port = "443"
+	default: // http; the client sends no other scheme
+		port = "80"
+	}
+
+	return scheme + "://" + net.JoinHostPort(strings.ToLower(u.Hostname()), port)
+}
+
+// headerTransport adds fixed headers to every request to the server's
+// origin.
 type headerTransport struct {
 	base    http.RoundTripper
 	headers http.Header
+	origin  string
 }
 
 func (t headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	r = r.Clone(r.Context())
-	maps.Copy(r.Header, t.headers)
+	if len(t.headers) > 0 && origin(r.URL) == t.origin {
+		r = r.Clone(r.Context())
+		maps.Copy(r.Header, t.headers)
+	}
 
 	return t.base.RoundTrip(r) // a transport passes errors through
 }

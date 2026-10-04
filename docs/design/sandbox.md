@@ -108,6 +108,14 @@ Each phase ships on its own: after phase 1, commands are sandboxed and escalatio
 - **Configuration.** `approval_policy` (and `--ask`, `UAH_ASK`); `[approvals] allow` and `forbid` are command prefixes that become rules. A trusted project may set the policy and adds prefixes, rules files, and writable roots.
 - **TUI.** The overlay replaces the queue panel: "Run outside the sandbox?" (or "Run this command?" for a `prompt` rule), the reason, `$ command`, and `y`, `s`, `n`/esc. The answer is recorded as a transcript line.
 
+### Hardening (1.8.4)
+
+A code review found three ways around the sandbox and the rules; each is closed in general, not only for the case reported.
+
+- **The sandboxing scripts.** They run outside the sandbox, and `uah exec --ephemeral` kept them in its run directory under `$TMPDIR`, which workspace-write commands write; an existing script was trusted because it existed, so a command could replace it and the next command ran unsandboxed. The scripts now live in the state directory (never a run's), the directory is a `Policy.ReadOnly` path in every policy (read-only inside any writable root that holds it, and its parents below the root cannot be renamed: Seatbelt denies their unlink, bwrap binds them over themselves), the script is returned by its resolved path, so no symlink on the way can be swapped, a writable root inside the directory is dropped (also one that names it in another case, which Seatbelt would match), the directory stays read-only inside a root that names a parent in another case, and a script is reused only when it is a private regular file of the user's, with one link and the expected content. A child in full access already runs unsandboxed, so it gains nothing from the scripts.
+- **Patches and symlinks.** The patch job wrote with ordinary file calls after the check, so a command could swap a checked directory for a symlink in between. Now the check resolves each path once and the job writes exactly that path through directory handles with `O_NOFOLLOW` at every step (`patch.Targets`): a symlink put in since fails the patch, and the all-or-nothing undo puts back what was written. The check also refused protected paths only by their exact spelling, so on macOS a patch to `.GIT/hooks` or `SANDBOX/sh-…` reached them; names are now compared without case, and an existing directory that is a protected one under another name is refused by its identity.
+- **Forbid rules and patches.** A patch inside the writable roots, and every patch in full access, skipped the approver and so the forbid rules. Forbid rules now come first for every patch (`Approver.Forbidden`), on the whole patch and on each path, as written in the patch, absolute, and resolved; Bash already checked them first. MCP tools have no command rules; their `approval_mode` is their only gate.
+
 ### Open (defaults taken)
 
 - "No, and tell the agent what to do differently" declines with a fixed reason; the user types the instruction as the next message. Codex opens a text field.
@@ -129,7 +137,7 @@ Each phase ships on its own: after phase 1, commands are sandboxed and escalatio
 
 ## Auto-review: as researched
 
-Status: the reviewer is built (`internal/review`) and configured; lane A's approver wires it in. Codex facts are from openai/codex at rust-v0.156.1; `CX` is `codex-rs`.
+Status: the reviewer is built (`internal/review`) and configured; lane A's approver wires it in. Codex facts are from openai/codex at rust-v0.156.1, and those on the review session from `main` at b741e48 (2026-10-03); `CX` is `codex-rs`.
 
 ### What Codex does
 
@@ -143,6 +151,7 @@ Status: the reviewer is built (`internal/review`) and configured; lane A's appro
 | User content | An intro that calls everything untrusted, `>>> TRANSCRIPT START`…`END` (user, assistant, tool call and tool result entries, numbered), the session ID, then `>>> APPROVAL REQUEST START`, the retry reason (capped at 512 tokens), and the planned action as pretty JSON (`command`, `cwd`, `justification`, `sandbox_permissions`, `tool`, `tty`) | `CX/guardian-context/src/composition.rs`, `action.rs`, `CX/core/src/guardian/prompt.rs`, snapshot `guardian_review_request_layout.snap` |
 | Trust | Only user and developer messages, AGENTS.md, and `request_user_input` answers are trusted; tool output, assistant text, and the action are untrusted evidence | `policy_template.md` |
 | Budget | Per entry: 5K tokens for a message, 1K for a tool entry. In total: 20K for messages, 10K for tools, at most 40 recent non-user entries, at least 5 tool entries kept. Bytes / 4 estimates tokens. Later reviews in a session send only the transcript delta | `CX/guardian-context/src/profile.rs` |
+| Review session | One reviewer conversation (the trunk) per parent thread, prompt cache key `guardian:<thread>`. A review on an idle trunk appends a user message to it: the first sends the whole transcript (`>>> TRANSCRIPT START`), later ones only the entries after the last reviewed one (`>>> TRANSCRIPT DELTA START`, "Continue the same review conversation"), with the action each time; a developer reminder ("Use prior reviews as context, not binding precedent…") goes in once before the second. A completed review commits a checkpoint (the history and the transcript cursor). A review that finds the trunk busy runs in an ephemeral fork of the last checkpoint and is discarded, so parallel approvals do not wait or change the trunk. A failed review discards the trunk; another model, effort, policy, permissions, or a rewritten parent history makes a new one; the reviewer compacts at its token limit | `CX/ext/guardian-reviewer/src/pool.rs`, `conversation.rs`, `CX/guardian-context/src/cursor.rs`, `composition.rs`, `CX/core/src/guardian/review_session.rs`, `review.rs:180-195` |
 | Answer | `{"risk_level","user_authorization","outcome","rationale"}`, only `outcome` required. A missing `risk_level` becomes low on allow and high on deny. Prose around the JSON is tolerated by slicing from the first `{` to the last `}` | `CX/ext/guardian-reviewer/src/assessment.rs` |
 | Deadline and retries | 90 s per review, up to 3 attempts inside it. Retried: a parse error, rate limits, overload, 5xx, dropped connections. Backoff 200 ms × 2ⁿ with ±10% jitter | `CX/ext/guardian-reviewer/src/lib.rs:40`, `retry.rs` |
 | Failure | Fails closed. A timeout tells the model: "did not finish before its deadline. Do not assume the action is unsafe based on the timeout alone. You may retry once, or ask the user" | `CX/prompts/src/model_messages/guardian.rs` |
@@ -151,37 +160,64 @@ Status: the reviewer is built (`internal/review`) and configured; lane A's appro
 
 ### What uah does
 
-- **One call, no tools.** `review.Reviewer.Review` makes one `llmcall.Call` over the adapter the caller gives it, so every provider works. The reviewer cannot inspect the disk, so the template's investigation section says to judge from the context and lean conservative.
-- **Prompt.** Codex's template, trimmed of tool use, MCP, and browser rules (`internal/review/prompts/`, Apache-2.0 notice kept), with Codex's `policy.md` (three mentions of read-only checks removed) and output contract. The golden is `internal/review/testdata/prompt.golden`.
-- **Context.** Three framed sections in one user message: the user's messages (trusted), the recent tool calls with a short status and no output (untrusted), and the approval request: the sandbox denial, then the action JSON (`tool`, `command`, `cwd`, `sandbox_mode`, `sandbox_permissions`, `justification`, `rule`). Assistant text and tool output are left out, as Claude Code does, because injected text reaches the model that way.
-- **Budget.** `DefaultLimits`: 8 KB per user message, 24 KB for all of them (the first message, then the newest that fit), 1 KB per tool call, 8 KB and 10 calls for all of them, 8 KB for the command, justification, and denial each. Cut text keeps its head and tail around Codex's `<truncated omitted_approx_tokens="N" />`; dropped entries leave `<omitted … />`.
-- **Answer.** Codex's fields. Parsing is strict: one JSON object, unknown fields and values rejected, only a surrounding Markdown fence is removed. A bad answer is retried up to 3 times within the deadline; transport errors are retried by the runner's client.
+- **A conversation per session, with read-only commands.** `review.Reviewer.Review` continues the session's `review.Conversation` (Codex's trunk) through `internal/llmcall` over the adapter the caller gives it, so every provider works. With a sandbox, the model is offered Codex's `exec_command` (`cmd`, `workdir`), which `internal/engine/embedded/reviewcmd.go` runs with `/bin/sh` in the read-only sandbox, without network, with the environment policy, and with a temporary directory of the reviewer's own (`operations/<session>/review-tmp`). A command stops after 10 s; its output is cut at 10 KB; a review makes at most 12 model calls. Without a sandbox, the reviewer has no tools and judges from its context.
+- **Prompt.** Codex's template, trimmed of MCP and browser rules (`internal/review/prompts/`, Apache-2.0 notice kept), with Codex's `policy.md` (three mentions of read-only checks removed) and output contract. With commands, the investigation guidelines and the reviewer's restrictions are Codex's; without, they say it cannot run commands. The golden is `internal/review/testdata/prompt.golden`.
+- **Context.** One transcript in order, numbered across the session as Codex's is: `user` entries (the user's messages and their answers to the agent's questions, in their own words; trusted), tool calls, and each call's short result (`exit 1`) as an entry of its own (untrusted), then the approval request: the sandbox denial and the action JSON (`tool`, `command`, `cwd`, `sandbox_mode`, `sandbox_permissions`, `justification`, `rule`). Assistant text and tool output are left out, as Claude Code does, because injected text reaches the model that way. The engine keeps the latest 200 entries and the first user message.
+- **Deltas.** The first review sends the whole transcript; later ones only the entries since the last finished review and the new action, after Codex's follow-up reminder once, so the earlier requests and answers are the cached prefix. Reviews that start while another holds the conversation each continue a copy of its last finished state, which is dropped, as Codex's ephemeral forks are; the parallel approvals of one response ([agent tuning](agent-tuning.md#parallel-approvals)) keep running at once. A failed review, another model, effort, or instructions, or a request of 100,000 input tokens starts the next review anew with the whole transcript.
+- **Budget.** `DefaultLimits`, for a whole transcript and a delta alike: 8 KB per user message, 24 KB for all of them (the first message, then the newest that fit), 1 KB per tool entry, 8 KB and 20 entries for all tool calls and results, 8 KB for the command, justification, and denial each. Cut text keeps its head and tail around Codex's `<truncated omitted_approx_tokens="N" />`; left-out entries are counted in `<omitted transcript_entries="N" … />`.
+- **Answer.** Codex's fields. Parsing is strict: one JSON object, unknown fields and values rejected, only a surrounding Markdown fence is removed. A bad answer is asked again from the same conversation, up to 3 times within the deadline; transport errors are retried by the runner's client.
 - **Failure.** Any error, timeout, or unparsable answer is a deny with `Failed` set and the reason; a timeout uses Codex's wording. A cancelled context returns an error instead.
-- **Breaker.** 3 denials in a row, or 10 in the last 50; failed reviews count. When open, `Review` returns `AskUser` without calling the model, and the approver asks the user (headless: deny). `Reset` closes it; the approver calls it at each new user turn.
+- **Breaker.** 3 denials in a row, or 10 in the last 50; failed reviews count. When open, `Review` returns `AskUser` without calling the model, and the approver asks the user (headless: deny). `Reset` closes it; the approver calls it at each new user turn. The breaker is per run, the conversation per session.
 - **Configuration.** `approvals_reviewer = "auto_review" | "user"` (default `auto_review`, S8) and `[review] model`, `effort`, `timeout`. Defaults: `codex-auto-review` on `openai-codex`, the session model elsewhere, `low`, `90s`. `app.Resolve` returns them as `Resolved.ApprovalsReviewer` and `Resolved.Review`.
+- **Measurement.** Each review is an `engine.AutoReviewed` event with its time, tokens, whether it continued the conversation or a fork, and its commands; `uah exec --json` writes it as `auto_reviewed`.
 
 ### Request shape and cost
 
-One Responses API request per review: a system message (the policy, about 16.7 KB), one user message (the context), `reasoning.effort = "low"`, no tools, and `prompt_cache_key = "uah-review-<session ID>"` when the caller gives a session ID. The system message is the same for every review, so the prefix caches.
+Responses API requests per review: the system message (the policy, about 3,500 tokens with the command guidelines and `exec_command`'s definition), the conversation so far, one new user message, `reasoning.effort = "low"`, and `prompt_cache_key = "uah-review-<session ID>"`; one more request per round of commands. On the ChatGPT backend the cache hit stops short of the previous request's end by roughly 500 to 900 tokens, so a delta pays for that tail and the new message; a whole transcript pays for everything after the system message.
 
 | | Input tokens | Output tokens | Latency | When |
 | --- | --- | --- | --- | --- |
-| uah, measured by the probe below | 3,471 (a one-line user message and no tool calls) | 210, of which 146 reasoning | 5.7 s | Each escalation the rules do not decide |
-| uah, budget ceiling | about 3.2K fixed + up to 6K user messages + 2K tool calls + 6K action ≈ 17K; typical 4–6K | 100–300 | 3–8 s | |
+| uah, first review (probe) | 3,749, none cached | 150 to 180 | 4 to 5 s | The first escalation of a session |
+| uah, delta review (probe) | 4,232, 3,584 cached | 69 | 4.0 s | A later escalation, no commands |
+| uah, delta review with a command (probe) | 8,889 over two calls, 7,168 cached | 355 | 11.0 s | `rm -rf` of a directory, inspected first |
 | Codex, first review | the fixed prompt (about 4.5K) plus its sub-session's other messages and tools, plus up to 30K transcript | not stated | not stated | Each escalation, network approval, MCP call, patch, and permission request under auto-review |
 | Codex, later reviews | the delta since the last review, on a cached session | | | |
 
-A uah review costs about one small agent step on the same subscription, and less than Codex's first review because the transcript is smaller and there is no sub-session scaffolding.
+### Review conversation: measured
 
-### Probe
+**Replay of long sessions** (`TestProbeReplay`, `codex-auto-review`, low): two recorded `go-large-repo-guide` sessions (50 tool calls, 7 prompts each), every fifth tool call reviewed as an escalation, once with the whole transcript each time and once in one conversation. All 21 reviews per mode allowed in both.
 
-`go test -tags probe -run TestProbe -v ./internal/review/` (`internal/review/probe_test.go`) calls the `openai-codex` provider through the runner's client, which reads the Codex sign-in itself. On 2026-09-24 the backend **accepted `codex-auto-review` from uah's client**: `allow`, risk `medium`, 5.7 s, 3,471 input tokens (0 cached on this first call), 210 output tokens (146 reasoning), for "go test ./..." escalated after "Run the tests." So the default stands; no fallback was needed.
+| Session | Mode | Reviews | Input | Cached | Uncached | Output | Review time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | whole transcript | 10 | 54,851 | 19,712 (36%) | 35,139 | 662 | 31.8 s |
+| 1 | conversation | 10 | 107,531 | 85,760 (80%) | 21,771 (−38%) | 237 | 19.9 s (−37%) |
+| 2 | whole transcript | 11 | 55,694 | 25,344 (46%) | 30,350 | 723 | 23.7 s |
+| 2 | conversation | 11 | 113,376 | 93,440 (82%) | 19,936 (−34%) | 235 | 19.2 s (−19%) |
+
+The conversation sends about twice the input, but four fifths of it from the cache: at the agentbench prices (uncached $1.25, cached $0.125, output $10 per million) session 1 costs $0.053 a whole transcript at a time and $0.040 in one conversation (−24%). The saving grows with the transcript: a whole transcript re-sends up to its budget (about 8K tokens) uncached each time, a delta only what is new.
+
+**agentbench A/B** (2026-10-04, gpt-6.1-sol at high, auto mode, `-owner-env`, `curl-local-api`, `curl-parallel-endpoints`, and `home-config-surgery`, 4 repeats per arm, run twice: once at `-parallel 12` one arm after the other, once with both arms at once at `-parallel 6` each). The control is the commit before, which only adds the `auto_reviewed` event.
+
+| | Control | Conversation |
+| --- | --- | --- |
+| Runs passed | 24 of 24 | 24 of 24 |
+| Reviews, all allowed | 54 | 56 |
+| Reviews that continued the conversation / ran on a fork | — | 11 / 24 |
+| Reviewer commands | — | 0 |
+| Input tokens per review (mean) | 4,144 | 4,492 |
+| Cached per review (mean) | 1,920 (46%) | 1,902 (42%) |
+| Uncached per review (mean) | 2,224 | 2,590 |
+| Output tokens per review (mean) | 83 | 64 |
+| Review time (median / p90) | 2.7 s / 4.1 s | 2.6 s / 3.9 s |
+| Run wall time (median) | 55 s | 55 s |
+
+These tasks are short: a session has one to four reviews over a transcript of a few entries, and the four reviews of `curl-parallel-endpoints` run at once, so all but one are forks of an empty conversation. There the conversation changes little. A later review sends 1,742 uncached tokens instead of 1,897 (−8%) and caches 3,304 instead of 2,636. First reviews cost more: `exec_command`'s definition and Codex's investigation text add about 250 tokens. The new system prompt was also cold more often (590 cached tokens per first review against 1,173): every other uah reviewer on the account shares the old prompt's cache. The verdicts did not change (every review allowed in both arms), and no reviewer ran a command. The win is in long sessions, as the replay shows.
 
 ### Open decisions (defaults taken)
 
 1. **Failed reviews count toward the breaker.** Default: yes, so a reviewer that keeps failing hands over to the user after 3. Codex resets the count on a failed review.
-2. **No read-only investigation.** Default: a single call without tools. Codex's reviewer may run read-only commands first (for example to check what `rm -rf` would delete). Giving uah's reviewer the runner's read-only tools would need an agent loop, not `llmcall`.
-3. **No transcript delta or session reuse.** Default: each review sends its whole (small) context, and the fixed prefix is cached by the prompt cache key. Codex keeps a review session and sends deltas.
+2. **Read-only investigation.** Done: the reviewer runs Codex's `exec_command` in the read-only sandbox (above). Codex also offers `write_stdin`, `view_image`, `exec`, and `wait`; uah's commands cannot outlive their 10 s, so it offers only `exec_command`.
+3. **Transcript delta and session reuse.** Done: one conversation per session with Codex's deltas and forks (above). Unlike Codex, uah starts anew at 100,000 input tokens instead of compacting the reviewer, and a compaction or rewind of the session does not start anew: the reviewer's transcript is built from the session's events, not its history, so it only grows.
 4. **Assistant text and tool output left out.** Default: out, as the research recommended. Codex includes them as untrusted evidence under its budget.
 5. **Budget sizes.** Default: `DefaultLimits` above (about 8K context tokens at most). Codex allows 20K message and 10K tool tokens.
 6. **API-key `openai` provider.** Default: the session model. Codex uses `gpt-5.6-luna` there.
@@ -189,9 +225,9 @@ A uah review costs about one small agent step on the same subscription, and less
 8. **Project files set the reviewer.** Default: a trusted project's `.uagent/config.toml` may set `approvals_reviewer` and `[review]`, like every other key. Making them user-file-only would stop a repository from turning auto-review on.
 9. **No structured output.** The runner's `llm.Request` has no response-format field, so the JSON is asked for in the prompt only; Codex passes `final_output_json_schema`. Default: prompt plus strict parsing and retries.
 10. **Effort on models without reasoning.** Default: `low` is always sent. Codex sends `low` only when the model lists it; a provider that rejects the field needs `[review] effort` or a runner-side check.
-11. **Timeout.** Default: Codex's 90 s. The research suggested 30 s; `[review] timeout` changes it.
+11. **Timeout.** Default: Codex's 90 s, which now also bounds the reviewer's commands. The research suggested 30 s; `[review] timeout` changes it.
 
 ## As built (phase 3)
 
-The reviewer (`internal/review`) is wired in the embedded engine (`autoreview.go`): each run builds it on the session's own model client, puts it in front of the session's asker, and resets its circuit breaker on each user message. Allow runs the action, deny refuses it with the reviewer's reason, and ask_user (breaker open) passes to PermissionRequest hooks and the user; headless runs deny then. The context comes from the session's events: up to 20 user messages and the last 20 tool calls with their status but no output. MCP calls that need approval go through the same path. Each verdict is an `engine.AutoReviewed` event, shown as a line in the TUI and in `uah run` progress.
+The reviewer (`internal/review`) is wired in the embedded engine (`autoreview.go`): each run builds it on the session's own model client, puts it in front of the session's asker, and resets its circuit breaker on each user message. Allow runs the action, deny refuses it with the reviewer's reason, and ask_user (breaker open) passes to PermissionRequest hooks and the user; headless runs deny then. The context comes from the session's events: one ordered transcript of the user's messages and answers, the tool calls, and their results without output; each session keeps one review conversation, and each review sends only what is new (see [what uah does](#what-uah-does)). MCP calls that need approval go through the same path. Each verdict is an `engine.AutoReviewed` event, shown as a line in the TUI and in `uah run` progress.
 

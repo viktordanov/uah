@@ -4,7 +4,7 @@ uah reads its configuration from TOML files and combines it with flags, the envi
 
 1. [Files](#files)
 2. [Precedence](#precedence)
-3. [Keys](#keys): [model](#model), [sandbox and approvals](#sandbox-and-approvals), [review](#review), [compaction](#compaction), [instructions and skills](#instructions-and-skills), [hooks](#hooks), [MCP servers](#mcp-servers), [TUI](#tui), [projects](#projects)
+3. [Keys](#keys): [model](#model), [sandbox and approvals](#sandbox-and-approvals), [review](#review), [compaction](#compaction), [instructions and skills](#instructions-and-skills), [hooks](#hooks), [MCP servers](#mcp-servers), [subagents](#subagents), [goals](#goals), [TUI](#tui), [projects](#projects)
 4. [Environment variables](#environment-variables)
 5. [uah config](#uah-config)
 6. [Examples](#examples)
@@ -116,7 +116,7 @@ The permission modes:
 | `read-only` | `read-only` | Ask you (the auto-reviewer first only with `approvals_reviewer = "auto_review"`) |
 | `workspace` (default) | `workspace-write` | Ask you (the auto-reviewer first only with `approvals_reviewer = "auto_review"`) |
 | `auto` | `workspace-write` | The auto-reviewer decides, also with `approvals_reviewer = "user"`. The user is not asked; a decline reaches the model with the reviewer's reason |
-| `yolo` | none | Nothing asks: escalations, `prompt` rules, patches, and MCP tools with an approval mode all run, without the auto-reviewer or PermissionRequest hooks; `forbid` rules still refuse, also a command with a redirect, a subshell, or a variable that runs or may run a forbidden command. Only `--yolo` (alias `--dangerously-bypass-approvals-and-sandbox`, Codex's name) starts it, with no `--sandbox` or `--ask`. It adds `yolo` after `auto` in the shift+tab cycle, and a resumed session stays in it only when `--yolo` is given again |
+| `yolo` | none | Nothing asks: escalations, `prompt` rules, patches, and MCP tools with an approval mode all run, without the auto-reviewer or PermissionRequest hooks; `forbid` rules still refuse, also a command with a redirect, a subshell, or a variable that runs or may run a forbidden command, and a patch that a rule on `apply_patch` or `apply_patch <path>` forbids (also in the other modes, where a patch inside the writable roots asks no one). Only `--yolo` (alias `--dangerously-bypass-approvals-and-sandbox`, Codex's name) starts it, with no `--sandbox` or `--ask`. It adds `yolo` after `auto` in the shift+tab cycle, and a resumed session stays in it only when `--yolo` is given again |
 
 `approval_policy = "never"` still denies whatever needs approval, in every mode but yolo, unless a PreToolUse hook allowed the call. A mode change reaches a live run from its next command and model request.
 
@@ -298,11 +298,13 @@ Three ways set these keys without editing by hand, each in the file that configu
 - `uah mcp approve <name> [tool] --mode approve|prompt|writes|auto` sets the server's default, or one tool's mode. Without `--mode`, it prints the current modes.
 - "Yes, and don't ask again for this tool" in the TUI's approval prompt writes `approval_mode = "approve"` for that tool, as Codex's "Allow and don't ask me again" does. The session stops asking at once.
 
-OAuth for streamable HTTP servers, with Codex's keys. A server that answers 401 and advertises OAuth, at startup or on a later call, needs `uah mcp login <name>`; until then it shows "needs login" in `/mcp` and `uah doctor`, and its calls fail with that instruction. A server with `bearer_token_env_var` or an `Authorization` header never uses OAuth.
+A server that stops on its own restarts after 1, 2, 4, 8, and 16 s, at most 5 times in a row (a server that ran for a minute starts the count again); `startup_timeout_sec` bounds each attempt, and a call made meanwhile waits within its `tool_timeout_sec`. There are no keys for this.
+
+OAuth for streamable HTTP servers, with Codex's keys. A server that answers 401 and advertises OAuth, at startup, on a later call, or on its background stream, needs `uah mcp login <name>`; until then it shows "needs login" in `/mcp` and `uah doctor`, and its calls fail with that instruction. A running session reconnects it at the next message (or `/mcp`) once a new login is stored. A server with `bearer_token_env_var` or an `Authorization` header never uses OAuth.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `auth` | string | `oauth` | How uah authorizes; only `oauth` is supported (Codex's `chatgpt` and `ema_auth` need a Codex account). A server with another value does not start: it shows as failed with the reason, and the other servers start |
+| `auth` | string | `oauth` | How uah authorizes; only `oauth` is supported (Codex's `chatgpt` and `ema_auth` need a Codex account). A server with another value does not start: it shows as failed with the reason, and the other servers start. `uah mcp list` and `get` show it with the reason, and `uah mcp login` refuses only it |
 | `scopes` | list of strings | the scopes the server advertises | The scopes `uah mcp login` asks for; `--scopes` replaces them |
 | `oauth_resource` | string | the server's own | The RFC 8707 resource sent with the authorization and token requests |
 | `oauth.client_id` | string | none: uah registers a client dynamically | A client registered with the authorization server ahead of time, in `[mcp_servers.<name>.oauth]` |
@@ -329,10 +331,12 @@ Codex keys uah does not support are errors: `bearer_token`, `http_headers_helper
 | `max_concurrent_threads_per_session` | int | 4 | override | Open subagents per session tree; Codex's `max_threads` is an alias |
 | `max_threads` | int | none | override | Codex's older name for `max_concurrent_threads_per_session` |
 | `max_depth` | int | 1 | override | 1 offers subagents, 0 turns them off. Subagents never start subagents: a value above 1 is used as 1, with a notice |
-| `default_subagent_model` | string | the parent's model | override | Model for subagents a role or call does not set; on openai-codex it must be in Codex's model catalog, as `spawn_agent`'s `model` must |
-| `default_subagent_reasoning_effort` | string | the parent's effort | override | Effort for subagents a role or call does not set |
+| `default_subagent_model` | string | the parent's model | override | Model for subagents a role or call does not set; on openai-codex it must be in Codex's model catalog, as `spawn_agent`'s `model` must. A fork (`fork_context`) does not take it: it keeps the parent's model unless its call sets one, so it shares the parent's prompt cache, where Codex v0.156.1 applies the default to forks too |
+| `default_subagent_reasoning_effort` | string | the parent's effort | override | Effort for subagents a role or call does not set; a fork keeps the parent's effort, as above |
 
 There is no `default_subagent_service_tier`: Codex has no such key. Fast mode for subagents comes from a role's `service_tier`, or from the parent's `/fast`, which its children inherit.
+
+A subagent starts with its parent's settings as they are when it spawns: a `/model`, `/effort`, `/fast`, `/adaptive`, or permission mode change made while the parent's run is live reaches the children it spawns after the change. A resumed subagent (`resume_agent`) gets back the model, effort, fast mode, and adaptive effort its sidecar saved, as a resumed session does, and its parent's permission mode now.
 
 Kinds of subagents (roles) are files in `~/.uah/agents/` and, for a trusted workspace, `<workspace>/.uah/agents/`, searched recursively: Markdown files with YAML front matter (`*.md`, as Claude Code's `.claude/agents/*.md`) and Codex role files (`*.toml`). A project file replaces a user file of the same name; in one directory, a Markdown file replaces a TOML file of the same name, with a notice. uah reads these keys and warns about the others:
 
@@ -379,6 +383,16 @@ tools = ["Bash"]
 approve = ["git diff", "git log"]
 developer_instructions = "Review the diff you are given. List only real bugs, each with its file and line."
 ```
+
+### Goals
+
+`/goal` keeps the agent working, run after run, until it marks the goal complete or a budget stops it ([README](../README.md#goals), [design](design/goal.md)). The keys are Codex's, with uah's cap on continuations:
+
+| Key | Type | Default | Merge | Meaning |
+| --- | --- | --- | --- | --- |
+| `[features]` `goals` | bool | true | override, can unset | `/goal` and the goal tools (`get_goal`, `create_goal`, `update_goal`), as Codex's feature flag. `false` offers no goal tools, refuses `/goal`, and leaves a goal a session kept alone |
+| `[goals]` `max_goal_token_budget` | integer | none | override | The most tokens a goal may have as its budget, and the budget of a goal set without one: `/goal`, or the model's `create_goal` without `token_budget`, as Codex's key. Tokens count as Codex counts them: input not read from the prompt cache, plus output. A goal over its budget stops as budget-limited and the model is told to wrap up |
+| `[goals]` `max_continuations` | integer | 50 | override, can unset | uah's: the most runs uah starts on its own for one goal; then the goal stops as budget-limited, and `/goal resume` gives it as many again. 0 means no limit, as in Codex |
 
 ### TUI
 

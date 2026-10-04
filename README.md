@@ -20,6 +20,7 @@ brew install viktordanov/tap/uah
 - [Sessions](#resume-a-session) you can resume, search, and [take back to an earlier message](#go-back-to-an-earlier-message), [prompt history](#reuse-an-earlier-prompt) with ↑ and ctrl+r, and a headless [`uah exec`](#headless-mode)
 - [Subagents](#subagents-and-agent-files) that run in parallel, defined in Markdown or TOML agent files
 - [Questions with options](#answer-the-agents-questions): the agent stops to ask, you pick an answer or type your own, as with Codex's `request_user_input`
+- [Goals](#goals): `/goal <objective>` keeps the agent working, run after run, until it marks the goal complete, as Codex's `/goal`, with a budget and guards against a loop that makes no progress
 - [Context preparation](#context-preparation): each session starts knowing its shell, sandbox, git state, and instruction files, from Markdown modules you can extend
 - [AGENTS.md and skills](#agentsmd-and-skills), and [MCP servers](#mcp-setup) with OAuth
 - A [sandbox](#permission-modes) (Seatbelt, bubblewrap) with [approvals](#command-rules), permission modes, and an auto-reviewer
@@ -103,7 +104,7 @@ Keys worth knowing:
 | esc esc | Interrupt; queued messages stay. While the agent is idle, on an empty prompt: go back to an earlier message and edit it |
 | ↑ / ↓ on an empty prompt | Your earlier prompts in this folder, from this session and earlier ones; ↓ past the newest empties the prompt again. With messages queued, ↑ takes the last one back first |
 | ctrl+r | Search your earlier prompts; see [Reuse an earlier prompt](#reuse-an-earlier-prompt) |
-| `/` | Commands, such as `/model`, `/effort`, `/compact`, `/context`, `/diff`, `/review`, `/mcp`, `/agents`, `/status`, `/resume`, and `/new` |
+| `/` | Commands, such as `/model`, `/effort`, `/goal`, `/compact`, `/context`, `/diff`, `/review`, `/mcp`, `/agents`, `/status`, `/resume`, and `/new` |
 | `@` | Mention a workspace file (fuzzy search) |
 | ↑ / ↓, 1–9, n, enter, tab | When the agent asks questions: choose an option, pick one by its number, add a note, answer, and go to the next question; the last row takes your own words. See [Answer the agent's questions](#answer-the-agents-questions) |
 | ctrl+t | The detailed view: turns, tokens, and each tool's result |
@@ -144,6 +145,28 @@ When the agent needs a decision with a few plausible answers, it stops and asks 
 
 The transcript shows the call as `ASK`, and your answers under it. Only the TUI offers the tool: `uah exec` has no one to answer, so the agent asks in its final answer there, and a script replies with `uah exec --last`. To turn it off, as for a terminal that cannot show the picker, set `enabled = false` under `[tools.experimental_request_user_input]` (Codex's key), in the user file or a layer such as `UAH_EXTRA_CONFIG`, or `UAH_REQUEST_USER_INPUT=off`; the agent then asks in its final message, as before. Approvals use the same framed panel. Subagents ask their parent instead. See the [questions design](docs/design/questions.md).
 
+### Goals
+
+`/goal <objective>` sets a goal and starts work on it; uah then keeps the agent working, run after run, until the agent marks the goal complete, as Codex's `/goal` does. Each run uah starts on its own begins with Codex's continuation message, which tells the agent to keep the full objective, work from the current state, and mark the goal complete only after it checks every requirement against evidence. The transcript marks these runs `↻ continuing the goal automatically (3 of 50)`, and the footer shows `Pursuing goal (12m)`, or the tokens against the budget.
+
+| Command | Does |
+| --- | --- |
+| `/goal`, `/goal status` | Show the goal: its status, objective, time, tokens, and continuations |
+| `/goal <objective>` | Set a goal and start on it; an unfinished goal must be cleared or edited first |
+| `/goal edit <objective>` | Change the objective and keep the usage; `/goal edit` alone puts the objective in the prompt to change |
+| `/goal pause`, `/goal resume` | Stop continuing, and go on |
+| `/goal clear` | Drop the goal; `/clear` drops it too |
+
+The goal stops by itself when:
+
+- the agent calls `update_goal` with `complete` (the footer says `Goal achieved`), or with `blocked` after the same blocker for three runs;
+- the token budget is used: `[goals] max_goal_token_budget` sets it, and the agent is told to wrap up;
+- uah has started 50 runs for it (`[goals] max_continuations`; `/goal resume` gives it 50 more);
+- a run fails, three automatic runs in a row make no tool call, or three runs in a row have only failing commands;
+- you interrupt (esc esc or `/stop`), which pauses it.
+
+The goal is kept with the session, so `uah resume` brings it back: an active goal continues when the next run ends, and a paused one waits for `/goal resume`. Compaction keeps it. Subagents never get it, nor the goal tools. `uah sessions show` names the goal's messages (`(goal continuation, automatic)`) instead of printing them. The agent can also set a goal itself with Codex's `create_goal`, but only when you ask for one, so `uah exec "Set a goal to make the tests pass, then work on it"` runs a goal headless. See the [design](docs/design/goal.md).
+
 ### Reuse an earlier prompt
 
 On an empty prompt, ↑ brings back your previous prompt in this folder, from this session or an earlier one, and ↓ goes forward again. Each folder has its own prompts, as in Claude Code: the folder is the session's workspace, and `/resume` into a session of another folder shows that folder's prompts. Edit a recalled prompt and it is yours: the arrows move the cursor again. A `!` command comes back in shell mode; a prompt of this run comes back with its images. Ctrl+c on a draft clears it, and ↑ brings it back.
@@ -166,16 +189,16 @@ The terminal's title shows the session's state and its workspace: `uah · api` w
 uah exec "Fix the failing test in pkg/foo"
 uah exec --last "Now update the changelog"       # continue this directory's latest session
 git diff | uah exec -                             # all of stdin is one message
-printf 'first\nsecond\n' | uah exec --stdin       # each line is a message; lines queue while the agent works
+printf 'first\nsecond\n' | uah exec --stdin       # each line, of any length, is a message; lines queue while the agent works
 uah exec --json "..."                             # JSONL events for scripts, with the answer as it arrives (also --stream)
 uah exec --ephemeral -o answer.md "..."           # keep no session; write the final answer to a file
 ```
 
-`--ephemeral` keeps nothing: the session runs in a temporary directory that uah removes at exit, so `sessions/`, `runs/`, and the index do not change and `uah sessions` does not list it. It starts a new session, so it cannot be used with `--last` or `--session`. `-o` (`--output-last-message`) writes the last run's answer to the file at exit; with no answer, it writes an empty file and warns on stderr, as Codex does.
+`--ephemeral` keeps nothing: the session runs in a temporary directory that uah removes at exit, so `sessions/`, `runs/`, and the index do not change and `uah sessions` does not list it. The model cache and the small scripts that start the sandbox stay in the state directory: sandboxed commands can write the temporary directory, and a script there could be swapped for one that runs outside the sandbox. It starts a new session, so it cannot be used with `--last` or `--session`. `-o` (`--output-last-message`) writes the last run's answer to the file at exit; with no answer, it writes an empty file and warns on stderr, as Codex does.
 
-The TUI shows the answer as the model writes it, and `--json` adds `text_delta`, `reasoning_delta`, and `stream_reset` events before the final `assistant_message`. A [web search](#web-search) is a `web_search` event when it starts and when it ends, with its query or URL. A compaction is `compaction_started`, then `compacted` with its `stats`: the strategy, the tokens before and after, and the summary call's usage. Plain `uah exec` prints each answer once, when it is complete. See the [streaming design](docs/design/streaming.md).
+The TUI shows the answer as the model writes it, and `--json` adds `text_delta`, `reasoning_delta`, and `stream_reset` events before the final `assistant_message`. A [web search](#web-search) is a `web_search` event when it starts and when it ends, with its query or URL. A compaction is `compaction_started`, then `compacted` with its `stats`: the strategy, the tokens before and after, and the summary call's usage. Each auto-review is `auto_reviewed`: the command, the verdict, its risk and reason, how long the review took, and the reviewer's tokens. A [goal](#goals) adds `goal_updated` (the goal, what changed, and who changed it), `goal_continued` before each run uah starts for it, and `goal_cleared`; the progress lines say each change. Plain `uah exec` prints each answer once, when it is complete. See the [streaming design](docs/design/streaming.md).
 
-It exits 0 when the run succeeds, 1 when it fails, 2 on a usage error, 3 at the disk limit, and 130 on an interrupt. A run has no time limit; a script that needs one wraps it, as in `timeout 30m uah exec …` with GNU coreutils, which exits 124. Nobody can answer an approval headless, so commands that need one are declined with a reason. Nor can anyone answer the agent's questions, so `uah exec` does not offer the question tool, and the agent asks in its answer. `uah exec --help` lists the flags.
+It exits 0 when the run succeeds, 1 when it fails, 2 on a usage error, 3 at the disk limit, and 130 on an interrupt. It also exits 1 when any message did not reach the agent (a run that did not start, or a message a hook blocked), when a run ended in an error, or when stdin could not be read, unless the last run stopped at the disk limit (3) or was interrupted (130); the error is on stderr, or an `error` notice with `--json`, and the work already sent still finishes. After such a failure, `-o` writes an answer only when a later run gives one, never an earlier run's. A run has no time limit; a script that needs one wraps it, as in `timeout 30m uah exec …` with GNU coreutils, which exits 124. Nobody can answer an approval headless, so commands that need one are declined with a reason. Nor can anyone answer the agent's questions, so `uah exec` does not offer the question tool, and the agent asks in its answer. `uah exec --help` lists the flags.
 
 ### Search old sessions
 
@@ -320,7 +343,9 @@ uah mcp login linear                                     # OAuth in the browser,
 uah mcp list                                             # every server, its status, and its auth
 ```
 
-`uah mcp add` writes Codex's `[mcp_servers.<name>]` format into your user file, so a Codex configuration copies over. `/mcp` in the TUI shows each server and its tools; `/new` picks up a server added or logged in while the TUI runs.
+`uah mcp add` writes Codex's `[mcp_servers.<name>]` format into your user file, so a Codex configuration copies over. `/mcp` in the TUI shows each server and its tools; `/new` picks up a server added while the TUI runs, and a `uah mcp login` in another terminal takes effect at your next message.
+
+In the TUI, a server's prompts are commands (`/mcp__docs__review main.go`, quoted arguments kept together), and its resources come after `@` with your files: `@docs:docs://index` adds the resource to the message. The agent can list and read resources itself, with Codex's `list_mcp_resources` and `read_mcp_resource` tools.
 
 To stop a server's tools from asking for approval:
 
@@ -468,7 +493,7 @@ Each part is documented next to its code. These are the summaries, with links to
 ### Sessions and the TUI
 
 <!-- memoria:import src="internal/session/README.md#summary" -->
-A session owns its settings, a message queue, at most one live run, pending approvals, and its hooks on one goroutine, and merges run events and its own events into one ordered stream. Messages queue while the agent works, a steer reaches the running agent when the engine allows it, and an interrupt keeps the queue.
+A session owns its settings, a message queue, at most one live run, pending approvals, and its hooks on one goroutine, and merges run events and its own events into one ordered stream. Messages queue while the agent works, a steer reaches the running agent when the engine allows it, and an interrupt keeps the queue. An active goal (`/goal`) keeps the agent working, run after run, until the model marks it complete or a guard stops it.
 <!-- /memoria:import -->
 
 <!-- memoria:import src="internal/sessionfile/README.md#summary" -->
@@ -496,7 +521,7 @@ The embedded engine runs uah-core's packages inside uah, so messages, model, eff
 ### File edits and diffs
 
 <!-- memoria:import src="internal/patch/README.md#summary" -->
-Models edit files with Codex's `apply_patch` tool: a patch of `*** Add File`, `*** Update File` (with `*** Move to`), and `*** Delete File` sections with `@@` hunks, parsed and applied as Codex does, with its lenient context matching and its messages. The embedded engine applies patches inside the writable roots at once, and asks for any other write as for a Bash escalation; the diff it records shows under the call in the TUI and in `uah sessions show`.
+Models edit files with Codex's `apply_patch` tool: a patch of `*** Add File`, `*** Update File` (with `*** Move to`), and `*** Delete File` sections with `@@` hunks, parsed and applied as Codex does, with its lenient context matching and its messages. The embedded engine applies patches inside the writable roots at once, and asks for any other write as for a Bash escalation; forbid rules refuse first in every mode, and a patch writes only the paths it was approved at, never through a symlink put in since; the diff it records shows under the call in the TUI and in `uah sessions show`.
 <!-- /memoria:import -->
 
 Read more: [patches](internal/patch/README.md), and how patches are approved in [approvals](internal/approval/README.md#patches).
@@ -516,7 +541,7 @@ uah finds instruction files the way Codex does: the user's AGENTS.md, then one f
 ### Context preparation
 
 <!-- memoria:import src="internal/contextprep/README.md#summary" -->
-Every new session starts with one developer message of prepared context, before the first user message. This includes a subagent's session. The message has the git branch, the status, and the tracked files. It names the loaded instruction files, so the model does not search for more. It also gives the shell's and the OS's traps, the sandbox's limits and the session's private `$TMPDIR`, and how to size the Bash tool's output. The text comes from Markdown modules: a file under `~/.uah/prompts/context/` replaces the built-in of its path, `~/.uah/prompts/context.d/` and a project's `.uah/context.d/` add modules, and `uah context` shows which apply and why. The system prompt does not change, and the message stays in the session's history, so the prompt cache holds. Resumed and forked sessions get no new message. Turn it off with `context_preparation = false`, `--no-context-preparation`, or `UAH_CONTEXT_PREPARATION=off`.
+Every new session starts with one developer message of prepared context, before the first user message. This includes a subagent's session. The message has the git branch, the status, and the tracked files. It names the loaded instruction files, so the model does not search for more. It also gives the shell's and the OS's traps, the sandbox's limits and the session's private `$TMPDIR`, and how to size the Bash tool's output. The text comes from Markdown modules: a file under `~/.uah/prompts/context/` replaces the built-in of its path, `~/.uah/prompts/context.d/` and a project's `.uah/context.d/` add modules, and `uah context` shows which apply and why. The system prompt does not change, and the message stays in the session's history, so the prompt cache holds. Resumed and forked sessions get no new message; a fork's first run gets one sentence naming its own `$TMPDIR`, since the copied message names its parent's. Turn it off with `context_preparation = false`, `--no-context-preparation`, or `UAH_CONTEXT_PREPARATION=off`.
 <!-- /memoria:import -->
 
 Read more: [context preparation](internal/contextprep/README.md).
@@ -556,12 +581,13 @@ Read more: [hooks](internal/hooks/README.md), with every event and its payload.
 ### MCP servers
 
 <!-- memoria:import src="internal/mcp/README.md#summary" -->
-uah runs the MCP servers in `[mcp_servers]` (Codex's format) on the embedded engine through the official Go SDK: stdio and streamable HTTP servers, their tools offered as `mcp__<server>__<tool>` and called without blocking the agent, Codex's approval modes, OAuth logins with `uah mcp login` kept in the OS keyring, and `uah mcp` to list, add, remove, and approve servers.
+uah runs the MCP servers in `[mcp_servers]` (Codex's format) on the embedded engine through the official Go SDK: stdio and streamable HTTP servers, their tools offered as `mcp__<server>__<tool>` and called without blocking the agent, Codex's resource tools, prompts as `/mcp__<server>__<prompt>` and resources as `@server:uri` in the composer (Claude Code's), restarts with backoff, tool list changes applied at the next run, Codex's approval modes, OAuth logins with `uah mcp login` kept in the OS keyring and picked up by a running session, and `uah mcp` to list, add, remove, and approve servers.
 <!-- /memoria:import -->
 
 - Servers connect when a TUI session opens, before any message (`uah exec` connects them on its first run), and stop with the session; `/clear` keeps them, and `/new` and `/resume` reconnect them once. One that fails to start is shown then and left out; with `required = true`, every message fails until the server is fixed and `/new` connects it.
+- A server that stops restarts after 1, 2, 4, 8, and 16 s, at most 5 times in a row, and keeps its tools meanwhile, so the prompt cache holds; a call made while it restarts waits for it. A server that changes its tool list has the new list from your next message, never in the middle of a turn.
 - A call runs in the background, so the agent keeps working. A tool asks for approval by its `approval_mode`, as in Codex.
-- OAuth tokens are kept in the OS keyring (or a 0600 file without one) and refreshed as they expire. A server that needs a login shows "needs login" in `/mcp` and `uah doctor`.
+- OAuth tokens are kept in the OS keyring (or a 0600 file without one) and refreshed as they expire. A server that needs a login shows "needs login" in `/mcp` and `uah doctor`, and reconnects at the next message once `uah mcp login` stored a new login.
 
 Read more: [MCP](internal/mcp/README.md), and the [design and validation](docs/design/mcp.md).
 <!-- /memoria:section -->
@@ -583,6 +609,16 @@ A subagent is the same as the main agent in every way except its session, which 
 - `/agents <name>` shows its live transcript in the TUI.
 
 Read more: [subagents](internal/agents/README.md), and the [design and validation](docs/design/subagents.md).
+<!-- /memoria:section -->
+
+<!-- memoria:section id="goal" files="internal/app/goal_test.go internal/app/resolve.go internal/app/setup.go" -->
+### The goal loop
+
+<!-- memoria:import src="internal/goal/README.md#summary" -->
+`/goal <objective>` keeps the agent working, run after run, until the model marks the goal complete with Codex's `update_goal` after Codex's completion audit. Each automatic run starts with Codex's continuation message; the goal, kept in the session's sidecar, survives a resume and a compaction. A token budget, a cap of 50 automatic runs, a failed run, and three runs in a row without progress stop it; an interrupt pauses it, and `/goal clear` or `/clear` drops it. Subagents never inherit it.
+<!-- /memoria:import -->
+
+`app.Resolve` reads `[features] goals` and `[goals]` into `goal.Settings`, and `app.Setup` gives them to the session and turns the engine's goal tools on. `internal/app/goal_test.go` runs the loop end to end on the embedded engine with `testing/fakellm`. Read more: [goals](internal/goal/README.md), the [session's part](internal/session/README.md#goals), and the [design](docs/design/goal.md).
 <!-- /memoria:section -->
 
 <!-- memoria:section id="compaction" files="internal/llmcall/llmcall.go cmd/uah/stream.go internal/contextusage/usage.go" -->
@@ -638,7 +674,7 @@ Pushing a `v1.2.3` tag builds the release archives for macOS and Linux (arm64 an
 CI runs the race tests with `-short` and the Markdown renderer's benchmarks once (so they keep running; its tests hold the bounds) in one job, every package with a test that `-short` skips, in full, in a second job beside it, with the tests that skip under the race detector (the performance ceilings, the Markdown renderer's every-prefix tests) run without it, and the linter on each push; `go test` compiles every package, so there is no build step. The agentbench tasks' dry run runs when `tools/agentbench` changes, and nightly; the linter also fails on a function above 20 cyclomatic complexity, a backstop for the rule of about 15. Design records, the architecture rules, and the documentation procedure are in [docs](docs/README.md):
 
 <!-- memoria:import src="docs/README.md#summary" -->
-The configuration reference, the context preparation guide, design records for the harness, the TUI, state storage, sandboxing, compaction, MCP, subagents, pasted images, streaming, Markdown rendering, going back to an earlier message, selecting text with the mouse, editing the prompt in an editor, the system prompt, web search, `/diff` and `/review`, prompt history and the composer's height, how tool calls read in the transcript, keeping the ChatGPT login fresh, and running uah as a terminal host backend, plus the architecture rules and documentation procedure for uah.
+The configuration reference, the context preparation guide, design records for the harness, the TUI, state storage, sandboxing, compaction, MCP, subagents, pasted images, streaming, Markdown rendering, going back to an earlier message, selecting text with the mouse, editing the prompt in an editor, the system prompt, web search, `/diff` and `/review`, goals (`/goal`), prompt history and the composer's height, how tool calls read in the transcript, keeping the ChatGPT login fresh, and running uah as a terminal host backend, plus the architecture rules and documentation procedure for uah.
 <!-- /memoria:import -->
 
 [`bench/tui`](bench/tui/README.md) is a separate Go module with the benchmark behind choosing Bubble Tea v2. `go test -run '^$' -bench Markdown -benchmem ./internal/tui/render` measures the Markdown renderer. `uah compaction eval [session file or directory]`, a hidden command, compares the compaction strategies on recorded sessions and prints tables of numbers only; its tests hold the strategies to their bounds on a synthetic session ([internal/compaction](internal/compaction/README.md#measuring-compaction)).

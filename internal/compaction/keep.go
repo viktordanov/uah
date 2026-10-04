@@ -7,6 +7,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/viktordanov/uah-core/harness/llm"
+
+	"github.com/viktordanov/uah/internal/goal"
 )
 
 // UserMessageMaxTokens caps the user messages a compaction keeps, as Codex
@@ -33,16 +35,26 @@ func IsHeartbeat(item llm.Item) bool {
 
 // Kept is the user messages among covered that a compaction keeps, in
 // order: heartbeats are left out, and the newest messages are kept up to
-// maxTokens, Codex's build_compacted_history_with_limit.
+// maxTokens, Codex's build_compacted_history_with_limit. As Codex keeps
+// them, the user's goal changes (/goal) stay whole whatever the cap, and
+// the goal's continuation messages, uah's rather than the user's, are left
+// to the summary.
 func Kept(covered []llm.Item, maxTokens int) []llm.Item {
 	var picked []llm.Item
 	remaining := maxTokens
-	for i := len(covered) - 1; i >= 0 && remaining > 0; i-- {
-		item := covered[i]
+	for _, item := range slices.Backward(covered) {
 		if !IsUserMessage(item) || IsHeartbeat(item) {
 			continue
 		}
 		m, _ := item.Data.(llm.Message)
+		switch kind, _ := goal.Parse(m.Text); {
+		case kind == goal.KindUser:
+			picked = append(picked, item)
+
+			continue
+		case kind != goal.KindNone, remaining <= 0:
+			continue
+		}
 		tokens := ApproxTokens(m.Text)
 		if tokens > remaining {
 			m.Text = TruncateMiddle(m.Text, remaining)
@@ -61,11 +73,12 @@ func Kept(covered []llm.Item, maxTokens int) []llm.Item {
 // Developer is the developer messages among covered, in order, which a
 // compaction keeps whole: the harness's own context, such as the context a
 // session starts with (internal/contextprep), as Codex keeps its initial
-// context.
+// context. The goal's steering (the budget limit, an edited objective),
+// which a run gets as a developer message, is left to the summary.
 func Developer(covered []llm.Item) []llm.Item {
 	var out []llm.Item
 	for _, item := range covered {
-		if m, ok := item.Data.(llm.Message); ok && item.Type == llm.ItemMessage && m.Role == llm.RoleDeveloper {
+		if m, ok := item.Data.(llm.Message); ok && item.Type == llm.ItemMessage && m.Role == llm.RoleDeveloper && !goal.IsContext(m.Text) {
 			out = append(out, item)
 		}
 	}

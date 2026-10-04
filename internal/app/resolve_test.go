@@ -14,6 +14,7 @@ import (
 	"github.com/viktordanov/uah/internal/compaction"
 	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/rules"
 	"github.com/viktordanov/uah/internal/sandbox"
@@ -398,6 +399,11 @@ func TestResolve(t *testing.T) {
 			want: func(r *app.Resolved) {},
 		},
 		{
+			name: "goals: off, a token budget cap, and no continuation cap",
+			cfg:  config.Config{Features: config.Features{Goals: new(false)}, Goals: config.Goals{MaxGoalTokenBudget: 50_000, MaxContinuations: new(0)}},
+			want: func(r *app.Resolved) { r.Goals = goal.Settings{Disabled: true, MaxTokenBudget: 50_000} },
+		},
+		{
 			name: "the prompt file is read by Setup",
 			cfg:  config.Config{ExperimentalCompactPromptFile: "/prompts/compact.md"},
 			want: func(r *app.Resolved) { r.CompactPromptFile = "/prompts/compact.md" },
@@ -421,6 +427,7 @@ func TestResolve(t *testing.T) {
 				Review:            review.Config{Model: review.CodexModel, Effort: llm.ReasoningEffortLow, Timeout: review.DefaultTimeout},
 				Agents:            app.Agents{Enabled: true, MaxThreads: 4, MaxDepth: 1},
 				WebSearch:         app.WebSearchLive,
+				Goals:             goal.Settings{MaxContinuations: goal.DefaultMaxContinuations},
 			}
 			tt.want(&want)
 			// No test names a fallback model itself.

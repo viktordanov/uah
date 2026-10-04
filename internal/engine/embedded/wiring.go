@@ -44,7 +44,8 @@ func (b backend) Start(ctx context.Context, l harness.Launch) (harness.Process, 
 	start, _ := ctx.Value(startKey{}).(startValue)
 	w := &wiring{
 		e: b.e, l: l, getenv: b.e.cfg.Getenv, emit: start.emit, notify: start.opts.Notify, ask: start.opts.Ask,
-		askAnytime: start.opts.AskAnytime, askUser: start.opts.AskUser, inject: start.opts.Inject, tier: start.opts.ServiceTier, adaptive: start.opts.AdaptiveEffort,
+		askAnytime: start.opts.AskAnytime, askUser: start.opts.AskUser, goal: start.opts.Goal, inject: start.opts.Inject,
+		tier: start.opts.ServiceTier, adaptive: start.opts.AdaptiveEffort, settings: start.opts.Settings,
 		mode: newModeCell(start.opts, b.e.cfg),
 	}
 	a, err := w.start(ctx, start.opts)
@@ -74,12 +75,17 @@ type wiring struct {
 	askAnytime approval.Ask
 	// askUser asks the user the agent's questions (request_user_input).
 	askUser engine.AskUser
+	// goal answers the goal tools with the session's goal.
+	goal engine.GoalTool
 	// inject gives the session's agent a message without a turn of its own.
 	inject func(string) func()
 	// tier and adaptive are the run's service tier and adaptive effort
-	// when it started.
+	// when it started; settings the session's live settings
+	// (engine.Options.Settings, nil: none), which subagents start with
+	// (parentSettings).
 	tier     string
 	adaptive string
+	settings func() engine.LiveSettings
 	// mode is the run's permission mode, which Run.SetMode changes.
 	mode *modeCell
 	// bashTools, when set, keeps Bash's definition in each model request
@@ -138,7 +144,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	w.closers = append(w.closers, closer{close: sw.Close})
 	sw.seen, sw.cacheKey = w.e.last.recorder(req.SessionID), w.e.cacheKey(req.SessionID)
 	if w.e.cfg.AutoReview || w.ask != nil || w.mode.get().ReviewerDecides() {
-		w.ask = w.reviewedAsk(sw, req)
+		w.ask = w.reviewedAsk(sw, req) //nolint:contextcheck,nolintlint // on Linux, the sandbox probes bwrap once per process, with its own timeout; not on darwin
 	}
 	if sc := w.e.scope(req.SessionID); sc != nil && sc.NeverAsk {
 		w.ask = neverAsk
@@ -149,6 +155,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if err != nil {
 		return nil, err
 	}
+	w.doneForkNote(req, s)
 	if sw.searches, err = w.searchLog(req.Provider, string(s.id)); err != nil {
 		return nil, err
 	}
@@ -174,7 +181,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if err := w.effortUpdates(ctx, sw, s, req); err != nil {
 		return nil, err
 	}
-	operations := operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx))
+	operations := operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx))
 	first := compaction.Trigger("")
 	switch {
 	case opts.Clear:

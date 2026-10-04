@@ -99,6 +99,10 @@ func (s *Server) Revoke() {
 	s.access, s.refresh = map[string]time.Time{}, map[string]bool{}
 }
 
+// DropConnections closes every client connection, as a proxy that restarts
+// does, so a client's standalone SSE stream has to reconnect.
+func (s *Server) DropConnections() { s.srv.CloseClientConnections() }
+
 // Stats returns the counts so far.
 func (s *Server) Stats() Stats {
 	s.mu.Lock()

@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -23,8 +24,12 @@ const (
 	StateFailed   State = "failed"
 	StateDisabled State = "disabled"
 	// StateNeedsLogin is an HTTP server that asked for OAuth without a
-	// usable login; `uah mcp login <name>` fixes it.
+	// usable login; `uah mcp login <name>` fixes it, and the next run or
+	// /mcp reconnects it.
 	StateNeedsLogin State = "needs_login"
+	// StateRestarting is a server that stopped on its own and is being
+	// started again; calls wait for it.
+	StateRestarting State = "restarting"
 )
 
 var discard = slog.New(slog.DiscardHandler)
@@ -50,6 +55,9 @@ type Options struct {
 	// ServerFile names the configuration file AlwaysAllow saves a server's
 	// tool approval to; nil or "" saves nothing.
 	ServerFile func(server string) string
+	// RestartDelay is the wait before the first restart of a server that
+	// stopped (default DefaultRestartDelay); each later one doubles it.
+	RestartDelay time.Duration
 }
 
 // Tool is an MCP tool as the model sees it.
@@ -99,8 +107,11 @@ type Manager struct {
 	ctx     context.Context // the servers' lifetime, until Close
 	cancel  context.CancelFunc
 	servers map[string]*server // nil until started
-	tools   []Tool             // set when every server has started or failed
-	done    chan struct{}      // closed then
+	// tools are the tools offered, named when every server has started or
+	// failed (started) and again when a server's list changes.
+	tools   []Tool
+	started bool
+	done    chan struct{} // closed when started
 }
 
 // NewManager returns a manager for the servers, keyed by name. It starts
@@ -111,7 +122,7 @@ func NewManager(servers map[string]ServerConfig, opts Options) (*Manager, error)
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		err := servers[name].Validate()
 		switch {
-		case errors.Is(err, errUnsupportedAuth):
+		case errors.Is(err, ErrUnsupportedAuth):
 			unsupported[name] = err
 		case err != nil:
 			return nil, fmt.Errorf("mcp_servers.%s: %w", name, err)
@@ -125,6 +136,9 @@ func NewManager(servers map[string]ServerConfig, opts Options) (*Manager, error)
 	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = http.DefaultClient
+	}
+	if opts.RestartDelay <= 0 {
+		opts.RestartDelay = DefaultRestartDelay
 	}
 
 	return &Manager{configs: maps.Clone(servers), unsupported: unsupported, opts: opts}, nil
@@ -155,12 +169,12 @@ func (m *Manager) Start() {
 		}
 		wg.Go(func() { m.connect(ctx, s) })
 	}
-	done, servers := m.done, m.servers
+	done := m.done
 	go func() {
 		wg.Wait()
 		m.mu.Lock()
 		if !m.closed {
-			m.tools = qualify(servers)
+			m.tools, m.started = m.qualify(), true
 		}
 		m.mu.Unlock()
 		close(done)
@@ -168,8 +182,11 @@ func (m *Manager) Start() {
 }
 
 // Tools starts the servers, waits until each has started or failed, and
-// returns the tools to offer. It fails when a required server did not
-// start.
+// returns the tools to offer. A run calls it as it starts, so a run's tools
+// stay the same while it runs and a changed list applies from the next
+// one. A needs_login server whose stored login changed since (`uah mcp
+// login` in another terminal) reconnects first, as Codex does before each
+// step. It fails when a required server did not start.
 func (m *Manager) Tools(ctx context.Context) ([]Tool, error) {
 	m.Start() //nolint:contextcheck // servers outlive the caller's context
 	m.mu.Lock()
@@ -182,6 +199,13 @@ func (m *Manager) Tools(ctx context.Context) ([]Tool, error) {
 	case <-done:
 	case <-ctx.Done():
 		return nil, fmt.Errorf("failed to start MCP servers: %w", ctx.Err())
+	}
+	for _, settled := range m.relogin() {
+		select {
+		case <-settled:
+		case <-ctx.Done():
+			return nil, fmt.Errorf("failed to reconnect MCP servers: %w", ctx.Err())
+		}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -213,6 +237,9 @@ func (m *Manager) Close() error {
 	m.servers, m.tools, m.cancel, m.done = nil, nil, nil, nil
 	if cancel != nil {
 		cancel()
+	}
+	for _, s := range servers {
+		m.settleLocked(s) // calls waiting for a restart stop waiting
 	}
 	m.mu.Unlock()
 	var errs []error

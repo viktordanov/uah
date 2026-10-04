@@ -104,8 +104,9 @@ func TestInteractiveSession_MCPFailuresAtOpen(t *testing.T) {
 }
 
 // handshake is what a client sends a server from before the 2026-07-28
-// protocol (MCPSERVER_LEGACY) as it connects, as a host's server sees it.
-var handshake = []string{"server/discover", "initialize", "notifications/initialized", "tools/list"}
+// protocol (MCPSERVER_LEGACY) as it connects, as a host's server sees it:
+// the tools, then the prompts the test server offers.
+var handshake = []string{"server/discover", "initialize", "notifications/initialized", "tools/list", "prompts/list"}
 
 // openInteractive sets up and opens a session as the TUI does, and waits
 // until its MCP servers have started, with the notices shown by then.

@@ -147,6 +147,7 @@ func (s *Session) handle(cmd any) (any, error) {
 	case cmdSubmit:
 		return s.onSubmit(c), nil
 	case cmdInterrupt:
+		s.pauseGoalForInterrupt()
 		s.restartAfterStop = false
 		s.stopShells()
 		s.stopReview()
@@ -177,6 +178,10 @@ func (s *Session) handle(cmd any) (any, error) {
 		return s.onShell(c), nil
 	case cmdReview:
 		return s.onReview(c)
+	case cmdGoal:
+		return s.onGoal(c)
+	case cmdGoalTool:
+		return s.onGoalTool(c)
 	}
 
 	return nil, fmt.Errorf("unknown session command %T", cmd)

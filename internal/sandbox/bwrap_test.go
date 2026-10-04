@@ -56,6 +56,15 @@ func TestBwrapArgs(t *testing.T) {
 
 			return sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, WritableRoots: []string{main, filepath.Join(base, "missing")}}
 		}},
+		{"workspace-write-readonly", func(t *testing.T, base string) sandbox.Policy {
+			t.Helper()
+			// The sandbox scripts' directory under $TMPDIR, with the
+			// session's temporary directory next to it.
+			scripts := mkdir(t, base, "tmpdir/home/state/sandbox")
+			temp := mkdir(t, base, "tmpdir/home/state/sessions/s/tmp")
+
+			return sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: mkdir(t, base, "ws", ".git"), TempDir: temp, ReadOnly: []string{scripts}}
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -130,15 +130,16 @@ func (c ServerConfig) Validate() error {
 	// Checked last, so a server failing only this one can still be
 	// configured: the manager fails just that server.
 	if c.Auth != "" && c.Auth != "oauth" {
-		return fmt.Errorf("auth %q is %w (want oauth)", c.Auth, errUnsupportedAuth)
+		return fmt.Errorf("auth %q is %w (want oauth)", c.Auth, ErrUnsupportedAuth)
 	}
 
 	return nil
 }
 
-// errUnsupportedAuth is an auth value uah cannot use. Codex's other values
-// (chatgpt, ema_auth) need Codex's account.
-var errUnsupportedAuth = errors.New("not supported")
+// ErrUnsupportedAuth is an auth value uah cannot use. Codex's other values
+// (chatgpt, ema_auth) need Codex's account. Only that server fails: the
+// manager starts the others, and `uah mcp` lists it with the reason.
+var ErrUnsupportedAuth = errors.New("not supported")
 
 // validateTransport checks that the keys match the transport.
 func (c ServerConfig) validateTransport() error {

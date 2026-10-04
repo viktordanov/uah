@@ -1,7 +1,5 @@
 
 
-
-
 ╭────────────────────────────────────────────────╮
 │ λ uah                                          │
 │                                                │
@@ -10,13 +8,15 @@
 ╰────────────────────────────────────────────────╯
 
 • MCP servers
-  • docs: ready · stdio · 2 tools
+  • docs: ready · stdio · 2 tools · 1 prompt · resources
+  • flaky: restarting (2 of 5) · stdio · 1 tool
+      the server stopped: EOF
   • tracker: needs login · streamable_http
-      run `uah mcp login tracker`, then /new or restart uah
+      run `uah mcp login tracker`; the next message or /mcp then reconnects it
   • broken: failed · stdio
       failed to connect: exec: "missing": not found
   • off: disabled · stdio
-  /mcp verbose (or ctrl+t) lists each tool and its approval mode
+  /mcp verbose (or ctrl+t) lists each tool and its approval mode, prompt, and resource
 
 
 λ

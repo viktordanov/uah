@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -12,16 +13,26 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/viktordanov/uah/internal/cmdparse"
+	"github.com/viktordanov/uah/internal/mcp"
 )
 
 // mcpParts is an MCP call's line: "server · tool  key "value", key 5",
 // from its qualified name (mcp__server__tool) and its JSON arguments in
 // the order the model sent them. A string with no space shows bare.
+// A resource tool's line is "server · list_mcp_resources  ...", with the
+// server from its arguments, else "mcp".
 func mcpParts(name, arguments string) []cmdparse.Part {
 	rest := strings.TrimPrefix(name, "mcp__")
 	server, tool, ok := strings.Cut(rest, "__")
 	if !ok {
 		server, tool = "mcp", rest
+	}
+	if mcp.IsResourceTool(name) {
+		var args struct {
+			Server string `json:"server"`
+		}
+		_ = json.Unmarshal([]byte(arguments), &args)
+		server, tool = cmp.Or(strings.TrimSpace(args.Server), "mcp"), name
 	}
 	parts := []cmdparse.Part{plain(server), dim(" · "), plain(tool)}
 	for i, kv := range orderedArgs(arguments) {
@@ -154,3 +165,7 @@ func firstLine(text string) string {
 
 	return ""
 }
+
+// isMCP reports whether a tool is an MCP server's tool or a resource
+// tool: both run as MCP calls and show their result.
+func isMCP(name string) bool { return strings.HasPrefix(name, mcp.Prefix) || mcp.IsResourceTool(name) }

@@ -3,6 +3,7 @@ package embedded
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -25,12 +26,19 @@ import (
 // (internal/contextprep) that the adapters gather from the session's
 // facts. The system prompt stays the same, byte for byte, and the message
 // is recorded with the session, so the prompt cache holds. Resumed and
-// forked sessions get none: theirs is in their history.
+// forked sessions get none: theirs is in their history. A fork's is its
+// parent's, which names the parent's $TMPDIR, so its first run gets a
+// developer message that names its own (forkNote), after the copied
+// history, so the request keeps the parent's prefix.
 
 // prepared adds the prepared context, as a developer message, before the
-// messages of a new session, when context preparation is on. req has the
-// session's ID.
+// messages of a new session, when context preparation is on, or a fork's
+// correction before the messages of its first run. req has the session's
+// ID.
 func (w *wiring) prepared(ctx context.Context, req core.Request, messages []core.UserInput) []core.UserInput {
+	if note := w.forkNote(req); note != "" {
+		return append([]core.UserInput{{ID: uuid.NewString(), Text: note, Role: core.RoleDeveloper}}, messages...)
+	}
 	if !w.e.cfg.ContextPreparation {
 		return messages
 	}
@@ -46,6 +54,30 @@ func (w *wiring) prepared(ctx context.Context, req core.Request, messages []core
 	return append([]core.UserInput{{ID: uuid.NewString(), Text: text, Role: core.RoleDeveloper}}, messages...)
 }
 
+// forkNote is what a fork's first run is told of its own $TMPDIR, when
+// the history it copied names its parent's (Engine.Fork, forkTempPath);
+// "" otherwise. Once the run's store records it, the wiring removes the
+// file (doneForkNote), so a later run does not repeat it.
+func (w *wiring) forkNote(req core.Request) string {
+	parent, err := os.ReadFile(forkTempPath(w.l.SessionsDir, req.SessionID))
+	if err != nil || w.e.cfg.Sandbox == nil {
+		return ""
+	}
+
+	return fmt.Sprintf(forkTempNote, session.TempDir(w.l.SessionsDir, req.SessionID), parent)
+}
+
+// doneForkNote removes a fork's note once the store has recorded the run's
+// messages with it.
+func (w *wiring) doneForkNote(req core.Request, s runStore) {
+	if len(s.early) > 0 {
+		_ = os.Remove(forkTempPath(w.l.SessionsDir, req.SessionID))
+	}
+}
+
+// forkTempNote corrects the prepared context a fork copied from its parent.
+const forkTempNote = "You are a fork of the session above, with a session of your own: $TMPDIR (%s) is your private scratch directory, writable in every mode, and %s, which the context above names, is your parent's, not yours."
+
 // facts are what the adapters know about the session: its workspace and
 // the instruction files in its system prompt, or the ones its system
 // prompt leaves out, the shell its commands run in, and the sandbox of its
@@ -55,6 +87,7 @@ func (w *wiring) facts(req core.Request) contextprep.Facts {
 		Workspace: req.Workspace, Shell: w.shell(), GOOS: runtime.GOOS,
 		MaxOutputLength: operation.DefaultMaxOutputLength,
 		Subagent:        strings.HasPrefix(req.SessionID, session.SubagentIDPrefix),
+		InstructionsOff: w.e.cfg.InstructionsOff,
 	}
 	if instructions.HasProject(req.SystemPrompt) {
 		f.InstructionFiles = w.e.cfg.InstructionFiles

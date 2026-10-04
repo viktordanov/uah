@@ -1,6 +1,7 @@
 package bubble
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -12,8 +13,9 @@ import (
 )
 
 var (
-	errNoSession = errors.New("no session is open")
-	errNoConfig  = errors.New("settings are not available here")
+	errNoSession   = errors.New("no session is open")
+	errNoConfig    = errors.New("settings are not available here")
+	errEmptyPrompt = errors.New("the MCP prompt returned no text")
 )
 
 // run turns an effect into a command that does its I/O off the update loop.
@@ -41,11 +43,21 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 	if cmd, ok := m.runHistory(e); ok {
 		return cmd
 	}
+	if cmd, ok := m.runMCP(e); ok {
+		return cmd
+	}
+	ctx, store := m.ctx, m.deps.Images
 	switch e := e.(type) {
 	case state.EffSubmit:
-		return withSession(func(s *session.Session) error { _, err := s.Submit(e.Text); return err })
+		return withSession(func(s *session.Session) error {
+			_, err := s.Submit(withResources(ctx, s.MCP(), store, e.Text))
+			return err
+		})
 	case state.EffSteer:
-		return withSession(func(s *session.Session) error { _, err := s.Send(e.Text, e.When); return err })
+		return withSession(func(s *session.Session) error {
+			_, err := s.Send(withResources(ctx, s.MCP(), store, e.Text), e.When)
+			return err
+		})
 	case state.EffSteerQueued:
 		return withSession(func(s *session.Session) error { _, err := s.SteerQueued(); return err })
 	case state.EffShell:
@@ -69,6 +81,8 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 		return withSession(func(s *session.Session) error { return s.Rewind(e.ID) })
 	case state.EffCompact:
 		return withSession(func(s *session.Session) error { return s.CompactWith(e.Focus) })
+	case state.EffGoal:
+		return withSession(func(s *session.Session) error { return runGoal(s, e) })
 	case state.EffResolve:
 		return withSession(func(s *session.Session) error { return s.Resolve(e.ID, e.Answer) })
 	case state.EffAnswerQuestions:
@@ -152,6 +166,18 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 				return fail(errNoSession)
 			}
 			servers, ok := sess.MCPServers()
+			if mg := sess.MCP(); e.Verbose && mg != nil {
+				ctx, cancel := context.WithTimeout(ctx, resourceListTimeout)
+				defer cancel()
+				refs := mg.Resources(ctx)
+				for i := range servers {
+					for _, r := range refs {
+						if r.Server == servers[i].Name {
+							servers[i].Resources = append(servers[i].Resources, r)
+						}
+					}
+				}
+			}
 
 			return state.MCPListed{Servers: servers, Supported: ok, Verbose: e.Verbose}
 		}
@@ -219,4 +245,26 @@ func (m Model) switchTo(id string) tea.Cmd {
 
 		return next()
 	})
+}
+
+// runGoal changes the session's goal; the session reports the change.
+func runGoal(s *session.Session, e state.EffGoal) error {
+	var err error
+	switch e.Op {
+	case state.GoalOpSet:
+		_, err = s.SetGoal(e.Text)
+	case state.GoalOpEdit:
+		_, err = s.EditGoal(e.Text)
+	case state.GoalOpPause:
+		_, err = s.PauseGoal()
+	case state.GoalOpResume:
+		_, err = s.ResumeGoal()
+	case state.GoalOpClear:
+		var had bool
+		if had, err = s.ClearGoal(); err == nil && !had {
+			err = errors.New("no goal to clear")
+		}
+	}
+
+	return err
 }

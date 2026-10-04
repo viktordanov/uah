@@ -11,6 +11,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/compaction"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/session"
 )
 
@@ -38,6 +39,9 @@ func (j *jsonlWriter) write(event core.Event) {
 	}
 	if !ok {
 		dto, ok = engineEventDTO(event)
+	}
+	if !ok {
+		dto, ok = goalEventDTO(event)
 	}
 	if !ok {
 		return
@@ -164,6 +168,30 @@ func sessionEventDTO(event core.Event) (any, bool) {
 	return nil, false
 }
 
+// goalEventDTO is the stream shape of the session's goal events (/goal).
+func goalEventDTO(event core.Event) (any, bool) {
+	switch e := event.(type) {
+	case session.GoalUpdated:
+		return struct {
+			sessionHeader
+
+			Goal   goal.Goal `json:"goal"`
+			Change string    `json:"change"`
+			By     string    `json:"by,omitempty"`
+		}{header("goal_updated", e.At), e.Goal, string(e.Change), e.By}, true
+	case session.GoalContinued:
+		return struct {
+			sessionHeader
+
+			Goal goal.Goal `json:"goal"`
+		}{header("goal_continued", e.At), e.Goal}, true
+	case session.GoalCleared:
+		return header("goal_cleared", e.At), true
+	}
+
+	return nil, false
+}
+
 // engineEventDTO is the stream shape of the embedded engine's own events.
 func engineEventDTO(event core.Event) (any, bool) {
 	switch e := event.(type) {
@@ -221,6 +249,25 @@ func engineEventDTO(event core.Event) (any, bool) {
 			MessageID string `json:"message_id"`
 			Tokens    int64  `json:"tokens,omitempty"`
 		}{header("rewound", e.At), e.MessageID, e.Tokens}, true
+	case engine.AutoReviewed:
+		return struct {
+			sessionHeader
+
+			Command           string `json:"command"`
+			Outcome           string `json:"outcome"`
+			Risk              string `json:"risk,omitempty"`
+			Reason            string `json:"reason,omitempty"`
+			DurationMS        int64  `json:"duration_ms"`
+			Delta             bool   `json:"delta,omitempty"`
+			Forked            bool   `json:"forked,omitempty"`
+			Commands          int    `json:"commands,omitempty"`
+			InputTokens       int64  `json:"input_tokens"`
+			CachedInputTokens int64  `json:"cached_input_tokens"`
+			OutputTokens      int64  `json:"output_tokens"`
+		}{
+			header("auto_reviewed", e.At), e.Command, e.Outcome, e.Risk, e.Reason, e.Duration.Milliseconds(),
+			e.Delta, e.Forked, e.Commands, e.InputTokens, e.CachedInputTokens, e.OutputTokens,
+		}, true
 	}
 
 	return nil, false

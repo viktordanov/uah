@@ -8,8 +8,12 @@ import (
 	"github.com/viktordanov/uah/internal/sandbox"
 )
 
-// jsonString is the JSON schema type of a string.
-const jsonString = "string"
+// jsonString is the JSON schema type of a string; schemaType is the key
+// that names a type.
+const (
+	jsonString = "string"
+	schemaType = "type"
+)
 
 func bashWithEscalation(t llm.Tool, p sandbox.Policy) llm.Tool {
 	params := maps.Clone(t.Parameters)
@@ -24,7 +28,7 @@ func bashWithEscalation(t llm.Tool, p sandbox.Policy) llm.Tool {
 	props[argPrefixRule] = property("array",
 		"With require_escalated, optionally: the command prefix the user may allow from now on, "+
 			`such as ["npm", "install"], so similar commands run without asking.`,
-		"items", map[string]any{"type": jsonString})
+		"items", map[string]any{schemaType: jsonString})
 	params["properties"] = props
 	t.Parameters = params
 	t.Description += " " + sandboxNote(p)
@@ -34,7 +38,7 @@ func bashWithEscalation(t llm.Tool, p sandbox.Policy) llm.Tool {
 
 // property is a JSON schema property with extra key and value pairs.
 func property(typ, description string, extra ...any) map[string]any {
-	p := map[string]any{"type": typ, "description": description}
+	p := map[string]any{schemaType: typ, "description": description}
 	for i := 0; i+1 < len(extra); i += 2 {
 		key, _ := extra[i].(string)
 		p[key] = extra[i+1]

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // Mode is how much a sandboxed command may do. The names match Codex's
@@ -65,12 +66,20 @@ type Policy struct {
 	// command Shell runs, in every mode, so $TMPDIR names the same directory
 	// inside and outside the sandbox.
 	TempDir string
+	// ReadOnly are more absolute paths that stay read-only inside every
+	// writable root, as the protected names do, and whose directories
+	// between the root and the path cannot be renamed: the directory of
+	// the sandboxing scripts, which run outside the sandbox. Shell adds
+	// its own directory.
+	ReadOnly []string
 }
 
 // Writable returns the directories a command may write under the policy,
 // absolute and with symlinks resolved where they exist: the TempDir in
 // ReadOnly; the workspace, the writable roots, /tmp, uah's own $TMPDIR, and
 // the TempDir in WorkspaceWrite; none in FullAccess, which has no sandbox.
+// A root inside one of the ReadOnly paths is left out, so it cannot open
+// up part of that path again.
 func (p Policy) Writable() []string {
 	var roots []string
 	switch p.Mode {
@@ -95,12 +104,24 @@ func (p Policy) Writable() []string {
 			r = resolved
 		}
 		r = filepath.Clean(r)
-		if !slices.Contains(out, r) {
+		if !slices.Contains(out, r) && !p.insideReadOnly(r) {
 			out = append(out, r)
 		}
 	}
 
 	return out
+}
+
+// insideReadOnly reports whether path is one of the ReadOnly paths or
+// inside one, also under another name for it (protects).
+func (p Policy) insideReadOnly(path string) bool {
+	for _, ro := range p.ReadOnly {
+		if ro != "" && protects(ResolvePath(ro), path) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Protected returns the paths inside root that stay read-only: each of
@@ -116,6 +137,64 @@ func Protected(root string) []string {
 	}
 
 	return out
+}
+
+// protectedIn returns the paths inside root that stay read-only: Protected
+// and the policy's ReadOnly paths at or under root, resolved.
+func (p Policy) protectedIn(root string) []string {
+	out := Protected(root)
+	for _, path := range p.readOnlyIn(root) {
+		if !slices.Contains(out, path) {
+			out = append(out, path)
+		}
+	}
+
+	return out
+}
+
+// readOnlyIn returns the policy's ReadOnly paths at or under root,
+// resolved and spelled under root: a root that names one of the path's
+// directories in another case, or by another name for the same directory,
+// still holds the path, and Seatbelt, which compares names without case,
+// would otherwise let the root open it.
+func (p Policy) readOnlyIn(root string) []string {
+	var out []string
+	for _, path := range p.ReadOnly {
+		if path == "" {
+			continue
+		}
+		path, ok := underRoot(ResolvePath(path), root)
+		if ok && !slices.Contains(out, path) {
+			out = append(out, path)
+		}
+	}
+
+	return out
+}
+
+// underRoot returns path spelled under root when path is root or inside
+// it, lexically, without case, or because one of its directories is root
+// under another name.
+func underRoot(path, root string) (string, bool) {
+	if within(path, root) {
+		return path, true
+	}
+	info, err := os.Stat(root)
+	for dir := path; ; dir = filepath.Dir(dir) {
+		same := strings.EqualFold(dir, root)
+		if !same && err == nil {
+			d, derr := os.Stat(dir)
+			same = derr == nil && os.SameFile(d, info)
+		}
+		if same {
+			rel, rerr := filepath.Rel(dir, path)
+
+			return filepath.Join(root, rel), rerr == nil
+		}
+		if filepath.Dir(dir) == dir {
+			return "", false
+		}
+	}
 }
 
 // Wrap returns argv run inside the sandbox on this platform. FullAccess

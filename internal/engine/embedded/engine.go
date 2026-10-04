@@ -73,6 +73,11 @@ type Config struct {
 	// InstructionFiles are the instruction files in the host prompt, in
 	// order, so /context can list them.
 	InstructionFiles []string
+	// InstructionsOff is true when loading instruction files is turned off
+	// (--no-instructions, or instructions.enabled = false), so context
+	// preparation does not take the empty InstructionFiles for a workspace
+	// without any.
+	InstructionsOff bool
 	// ContextModules are where context preparation's modules come from
 	// besides the built-ins.
 	ContextModules contextprep.Settings
@@ -106,6 +111,10 @@ type Config struct {
 	// a user drives the sessions, as in the TUI. A run asks through
 	// Options.AskUser.
 	AskUser bool
+	// Goals offers Codex's goal tools (get_goal, create_goal, update_goal)
+	// to the main agent (and, refused, to its forks). A run applies them
+	// through Options.Goal.
+	Goals bool
 	// Subagents, when set, offers its tools to the runs it attaches and
 	// hears when the user interrupts a run; the engine closes it when it is
 	// an io.Closer.
@@ -172,6 +181,10 @@ func (e *Engine) MCPServers() []mcp.ServerStatus {
 
 	return e.cfg.MCP.Status()
 }
+
+// MCP is the engine's MCP servers (engine.MCPClient); nil when none are
+// configured.
+func (e *Engine) MCP() *mcp.Manager { return e.cfg.MCP }
 
 // StartMCP connects the MCP servers before the first run
 // (engine.MCPStarter); runs then use the same connections.

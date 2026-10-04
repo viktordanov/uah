@@ -67,6 +67,10 @@ type Config struct {
 	Context Context `toml:"context"`
 	// Tools turns tools on or off, in Codex's [tools] table.
 	Tools Tools `toml:"tools"`
+	// Features turns features on or off, in Codex's [features] table.
+	Features Features `toml:"features"`
+	// Goals configures /goal, in Codex's [goals] table.
+	Goals Goals `toml:"goals"`
 	// ModelVerbosity is low, medium, or high: the Responses API's
 	// text.verbosity in place of the model's default, for a model that
 	// supports verbosity, as Codex's key.
@@ -153,6 +157,26 @@ func (c Config) RequestUserInputEnabled() bool {
 
 	return e == nil || *e
 }
+
+// Features is Codex's [features] table, with the one feature uah reads.
+type Features struct {
+	// Goals is /goal and the goal tools (true by default, as Codex's).
+	Goals *bool `toml:"goals"`
+}
+
+// Goals is Codex's [goals] table, with uah's cap on continuations.
+type Goals struct {
+	// MaxGoalTokenBudget caps a goal's token budget and is the budget of a
+	// goal that names none, as Codex's key (0: none).
+	MaxGoalTokenBudget int64 `toml:"max_goal_token_budget"`
+	// MaxContinuations caps the runs uah starts on its own for one goal
+	// (goal.DefaultMaxContinuations when unset; 0: no limit). uah's.
+	MaxContinuations *int `toml:"max_continuations"`
+}
+
+// GoalsEnabled reports whether /goal and the goal tools are on (true by
+// default).
+func (c Config) GoalsEnabled() bool { return c.Features.Goals == nil || *c.Features.Goals }
 
 // Context configures context preparation's modules ([context]).
 type Context struct {

@@ -17,6 +17,15 @@ func SlowCanceledCalls(t *testing.T, d time.Duration) {
 	t.Cleanup(func() { canceledEndDelay.Store(0) })
 }
 
+// BeforePatchWrite runs fn after each patch was approved and before its
+// job reads and writes the files, until the test ends.
+func BeforePatchWrite(t *testing.T, fn func()) {
+	t.Helper()
+	hook := func(patchPlan) { fn() }
+	beforePatchWrite.Store(&hook)
+	t.Cleanup(func() { beforePatchWrite.Store(nil) })
+}
+
 // WatchSyncs syncs session files only where a record needs it, never after
 // a window, until the test ends, and returns the sizes that each sync of a
 // session file made durable, by the file's name.

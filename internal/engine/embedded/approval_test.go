@@ -2,6 +2,7 @@ package embedded_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/hooks"
+	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/rules"
 	"github.com/viktordanov/uah/internal/sandbox"
@@ -45,6 +47,8 @@ type approvalOpts struct {
 	mode approval.Mode
 	// stream asks for the model's text as it arrives.
 	stream bool
+	// mcp configures the test MCP server.
+	mcp bool
 }
 
 // newApprovalEnv opens the session; replies gets the outside directory.
@@ -66,11 +70,15 @@ func newApprovalEnv(t *testing.T, o approvalOpts, replies func(outside string) [
 		runner, err = hooks.New(o.hooks, nil, ws)
 		require.NoError(t, err)
 	}
+	var m *mcp.Manager
+	if o.mcp {
+		m = mcpManager(t, e.env, mcp.ServerConfig{})
+	}
 	eng := embedded.New(embedded.Config{
 		StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv,
 		Sandbox: &policy, SandboxDir: filepath.Join(e.StateDir, "sandbox"),
 		Approver:   approval.New(approval.Config{Policy: o.policy, Rules: parsed, RulesFile: e.rulesFile}),
-		AutoReview: o.autoReview, Review: review.Config{Model: "gpt-test"}, Hooks: runner,
+		AutoReview: o.autoReview, Review: review.Config{Model: "gpt-test"}, Hooks: runner, MCP: m,
 	})
 	settings := e.settings()
 	if o.mode != "" {
@@ -326,10 +334,71 @@ func TestEmbedded_AutoReview(t *testing.T) {
 				assert.Contains(t, strings.Join(reqs[len(reqs)-1].ToolOutputs, "\n"), tc.output)
 			}
 			review := e.llm.Requests()[1]
-			assert.Empty(t, review.Tools, "the review call offers no tools")
+			assert.Equal(t, []string{"exec_command"}, review.ToolNames, "the review call offers only Codex's read-only exec_command")
 			assert.Contains(t, strings.Join(review.UserTexts, "\n"), "touch ", "the reviewer sees the action")
 		})
 	}
+}
+
+// TestEmbedded_AutoReviewSeesResourceTools gives the reviewer Codex's MCP
+// resource tools as it gives any other call: the call with its arguments,
+// then its short result.
+func TestEmbedded_AutoReviewSeesResourceTools(t *testing.T) {
+	e := newApprovalEnv(t, approvalOpts{interactive: true, autoReview: true, mcp: true}, func(outside string) []fakellm.Reply {
+		return []fakellm.Reply{
+			{Calls: []fakellm.Call{call(mcp.ReadResourceTool, `{"server":"test","uri":"test://greeting"}`)}},
+			{Escalated: []string{"touch " + filepath.Join(outside, "x.txt")}},
+			{Text: `{"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"The user asked for it."}`},
+			{Text: "done"},
+		}
+	})
+	e.run(t)
+	assert.Equal(t, core.StatusOK, e.ev.finished().Status)
+	assert.FileExists(t, filepath.Join(e.outside, "x.txt"))
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 4)
+	sent := strings.Join(reqs[2].UserTexts, "\n")
+	assert.Contains(t, sent, "tool read_mcp_resource call: {\"server\":\"test\",\"uri\":\"test://greeting\"}")
+	assert.Contains(t, sent, "tool read_mcp_resource result: ")
+	assert.NotContains(t, sent, "hello from the resource", "the reviewer gets no output")
+}
+
+// TestEmbedded_AutoReviewCommandsAreReadOnly runs the reviewer's own
+// commands in the read-only sandbox with a temporary directory of its own,
+// and a session's second review continues the first's conversation with
+// only what happened since.
+func TestEmbedded_AutoReviewCommandsAreReadOnly(t *testing.T) {
+	allow := fakellm.Reply{Text: `{"outcome":"allow"}`}
+	e := newApprovalEnv(t, approvalOpts{interactive: true, autoReview: true}, func(outside string) []fakellm.Reply {
+		probe := `touch probe.txt; echo tmp > "$TMPDIR/scratch" && cat "$TMPDIR/scratch"; pwd`
+		return []fakellm.Reply{
+			{Escalated: []string{"touch " + filepath.Join(outside, "x.txt")}},
+			{Calls: []fakellm.Call{{Name: "exec_command", Args: fmt.Sprintf(`{"cmd":%q}`, probe)}}},
+			allow,
+			{Escalated: []string{"touch " + filepath.Join(outside, "y.txt")}},
+			allow,
+			{Text: "done"},
+		}
+	})
+	ws := e.Workspace
+	e.run(t)
+
+	assert.Equal(t, core.StatusOK, e.ev.finished().Status)
+	assert.FileExists(t, filepath.Join(e.outside, "y.txt"))
+	assert.NoFileExists(t, filepath.Join(ws, "probe.txt"), "the reviewer cannot write the workspace")
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 6)
+	out := strings.Join(reqs[2].ToolOutputs, "\n")
+	assert.Contains(t, out, "Process exited with code 0")
+	assert.Contains(t, out, "\ntmp\n", "the reviewer writes its own temporary directory")
+	assert.Contains(t, out, ws)
+	second := reqs[4]
+	assert.Equal(t, reqs[2].Input, second.Input[:len(reqs[2].Input)], "the second review continues the first")
+	last := second.UserTexts[len(second.UserTexts)-1]
+	assert.Contains(t, last, ">>> TRANSCRIPT DELTA START")
+	assert.Contains(t, last, "y.txt")
+	delta, _, _ := strings.Cut(last, ">>> APPROVAL REQUEST START")
+	assert.NotContains(t, delta, "x.txt", "the first escalation is not sent again")
 }
 
 // TestEmbedded_AutoReviewStartsAndEnds: a review reports its start, and

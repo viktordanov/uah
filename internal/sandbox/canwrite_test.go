@@ -39,3 +39,52 @@ func TestPolicy_CanWrite(t *testing.T) {
 	p.Mode = sandbox.FullAccess
 	assert.True(t, p.CanWrite(outside))
 }
+
+// TestCanWriteReadOnly checks that a ReadOnly path, such as the sandbox
+// scripts' directory, stays read-only inside a writable root.
+func TestCanWriteReadOnly(t *testing.T) {
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	scripts := filepath.Join(ws, "home", "state", "sandbox")
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, ReadOnly: []string{scripts}}
+	assert.False(t, p.CanWrite(scripts))
+	assert.False(t, p.CanWrite(filepath.Join(scripts, "sh-0123")))
+	assert.True(t, p.CanWrite(filepath.Join(ws, "home", "state", "other")))
+
+	// A writable root inside it does not open part of it again.
+	inner := filepath.Join(scripts, "inner")
+	require.NoError(t, os.MkdirAll(inner, 0o700))
+	p.WritableRoots = []string{inner}
+	assert.NotContains(t, p.Writable(), inner)
+	assert.False(t, p.CanWrite(filepath.Join(inner, "x")))
+	p.Mode = sandbox.FullAccess
+	assert.True(t, p.CanWrite(filepath.Join(scripts, "sh-0123")), "full access has no sandbox")
+}
+
+// TestCanWriteAliases checks that another name for a protected path does
+// not make it writable: a case alias, compared without case on every
+// system, and, where the file system treats them as one, a name in another
+// Unicode normalization, caught by the file's identity.
+func TestCanWriteAliases(t *testing.T) {
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, os.Mkdir(filepath.Join(ws, ".git"), 0o755))
+	scripts := filepath.Join(ws, "home", "café", "sandbox")
+	require.NoError(t, os.MkdirAll(scripts, 0o700))
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, ReadOnly: []string{scripts}}
+
+	assert.False(t, p.CanWrite(filepath.Join(ws, ".GIT", "hooks", "pre-commit")))
+	assert.False(t, p.CanWrite(filepath.Join(ws, ".Uah", "config.toml")), "a protected name that does not exist yet")
+	assert.False(t, p.CanWrite(filepath.Join(ws, "home", "café", "SANDBOX", "sh-0123")))
+	assert.True(t, p.CanWrite(filepath.Join(ws, ".github", "x")))
+	alias := filepath.Join(ws, "home", "caf\u00e9", "SANDBOX")
+	p.WritableRoots = []string{alias}
+	assert.NotContains(t, p.Writable(), alias, "a root naming a ReadOnly path in another case is dropped")
+	p.WritableRoots = nil
+
+	nfd := filepath.Join(ws, "home", "café", "sandbox")
+	if _, err := os.Stat(nfd); err != nil {
+		t.Skip("this file system tells normalizations apart")
+	}
+	assert.False(t, p.CanWrite(filepath.Join(nfd, "sh-0123")), "the same directory under another normalization")
+}

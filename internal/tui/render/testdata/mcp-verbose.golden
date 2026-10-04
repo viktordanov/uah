@@ -1,15 +1,15 @@
-│                                                │
-│ model:     gpt-6-sol high   /model to change   │
-│ directory: /workspace/proj                     │
-╰────────────────────────────────────────────────╯
-
-• MCP servers
-  • docs: ready · stdio · 2 tools
+  • docs: ready · stdio · 2 tools · 1 prompt · resources
       command: npx -y docs-mcp
       mcp__docs__get · auto · Get a page.
       mcp__docs__write · writes, asks · Write a page.
+      /mcp__docs__review <page> · Review a page.
+      @docs:docs://index · Index
+  • flaky: restarting (2 of 5) · stdio · 1 tool
+      the server stopped: EOF
+      command: flaky
+      mcp__flaky__ping · auto
   • tracker: needs login · streamable_http
-      run `uah mcp login tracker`, then /new or restart uah
+      run `uah mcp login tracker`; the next message or /mcp then reconnects it
       url: https://mcp.example.com/mcp
       auth: Not logged in
   • broken: failed · stdio

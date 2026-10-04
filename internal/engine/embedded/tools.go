@@ -23,7 +23,7 @@ import (
 
 // tools builds the registry the coordinator runs: Bash, ViewImage, and
 // workspace skills, as the runner registers them, MCP tools, and Codex's
-// apply_patch, the agent tools, and request_user_input, with PreToolUse
+// apply_patch, the agent tools, request_user_input, and the goal tools, with PreToolUse
 // hooks around them. Its static definitions are the tools the model is offered,
 // so a tool added or changed here reaches both. approvals bounds the hooks
 // and approvals of the calls: the run's context, ended early by an
@@ -59,10 +59,12 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	never := w.e.cfg.Approver != nil && w.e.cfg.Approver.Policy() == approval.Never
 	gate := w.mcpGate(approvals, never)
 	gate.approved = scope.approvesTool
-	registry = withMCP(registry, scope.mcpTools(mcpTools), req.DisallowedTools, gate)
+	resources := w.e.cfg.MCP != nil && w.e.cfg.MCP.HasServers()
+	registry = withMCP(registry, scope.mcpTools(mcpTools), resources, scope.disallowResources(req.DisallowedTools), gate)
 	registry = withPatch(registry, offersPatch(w.e.models, req), w.patchGate(approvals, req))
 	registry = w.withAgents(registry, req)
 	registry = withQuestions(registry, questionTranslator{offered: w.offersQuestions(req), root: !isSubagent(req.SessionID), ctx: approvals, ask: w.askUser})
+	registry = withGoals(registry, goalTranslator{offered: w.offersGoals(req), root: !isSubagent(req.SessionID), ctx: approvals, goal: w.goal})
 
 	return withPreToolUse(approvals, registry, w.e.cfg.Hooks, req, w.l.SessionsDir), nil
 }
@@ -95,11 +97,29 @@ func (w *wiring) withAgents(registry tool.Registry, req core.Request) tool.Regis
 		emit = func(core.Event) {}
 	}
 	offered := a.Attach(engine.AgentParent{
-		SessionID: req.SessionID, Request: req, ServiceTier: w.tier, AdaptiveEffort: w.adaptive, Mode: w.mode.get,
+		SessionID: req.SessionID, Request: req, Settings: w.parentSettings(req),
 		Ask: w.askAnytime, Emit: emit, Inject: w.inject,
 	})
 
 	return withAgents(registry, offered, a.ToolNames(), req.DisallowedTools)
+}
+
+// parentSettings are the settings the run's children start with: the
+// session's as they are when a child starts, or, for a run without them,
+// the run's model, effort, service tier, and adaptive effort as it started
+// and its permission mode now.
+func (w *wiring) parentSettings(req core.Request) func() engine.LiveSettings {
+	if w.settings != nil {
+		return w.settings
+	}
+	start := engine.LiveSettings{Model: req.Model, Effort: req.Effort, ServiceTier: w.tier, AdaptiveEffort: w.adaptive}
+
+	return func() engine.LiveSettings {
+		s := start
+		s.Mode = w.mode.get()
+
+		return s
+	}
 }
 
 // translators returns the built-in tools. Bash runs in the workspace with
@@ -159,11 +179,16 @@ func (w *wiring) mcpTools(ctx context.Context) ([]mcp.Tool, error) {
 }
 
 // policy is the configured sandbox policy for the request's workspace,
-// with the session's private temporary directory.
+// with the session's private temporary directory and the sandbox scripts
+// read-only.
 func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 	p := *w.e.cfg.Sandbox
 	p.Mode, p.Workspace = mode, req.Workspace
 	p.TempDir = uahsession.TempDir(w.l.SessionsDir, req.SessionID)
+	if dir := w.e.cfg.SandboxDir; dir != "" {
+		// The sandbox scripts run outside the sandbox (sandbox.Shell).
+		p.ReadOnly = append(slices.Clip(p.ReadOnly), dir)
+	}
 
 	return p
 }

@@ -3,6 +3,7 @@ package agents_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/agents"
+	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/session"
@@ -220,3 +222,50 @@ func TestFork_KeepsTheQuestionTool(t *testing.T) {
 }
 
 func isQuestions(e any) bool { _, ok := e.(session.QuestionsAsked); return ok }
+
+// TestFork_HasItsOwnTempDir forks a read-only parent whose prepared
+// context names its $TMPDIR: the fork's first request keeps the parent's
+// items, then a developer message names the fork's own $TMPDIR, which its
+// sandbox lets it write, and its parent's as not its own.
+func TestFork_HasItsOwnTempDir(t *testing.T) {
+	pathIn := regexp.MustCompile(`\$TMPDIR \(([^)]+)\) is your private scratch directory`)
+	e := newEnv(t, agents.Config{},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-TMP write a file","fork_context":true}`)}},
+		callWith("wait_agent", `{"targets":["ID"]}`),
+		fakellm.Reply{Text: "done"},
+	)
+	e.llm.Route("CHILD-TMP",
+		fakellm.Reply{From: func(req fakellm.Request) fakellm.Reply {
+			m := pathIn.FindStringSubmatch(strings.Join(req.DeveloperTexts, "\n"))
+			if m == nil {
+				return fakellm.Reply{Text: "no note"}
+			}
+
+			return fakellm.Reply{Commands: []string{"echo scratch > " + m[1] + "/probe && cat " + m[1] + "/probe"}}
+		}},
+		fakellm.Reply{Text: "wrote"},
+	)
+	s, ev := e.open(t, false, e.sandboxed(t), func(c *embedded.Config) { c.ContextPreparation = true })
+	_, err := s.SetSettings(e.settings().WithMode(approval.ModeReadOnly))
+	require.NoError(t, err)
+	_, err = s.Submit("fork")
+	require.NoError(t, err)
+	assert.Equal(t, "done", ev.finished().Answer)
+
+	parent, child := parentRequest(t, e, 0), requestWith(t, e, "CHILD-TMP")
+	childID := ids(lastParent(e))[0]
+	parentTemp, childTemp := session.TempDir(e.sessionsDir(), s.ID()), session.TempDir(e.sessionsDir(), childID)
+	assert.Contains(t, strings.Join(parent.DeveloperTexts, "\n"), parentTemp, "the parent's prepared context names its $TMPDIR")
+	require.Greater(t, len(child.Input), len(parent.Input))
+	for i := range parent.Input {
+		assert.JSONEq(t, string(parent.Input[i]), string(child.Input[i]), "input item %d: the parent's prefix holds", i)
+	}
+	note := string(child.Input[len(parent.Input)])
+	assert.Contains(t, note, `"developer"`, "a developer message follows the parent's items")
+	assert.Contains(t, note, childTemp, "naming the fork's own $TMPDIR")
+	assert.Contains(t, note, parentTemp, "and its parent's as not its own")
+	assert.Contains(t, childOutputs(e, "CHILD-TMP"), "scratch", "the fork's sandbox lets it write its $TMPDIR")
+	b, err := os.ReadFile(filepath.Join(childTemp, "probe"))
+	require.NoError(t, err)
+	assert.Equal(t, "scratch\n", string(b))
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/viktordanov/uah-core/harness/llm"
 
 	"github.com/viktordanov/uah/internal/compaction"
+	"github.com/viktordanov/uah/internal/goal"
 )
 
 // Codex's own vectors (codex-rs/utils/string/src/truncate/tests.rs).
@@ -39,6 +40,24 @@ func TestKept_NewestUserMessagesUpToTheCap(t *testing.T) {
 	assert.Equal(t, []string{
 		"user: oldest, dropped", "user: " + strings.Repeat("m", 40), "user: " + strings.Repeat("n", 24), "user: last",
 	}, all, "under the cap every user message stays verbatim and in order")
+}
+
+// TestKept_GoalMessages: as Codex keeps them, the user's goal changes stay
+// whole whatever the cap, in order, and the goal's continuations, uah's
+// own messages, go to the summary.
+func TestKept_GoalMessages(t *testing.T) {
+	g := goal.Goal{Objective: "ship it", Status: goal.StatusActive}
+	set, paused := goal.UserSet("ship it", ""), goal.UserSet("", goal.StatusPaused)
+	covered := []llm.Item{
+		msg(llm.RoleUser, set),
+		msg(llm.RoleUser, goal.Continuation(g)),
+		msg(llm.RoleUser, strings.Repeat("m", 40)),
+		msg(llm.RoleUser, paused),
+		msg(llm.RoleUser, goal.BudgetLimit(g)),
+		msg(llm.RoleUser, "last"),
+	}
+	got := texts(compaction.Kept(covered, 1))
+	assert.Equal(t, []string{"user: " + set, "user: " + paused, "user: last"}, got)
 }
 
 func TestApply_CapsKeptMessagesAndKeepsTheTailWhole(t *testing.T) {

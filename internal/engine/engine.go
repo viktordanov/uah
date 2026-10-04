@@ -39,6 +39,13 @@ type MCPLister interface {
 	MCPServers() []mcp.ServerStatus
 }
 
+// MCPClient is an engine whose MCP servers the user reaches directly:
+// their prompts as slash commands and their resources after "@".
+type MCPClient interface {
+	// MCP is the engine's servers; nil when none are configured.
+	MCP() *mcp.Manager
+}
+
 // MCPStarter is an engine whose MCP servers can connect before its first
 // run, so an interactive session connects them when it opens.
 type MCPStarter interface {
@@ -107,6 +114,35 @@ type Options struct {
 	// Stream reports the model's text as it arrives, for the run's own
 	// turn requests.
 	Stream bool
+	// Goal answers the goal tools (get_goal, create_goal, update_goal)
+	// with the session's goal: the result for the model, or an error the
+	// model reads (nil: the session has no goals, as a subagent's).
+	Goal GoalTool
+	// Settings are the session's settings now, with the changes made while
+	// the run is live, all from one change (nil: the run's, as it started).
+	// The subagents a run spawns start with them.
+	Settings func() LiveSettings
+}
+
+// LiveSettings are the settings a session can change while a run is live.
+type LiveSettings struct {
+	Model, Effort, ServiceTier, AdaptiveEffort string
+	Mode                                       approval.Mode
+}
+
+// GoalTool runs one goal tool call against the session's goal.
+type GoalTool func(ctx context.Context, name, arguments string) (string, error)
+
+// GoalPlanType is the remote job plan a goal tool call runs as: the
+// session has already applied the call, and the job completes at once
+// with its result.
+const GoalPlanType = "uah.goal"
+
+// GoalPlan is the plan of a goal call's job: the tool and the result the
+// session returned.
+type GoalPlan struct {
+	Tool   string `json:"tool"`
+	Result string `json:"result"`
 }
 
 // Forgetter is an engine that keeps per-session state across runs; the

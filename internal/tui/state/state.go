@@ -144,6 +144,8 @@ type State struct {
 	Keys Keys
 	// Reviewing is the running /review's ID ("": none; review.go).
 	Reviewing string
+	// Goal is the session's goal, nil without one (goal.go).
+	Goal *GoalView
 	// Attached are the images pasted into the composer, in order; each
 	// placeholder in the draft names one (see images.go).
 	Attached []images.Image

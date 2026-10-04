@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -53,10 +52,14 @@ func Paths(cwd string, hunks []Hunk) []string {
 // files as the earlier hunks of the same patch leave them. Its errors are
 // Codex's messages.
 func Compute(cwd string, hunks []Hunk) ([]Change, error) {
+	return compute(hostFiles{}, cwd, hunks)
+}
+
+func compute(fsys files, cwd string, hunks []Hunk) ([]Change, error) {
 	if len(hunks) == 0 {
 		return nil, errors.New("No files were modified.") //nolint:staticcheck // Codex's message
 	}
-	files := overlay{}
+	files := overlay{fsys: fsys, files: map[string]*string{}}
 	out := make([]Change, 0, len(hunks))
 	for _, h := range hunks {
 		c := Change{Op: h.Op, Path: h.Path, Abs: Resolve(cwd, h.Path)}
@@ -95,45 +98,48 @@ func Compute(cwd string, hunks []Hunk) ([]Change, error) {
 	return out, nil
 }
 
-// overlay is the files as the patch has changed them so far; a nil entry
-// is a deleted file.
-type overlay map[string]*string
+// overlay is the files as the patch has changed them so far, over fsys; a
+// nil entry is a deleted file.
+type overlay struct {
+	fsys  files
+	files map[string]*string
+}
 
-func (o overlay) set(path, text string) { o[path] = &text }
-func (o overlay) remove(path string)    { o[path] = nil }
+func (o overlay) set(path, text string) { o.files[path] = &text }
+func (o overlay) remove(path string)    { o.files[path] = nil }
 
 func (o overlay) read(path string) (string, error) {
-	if text, ok := o[path]; ok {
+	if text, ok := o.files[path]; ok {
 		if text == nil {
 			return "", fs.ErrNotExist
 		}
 
 		return *text, nil
 	}
-	info, err := os.Stat(path)
+	info, err := o.fsys.stat(path)
 	if err != nil {
 		return "", err // the caller names the file
 	}
 	if info.IsDir() {
 		return "", errors.New("it is a directory")
 	}
-	data, err := os.ReadFile(path)
+	data, err := o.fsys.readFile(path)
 
 	return string(data), err // the caller names the file
 }
 
-// Write applies the changes to the files in order, creating missing
+// writeAll applies the changes to the files in order, creating missing
 // parent directories. It is all or nothing: at the first failure it puts
 // back every file the changes touch as it was before (a directory it
 // created stays), and returns that failure.
-func Write(changes []Change) error {
-	before, err := snapshot(changes)
+func writeAll(fsys files, changes []Change) error {
+	before, err := snapshot(fsys, changes)
 	if err != nil {
 		return err
 	}
 	for _, c := range changes {
-		if err := write(c); err != nil {
-			return errors.Join(err, restore(before))
+		if err := write(fsys, c); err != nil {
+			return errors.Join(err, restore(fsys, before))
 		}
 	}
 
@@ -150,7 +156,7 @@ type original struct {
 }
 
 // snapshot reads every file the changes touch, each once.
-func snapshot(changes []Change) ([]original, error) {
+func snapshot(fsys files, changes []Change) ([]original, error) {
 	var out []original
 	seen := map[string]bool{}
 	for _, c := range changes {
@@ -159,7 +165,7 @@ func snapshot(changes []Change) ([]original, error) {
 				continue
 			}
 			seen[path] = true
-			info, err := os.Stat(path)
+			info, err := fsys.stat(path)
 			if err != nil {
 				// No file to keep; writing there reports why.
 				out = append(out, original{path: path, absent: true})
@@ -169,7 +175,7 @@ func snapshot(changes []Change) ([]original, error) {
 			if !info.Mode().IsRegular() {
 				continue // a directory: writing there fails and changes nothing
 			}
-			data, err := os.ReadFile(path)
+			data, err := fsys.readFile(path)
 			if err != nil {
 				return nil, fmt.Errorf("Failed to read file %s: %w", path, err) //nolint:staticcheck // Codex's style
 			}
@@ -181,20 +187,20 @@ func snapshot(changes []Change) ([]original, error) {
 }
 
 // restore puts the files back as snapshot found them.
-func restore(before []original) error {
+func restore(fsys files, before []original) error {
 	var errs []error
 	for _, o := range before {
 		if o.absent {
-			if _, err := os.Lstat(o.path); err != nil {
+			if _, err := fsys.lstat(o.path); err != nil {
 				continue // never written
 			}
-			if err := os.Remove(o.path); err != nil {
+			if err := fsys.remove(o.path); err != nil {
 				errs = append(errs, fmt.Errorf("failed to remove %s while undoing the patch: %w", o.path, err))
 			}
 
 			continue
 		}
-		if err := writeFile(o.path, o.text, o.perm); err != nil {
+		if err := writeFile(fsys, o.path, o.text, o.perm); err != nil {
 			errs = append(errs, fmt.Errorf("failed to restore %s while undoing the patch: %w", o.path, err))
 		}
 	}
@@ -202,26 +208,26 @@ func restore(before []original) error {
 	return errors.Join(errs...)
 }
 
-func write(c Change) error {
+func write(fsys files, c Change) error {
 	switch c.Op {
 	case Add:
-		return writeFile(c.Abs, c.New, 0o644)
+		return writeFile(fsys, c.Abs, c.New, 0o644)
 	case Delete:
-		if err := os.Remove(c.Abs); err != nil {
+		if err := fsys.remove(c.Abs); err != nil {
 			return fmt.Errorf("Failed to delete file %s: %w", c.Abs, err) //nolint:staticcheck // Codex's message
 		}
 	case Update:
 		perm := fs.FileMode(0o644)
-		if info, err := os.Stat(c.Abs); err == nil {
+		if info, err := fsys.stat(c.Abs); err == nil {
 			perm = info.Mode().Perm()
 		}
 		if c.MoveAbs == "" {
-			return writeFile(c.Abs, c.New, perm)
+			return writeFile(fsys, c.Abs, c.New, perm)
 		}
-		if err := writeFile(c.MoveAbs, c.New, perm); err != nil {
+		if err := writeFile(fsys, c.MoveAbs, c.New, perm); err != nil {
 			return err
 		}
-		if err := os.Remove(c.Abs); err != nil {
+		if err := fsys.remove(c.Abs); err != nil {
 			return fmt.Errorf("Failed to remove original %s: %w", c.Abs, err) //nolint:staticcheck // Codex's message
 		}
 	}
@@ -229,11 +235,11 @@ func write(c Change) error {
 	return nil
 }
 
-func writeFile(path, text string, perm fs.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+func writeFile(fsys files, path, text string, perm fs.FileMode) error {
+	if err := fsys.mkdirParents(path); err != nil {
 		return fmt.Errorf("Failed to create parent directories for %s: %w", path, err) //nolint:staticcheck // Codex's message
 	}
-	if err := os.WriteFile(path, []byte(text), perm); err != nil {
+	if err := fsys.writeFile(path, []byte(text), perm); err != nil {
 		return fmt.Errorf("Failed to write file %s: %w", path, err) //nolint:staticcheck // Codex's message
 	}
 

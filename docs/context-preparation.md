@@ -23,7 +23,7 @@ Without it, a model writes POSIX `sh` in fish, uses GNU flags on macOS, writes i
 
 ## What the model receives
 
-When a new session starts, uah sends one developer message before the first user message. This includes a subagent's session. A resumed or forked session gets no new message, because its history already has one. The model reads a developer message as the harness's, not the user's.
+When a new session starts, uah sends one developer message before the first user message. This includes a subagent's session. A resumed or forked session gets no new message, because its history already has one. A fork's copied message is its parent's and names the parent's `$TMPDIR`, so the fork's first run adds one sentence of its own, after the copied history: its own `$TMPDIR`, and that the parent's is not its own. The model reads a developer message as the harness's, not the user's.
 
 ```text
 <context_preparation>
@@ -57,7 +57,7 @@ The blocks come in this order:
 | `environment` | The shell and the OS, and the constructs that break in a shell that is not POSIX, zsh's gotchas, macOS's bash 3.2, and BSD flags | Modules `environment/*`, `os/*` |
 | `sandbox` | What sandboxed commands may write, the session's private `$TMPDIR`, and what macOS's sandbox blocks | Modules `sandbox/*` |
 | `workspace` | The git branch, `git status --short`, and the tracked files by top directory | Code (git's output), not modules |
-| `agent files` | The instruction files in the system prompt, said to be all of them; or, for a session whose system prompt replaces uah's without them (`/review`'s reviewer), the files it leaves out | Modules `agent-files`, `agent-files-omitted`, `agent-files-none` |
+| `agent files` | The instruction files in the system prompt, said to be all of them; or, for a session whose system prompt replaces uah's without them (`/review`'s reviewer), the files it leaves out; or, with `--no-instructions` or `instructions.enabled = false`, that loading them is off (not that there are none) | Modules `agent-files`, `agent-files-omitted`, `agent-files-off`, `agent-files-none` |
 | `harness` | How to size the Bash tool's `max_output_length` | Module `harness/output` |
 | One block per extra module | Each library, user, or project module that applies, titled with its id | The module |
 
@@ -110,6 +110,7 @@ The keys of `when`:
 | `network` | bool | Whether sandboxed commands have network access |
 | `instructions` | bool | Whether any instruction files (AGENTS.md and so on) were loaded into the system prompt |
 | `instructions_omitted` | bool | Whether the system prompt leaves the workspace's instruction files out on purpose, as the system prompt of `/review`'s reviewer does, which replaces uah's |
+| `instructions_off` | bool | Whether loading instruction files is turned off (`--no-instructions`, or `instructions.enabled = false`); then none is looked for, so `instructions` and `instructions_omitted` are false whether or not the workspace has any |
 
 The text after the front matter may be Markdown. It is data: uah inserts the [placeholders](#placeholders) and sends it, and never runs it.
 

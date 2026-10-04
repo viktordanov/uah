@@ -23,7 +23,7 @@ import (
 func mcpManager(t *testing.T, e *env, cfg mcp.ServerConfig) *mcp.Manager {
 	t.Helper()
 	cfg.Command = harnesstest.MCPServer(t)
-	m, err := mcp.NewManager(map[string]mcp.ServerConfig{"test": cfg}, mcp.Options{Workspace: e.Workspace})
+	m, err := mcp.NewManager(map[string]mcp.ServerConfig{"test": cfg}, mcp.Options{Workspace: e.Workspace, RestartDelay: 10 * time.Millisecond})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = m.Close() })
 
@@ -107,7 +107,72 @@ func TestEmbedded_MCPServerCrashes(t *testing.T) {
 	reqs := e.llm.Requests()
 	require.Len(t, reqs, 3)
 	assert.Contains(t, reqs[1].ToolOutputs[0], "Error: failed to call crash on test")
-	assert.Contains(t, reqs[2].ToolOutputs[1], "Error: the MCP server test failed: the server stopped")
+	assert.Contains(t, reqs[2].ToolOutputs[1], "echo: again", "the server restarted, and the call waited for it")
+	assert.Equal(t, reqs[0].Tools, reqs[2].Tools, "the same tools, so the prompt cache holds")
+}
+
+// Codex's resource tools list and read resources as JSON, refuse bad
+// arguments with Codex's messages, and never ask.
+func TestEmbedded_MCPResources(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t,
+		fakellm.Reply{Calls: []fakellm.Call{
+			call("list_mcp_resources", `{}`),
+			call("list_mcp_resource_templates", `{"server":"test"}`),
+			call("read_mcp_resource", `{"server":"test","uri":"test://greeting"}`),
+			call("read_mcp_resource", `{"server":"test"}`),
+			call("list_mcp_resources", `{"cursor":"x"}`),
+			call("read_mcp_resource", `{"server":"test","uri":"test://missing"}`),
+		}},
+		fakellm.Reply{Text: "done"},
+	)
+	s, ev := e.open(t, e.withMCP(mcpManager(t, e, mcp.ServerConfig{DefaultToolsApprovalMode: mcp.ApprovalPrompt}), nil), "")
+	_, err := s.Submit("read the resources")
+	require.NoError(t, err)
+	assert.Equal(t, core.StatusOK, ev.finished().Status)
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 2)
+	for _, name := range []string{"list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"} {
+		assert.Contains(t, reqs[0].Tools, name)
+	}
+	assert.Contains(t, reqs[0].Tools["read_mcp_resource"], `"required":["server","uri"]`)
+	require.Len(t, reqs[1].ToolOutputs, 6)
+	out := strings.Join(reqs[1].ToolOutputs, "\n") // refusals come back first
+	for _, want := range []string{
+		`{"resources":[{"description":"A friendly greeting.","mimeType":"text/plain","name":"greeting","server":"test","title":"Greeting","uri":"test://greeting"}`,
+		`{"server":"test","resourceTemplates":[{"description":"An item by ID.","name":"item","server":"test","uriTemplate":"test://items/{id}"}]}`,
+		`{"contents":[{"uri":"test://greeting","mimeType":"text/plain","text":"hello from the resource"}],"server":"test","uri":"test://greeting"}`,
+		"Error: failed to parse function arguments: missing field `uri`",
+		"Error: cursor can only be used when a server is specified",
+		"Error: resources/read failed",
+	} {
+		assert.Contains(t, out, want)
+	}
+}
+
+// A server's changed tool list reaches the model at the next run, never in
+// the middle of one, so a run's requests share their tools.
+func TestEmbedded_MCPToolListChangesAtTheNextRun(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t,
+		fakellm.Reply{Calls: []fakellm.Call{call("mcp__test__add_tool", `{"text":"late"}`)}},
+		fakellm.Reply{Calls: []fakellm.Call{call("mcp__test__sleep", `{"ms":300}`)}},
+		fakellm.Reply{Text: "first"},
+		fakellm.Reply{Text: "second"},
+	)
+	s, ev := e.open(t, e.withMCP(mcpManager(t, e, mcp.ServerConfig{}), nil), "")
+	_, err := s.Submit("add a tool")
+	require.NoError(t, err)
+	assert.Equal(t, "first", ev.finished().Answer)
+	_, err = s.Submit("again")
+	require.NoError(t, err)
+	assert.Equal(t, "second", ev.finished().Answer)
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 4)
+	for _, r := range reqs[:3] {
+		assert.NotContains(t, r.Tools, "mcp__test__late", "the first run keeps its tools")
+	}
+	assert.Contains(t, reqs[3].Tools, "mcp__test__late", "the next run has the new tool")
 }
 
 func TestEmbedded_MCPResumesWithoutTheServer(t *testing.T) {

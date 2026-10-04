@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/viktordanov/uah/internal/goal"
 )
 
 // Where a session was started. Codex hides scripted sessions from its resume
@@ -68,6 +70,8 @@ type Sidecar struct {
 	LastSequence uint64 `json:"last_sequence,omitempty"`
 	// Queued are the unsent messages, queued again on resume (saveQueue).
 	Queued []string `json:"queued,omitempty"`
+	// Goal is the session's goal (/goal), restored on resume.
+	Goal *goal.Goal `json:"goal,omitempty"`
 }
 
 // RemoveSidecar deletes a session's sidecar, for a session that never ran.

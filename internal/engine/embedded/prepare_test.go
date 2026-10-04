@@ -117,3 +117,53 @@ func TestContextPreparation_Sandbox(t *testing.T) {
 	assert.Contains(t, prepared, "## sandbox\nSandbox: read-only. Commands can read any file and write only $TMPDIR.")
 	assert.Contains(t, prepared, "$TMPDIR ("+session.TempDir(filepath.Join(e.StateDir, "sessions"), s.ID())+")")
 }
+
+// TestContextPreparation_ForkNoteSurvivesANewEngine forks a session whose
+// prepared context names its $TMPDIR, then runs the fork on a new engine,
+// as after a first run that failed before recording its messages, a
+// close, and a resume in another process: the fork's run still starts
+// with the note naming its own $TMPDIR, after the copied items, and a
+// later run does not repeat it.
+func TestContextPreparation_ForkNoteSurvivesANewEngine(t *testing.T) {
+	e := newEnv(t,
+		fakellm.Reply{Commands: []string{"echo parent"}}, fakellm.Reply{Text: "parent done"},
+		fakellm.Reply{Text: "fork one"}, fakellm.Reply{Text: "fork two"},
+	)
+	policy := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: e.Workspace}
+	if _, err := policy.Wrap([]string{"/bin/sh"}); err != nil {
+		t.Skipf("no sandbox here: %v", err)
+	}
+	cfg := embedded.Config{
+		StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, ContextPreparation: true,
+		Sandbox: &policy, SandboxDir: filepath.Join(e.StateDir, "sandbox"),
+	}
+	sessions := filepath.Join(e.StateDir, "sessions")
+	parent, err := session.Open(t.Context(), embedded.New(cfg), session.Options{Settings: e.settings().WithMode(approval.ModeReadOnly)})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = parent.Close() })
+	_, err = parent.Submit("hello")
+	require.NoError(t, err)
+	(&events{t: t, s: parent}).finished()
+	call := e.llm.Requests()[1].CallIDs[0]
+	require.NoError(t, embedded.New(cfg).Fork(t.Context(), parent.ID(), "fork-1", call))
+
+	fork, err := session.Open(t.Context(), embedded.New(cfg), session.Options{ID: "fork-1", Resumed: true, Settings: e.settings().WithMode(approval.ModeReadOnly)})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = fork.Close() })
+	ev := &events{t: t, s: fork}
+	_, err = fork.Submit("task")
+	require.NoError(t, err)
+	ev.finished()
+	_, err = fork.Submit("again")
+	require.NoError(t, err)
+	ev.finished()
+
+	reqs := e.llm.Requests()
+	first, second := reqs[2], reqs[3]
+	parentTemp, forkTemp := session.TempDir(sessions, parent.ID()), session.TempDir(sessions, "fork-1")
+	require.Len(t, first.DeveloperTexts, 2, "the copied prepared context, then the note")
+	assert.Contains(t, first.DeveloperTexts[0], parentTemp)
+	assert.Contains(t, first.DeveloperTexts[1], "$TMPDIR ("+forkTemp+") is your private scratch directory")
+	assert.Equal(t, first.DeveloperTexts, second.DeveloperTexts, "the note once, in the history")
+	assert.NoFileExists(t, filepath.Join(sessions, "fork-1.forktmp"))
+}
