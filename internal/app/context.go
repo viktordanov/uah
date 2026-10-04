@@ -13,6 +13,7 @@ import (
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/shellenv"
 )
 
 // ContextSettings are context preparation's module settings: the user's
@@ -72,9 +73,9 @@ func PreviewContext(ctx context.Context, in Inputs, getenv func(string) string) 
 		return ContextPreview{}, err
 	}
 	main := contextprep.Facts{
-		Workspace: workspace, Shell: RealShell(), GOOS: runtime.GOOS, MaxOutputLength: operation.DefaultMaxOutputLength,
+		Workspace: workspace, GOOS: runtime.GOOS, MaxOutputLength: operation.DefaultMaxOutputLength,
 		InstructionsOff: !r.Instructions, // as newEngine sets it
-	}
+	}.WithEnvironment(getenv, r.Env.Getenv(getenv, shellenv.Keys...)) // commands get r.Env, as in a session
 	if r.Instructions {
 		loaded, _, err := loadInstructions(workspace, cfg)
 		if err != nil {

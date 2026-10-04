@@ -99,6 +99,25 @@ func (p EnvPolicy) Apply(environ []string) []string {
 	return out
 }
 
+// Getenv is getenv as a command sees it under the policy: the policy
+// applied to keys as getenv reads them. A key the policy drops reads as
+// unset, and one Set adds reads as set.
+func (p EnvPolicy) Getenv(getenv func(string) string, keys ...string) func(string) string {
+	var environ []string
+	for _, k := range keys {
+		if v := getenv(k); v != "" {
+			environ = append(environ, k+"="+v)
+		}
+	}
+	env := map[string]string{}
+	for _, kv := range p.Apply(environ) {
+		k, v, _ := strings.Cut(kv, "=")
+		env[k] = v
+	}
+
+	return func(k string) string { return env[k] }
+}
+
 func matchesAny(name string, patterns []string) bool {
 	return slices.ContainsFunc(patterns, func(p string) bool {
 		return wildmatch(strings.ToLower(p), strings.ToLower(name))

@@ -4,7 +4,11 @@
 // user message.
 package contextprep
 
-import "context"
+import (
+	"context"
+
+	"github.com/viktordanov/uah/internal/shellenv"
+)
 
 // Facts is what the adapters know about a session.
 type Facts struct {
@@ -25,6 +29,19 @@ type Facts struct {
 	InstructionsOff bool
 	// Shell is the shell commands run in, a path such as /bin/zsh.
 	Shell string
+	// ShellSource says where Shell came from: "" or "env" for $SHELL,
+	// "login" for the login shell when $SHELL was unset or not an
+	// executable file, "default" for /bin/sh when neither was usable.
+	ShellSource string
+	// Locale is the variable that decides the character set and its
+	// value, such as LANG=C, or "" when none is set.
+	Locale string
+	// NotUTF8 is true when the locale does not name UTF-8, so tools may
+	// mangle or refuse non-ASCII text.
+	NotUTF8 bool
+	// MissingPathDirs are the user's tool directories that exist, such as
+	// /opt/homebrew/bin, when PATH has none of them; empty otherwise.
+	MissingPathDirs []string
 	// GOOS is the operating system, as runtime.GOOS names it.
 	GOOS string
 	// Sandbox describes where commands run.
@@ -53,4 +70,23 @@ type Adapter interface {
 	Name() string
 	// Prepare returns the block's text, or "" when it has nothing to say.
 	Prepare(ctx context.Context, f Facts) string
+}
+
+// WithEnvironment fills the facts the environment gives: the shell ($SHELL,
+// else the login shell, else /bin/sh) and where it came from, from uah's
+// environment; the locale and the user's tool directories that PATH lacks,
+// from the environment commands get (commands, which reads shellenv.Keys;
+// nil for uah's).
+func (f Facts) WithEnvironment(getenv, commands func(string) string) Facts {
+	sh := shellenv.Current(getenv)
+	f.Shell, f.ShellSource = sh.Path, string(sh.Source)
+	if commands == nil {
+		commands = getenv
+	}
+	var utf8 bool
+	f.Locale, utf8 = shellenv.Locale(commands)
+	f.NotUTF8 = !utf8
+	f.MissingPathDirs = shellenv.MissingToolDirs(commands)
+
+	return f
 }

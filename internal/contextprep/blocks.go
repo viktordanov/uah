@@ -23,9 +23,9 @@ type block struct {
 // blocks are the built-in blocks with modules, by name.
 var blocks = []block{
 	{"environment", []string{
-		"environment/intro", "environment/bash", "environment/sh", "environment/zsh", "environment/fish", "environment/nu",
+		"environment/intro", "environment/shell-login", "environment/shell-default", "environment/bash", "environment/sh", "environment/zsh", "environment/fish", "environment/nu",
 		"environment/xonsh", "environment/elvish", "environment/pwsh", "environment/cmd", "environment/csh", "environment/other",
-		"os/darwin", "os/bsd", "os/windows",
+		"os/darwin", "os/bsd", "os/windows", "environment/locale", "environment/path",
 	}},
 	{keySandbox, []string{
 		"sandbox/read-only", "sandbox/workspace-write", "sandbox/tmpdir", "sandbox/bash-heredoc", "sandbox/processes", "sandbox/local-sockets",
@@ -236,6 +236,7 @@ func (w When) mismatch(f Facts) string {
 		{"os", w.OS, f.GOOS},
 		{keySandbox, w.Sandbox, cmp.Or(f.Sandbox.Mode, "none")},
 		{keyAgent, w.Agent, agentOf(f)},
+		{"shell_source", w.ShellSource, f.ShellSource},
 	} {
 		if len(c.want) > 0 && !slices.Contains(c.want, c.have) {
 			return fmt.Sprintf("when.%s: %s is not %s", c.key, c.have, strings.Join(c.want, " or "))
@@ -244,26 +245,25 @@ func (w When) mismatch(f Facts) string {
 	if w.Network != nil && *w.Network != f.Sandbox.Network {
 		return fmt.Sprintf("when.network: the sandbox's network is %t", f.Sandbox.Network)
 	}
-	if w.Instructions != nil && *w.Instructions != (len(f.InstructionFiles) > 0) {
-		if len(f.InstructionFiles) > 0 {
-			return "when.instructions: instruction files were loaded"
-		}
+	for _, c := range []struct {
+		key     string
+		want    *bool
+		have    bool
+		yes, no string
+	}{
+		{"instructions", w.Instructions, len(f.InstructionFiles) > 0, "instruction files were loaded", "no instruction files were loaded"},
+		{"instructions_omitted", w.InstructionsOmitted, len(f.OmittedInstructionFiles) > 0, "the system prompt leaves the instruction files out", "no instruction files were left out"},
+		{"instructions_off", w.InstructionsOff, f.InstructionsOff, "loading instruction files is turned off", "loading instruction files is on"},
+		{"utf8", w.UTF8, !f.NotUTF8, "the locale is UTF-8", "the locale is not UTF-8"},
+		{"path_minimal", w.PathMinimal, len(f.MissingPathDirs) > 0, "PATH has none of the user's tool directories", "PATH has the user's tool directories"},
+	} {
+		if c.want != nil && *c.want != c.have {
+			if c.have {
+				return "when." + c.key + ": " + c.yes
+			}
 
-		return "when.instructions: no instruction files were loaded"
-	}
-	if w.InstructionsOmitted != nil && *w.InstructionsOmitted != (len(f.OmittedInstructionFiles) > 0) {
-		if len(f.OmittedInstructionFiles) > 0 {
-			return "when.instructions_omitted: the system prompt leaves the instruction files out"
+			return "when." + c.key + ": " + c.no
 		}
-
-		return "when.instructions_omitted: no instruction files were left out"
-	}
-	if w.InstructionsOff != nil && *w.InstructionsOff != f.InstructionsOff {
-		if f.InstructionsOff {
-			return "when.instructions_off: loading instruction files is turned off"
-		}
-
-		return "when.instructions_off: loading instruction files is on"
 	}
 
 	return ""
@@ -291,9 +291,10 @@ func anyFile(workspace string, patterns []string) bool {
 }
 
 // normalized fills the defaults: /bin/sh, which uah runs commands with
-// when $SHELL is unset, and the running OS.
+// when nothing else is usable, $SHELL as its source, and the running OS.
 func (f Facts) normalized() Facts {
 	f.Shell = cmp.Or(f.Shell, "/bin/sh")
+	f.ShellSource = cmp.Or(f.ShellSource, shellFromEnv)
 	f.GOOS = cmp.Or(f.GOOS, runtime.GOOS)
 
 	return f
@@ -320,6 +321,14 @@ func variables(f Facts) map[string]string {
 	}
 	if len(f.OmittedInstructionFiles) > 0 {
 		vars["omitted_instruction_files"] = "- " + strings.Join(f.OmittedInstructionFiles, "\n- ")
+	}
+	if f.Locale != "" {
+		vars["locale"] = f.Locale
+	} else if f.NotUTF8 {
+		vars["locale"] = "LC_ALL, LC_CTYPE, and LANG unset"
+	}
+	if len(f.MissingPathDirs) > 0 {
+		vars["missing_path_dirs"] = strings.Join(f.MissingPathDirs, ", ")
 	}
 	if f.MaxOutputLength > 0 {
 		vars["max_output_length"] = strconv.Itoa(f.MaxOutputLength)

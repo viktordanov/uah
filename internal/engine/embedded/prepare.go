@@ -19,6 +19,7 @@ import (
 	"github.com/viktordanov/uah/internal/instructions"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/shellenv"
 )
 
 // Context preparation: a new session, a subagent's included, starts with
@@ -84,11 +85,11 @@ const forkTempNote = "You are a fork of the session above, with a session of you
 // permission mode when it starts, with the session's private $TMPDIR.
 func (w *wiring) facts(req core.Request) contextprep.Facts {
 	f := contextprep.Facts{
-		Workspace: req.Workspace, Shell: w.shell(), GOOS: runtime.GOOS,
+		Workspace: req.Workspace, GOOS: runtime.GOOS,
 		MaxOutputLength: operation.DefaultMaxOutputLength,
 		Subagent:        strings.HasPrefix(req.SessionID, session.SubagentIDPrefix),
 		InstructionsOff: w.e.cfg.InstructionsOff,
-	}
+	}.WithEnvironment(w.getenv, w.commandEnv())
 	if instructions.HasProject(req.SystemPrompt) {
 		f.InstructionFiles = w.e.cfg.InstructionFiles
 	} else {
@@ -124,11 +125,17 @@ func (w *wiring) modules(req core.Request) *contextprep.Modules {
 	return contextprep.Load(w.e.cfg.ContextModules.Sources(req.Workspace, check))
 }
 
-// shell is the user's shell, which commands run in: $SHELL, or /bin/sh.
-func (w *wiring) shell() string {
-	if shell := strings.TrimSpace(w.getenv("SHELL")); shell != "" {
-		return shell
+// commandEnv reads the variables context preparation reports as commands
+// see them: through the environment policy where the sandboxing shell
+// applies it, else as they are.
+func (w *wiring) commandEnv() func(string) string {
+	if w.e.cfg.Sandbox == nil {
+		return w.getenv
 	}
 
-	return "/bin/sh"
+	return w.e.cfg.Env.Getenv(w.getenv, shellenv.Keys...)
 }
+
+// shell is the user's shell, which commands run in: $SHELL, else the
+// login shell, else /bin/sh (shellenv.Resolve).
+func (w *wiring) shell() string { return shellenv.Current(w.getenv).Path }
