@@ -213,6 +213,19 @@ func TestWorktrees_HoldingTheCommonDirectory(t *testing.T) {
 	root, ok := w.Of(filepath.Join(side, "a.txt"))
 	assert.True(t, ok, "a worktree beside it is one")
 	assert.Equal(t, side, root)
+
+	alias := filepath.Join(base, "OUTER", "inner.git")
+	if _, err := os.Stat(alias); err != nil {
+		return // a file system that tells case apart has no alias
+	}
+	for _, name := range []string{"outer", "ws", "side"} {
+		require.NoError(t, os.WriteFile(filepath.Join(common, "worktrees", name, "commondir"), []byte(alias+"\n"), 0o644))
+	}
+	w = sandbox.NewWorktrees(ws)
+	_, ok = w.Of(filepath.Join(outer, "a.txt"))
+	assert.False(t, ok, "the common directory named in another case")
+	_, ok = w.Of(filepath.Join(side, "a.txt"))
+	assert.True(t, ok, "and the worktree beside it still is one")
 }
 
 // TestWorktrees_ForgedWorkspace: a workspace outside any repository cannot

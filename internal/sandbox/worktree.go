@@ -40,20 +40,64 @@ func NewWorktrees(workspace string) *Worktrees {
 // a worktree whose directory holds the common directory other than as its
 // own .git.
 func (w *Worktrees) Of(path string) (string, bool) {
+	root, _, ok := w.check(path)
+
+	return root, ok
+}
+
+// check is Of with the worktree's directory as it was checked: the same
+// directory before and after its files were read, so a grant can be held
+// to it (Grants.AddWorktree).
+func (w *Worktrees) check(path string) (string, os.FileInfo, bool) {
 	if w.common == "" {
-		return "", false
+		return "", nil, false
 	}
 	t, ok := findTree(ResolvePath(path))
-	if !ok || t.top == w.top || t.listed() != w.common {
-		return "", false
+	if !ok || sameFile(t.top, w.top) {
+		return "", nil, false
 	}
-	if within(w.common, t.top) && w.common != filepath.Join(t.top, ".git") {
+	before, err := os.Lstat(t.top)
+	if common := t.listed(); err != nil || common == "" || !sameFile(common, w.common) {
+		return "", nil, false
+	}
+	if holds(t.top, w.common) && !sameFile(w.common, t.dotgit) {
 		// The repository's hooks and configuration would be writable
 		// under the grant, and git runs them outside the sandbox.
-		return "", false
+		return "", nil, false
+	}
+	if after, err := os.Lstat(t.top); err != nil || !os.SameFile(before, after) {
+		return "", nil, false
 	}
 
-	return t.top, true
+	return t.top, before, true
+}
+
+// holds reports whether dir is path or one of its directories, by name
+// without case or by identity, so a case alias or another name for dir
+// counts.
+func holds(dir, path string) bool {
+	if withinFold(path, dir) {
+		return true
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+	for d := path; ; d = filepath.Dir(d) {
+		if di, err := os.Stat(d); err == nil && os.SameFile(di, info) {
+			return true
+		}
+		if filepath.Dir(d) == d {
+			return false
+		}
+	}
+}
+
+func sameFile(a, b string) bool {
+	ai, aerr := os.Stat(a)
+	bi, berr := os.Stat(b)
+
+	return aerr == nil && berr == nil && os.SameFile(ai, bi)
 }
 
 // tree is a git working tree: its top directory, the .git entry there, the
@@ -107,7 +151,8 @@ func treeAt(top, dotgit string, info os.FileInfo) (tree, bool) {
 }
 
 // listed returns the tree's common directory when the repository lists the
-// tree as its own, else "". A linked worktree's git directory must be
+// tree as its own, else "". Directories are compared by identity, so
+// another spelling of one, such as another case, is the same. A linked worktree's git directory must be
 // <common>/worktrees/<name>, and its gitdir file must point back at the
 // tree's .git file, as git writes both on git worktree add; a .git file
 // that only names the directory, from anywhere, is not enough. The main
@@ -122,11 +167,11 @@ func (t tree) listed() string {
 
 		return t.common
 	}
-	if t.common == t.gitdir || filepath.Dir(t.gitdir) != filepath.Join(t.common, "worktrees") {
+	if sameFile(t.common, t.gitdir) || !sameFile(filepath.Dir(t.gitdir), filepath.Join(t.common, "worktrees")) {
 		return ""
 	}
 	back, ok := readPath(filepath.Join(t.gitdir, "gitdir"))
-	if !ok || ResolvePath(back) != t.dotgit {
+	if !ok || !sameFile(back, t.dotgit) {
 		return ""
 	}
 

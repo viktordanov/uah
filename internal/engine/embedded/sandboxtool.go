@@ -80,25 +80,30 @@ type boxes struct {
 	built map[string]sandbox.Mode
 }
 
-// get is the mode's shell for the grants as they are now.
-func (b *boxes) get(mode sandbox.Mode) (sandboxShell, bool) {
+// get is the mode's shell for the grants as they are now. When the grants
+// changed, it builds every mode's shell again and keeps them only when all
+// were built; otherwise it fails, and tries again with the next command,
+// so a shell with a dropped grant is never used.
+func (b *boxes) get(mode sandbox.Mode) (sandboxShell, bool, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if v := b.grants.Version(); v != b.version {
-		b.version = v
+		fresh := make(map[sandbox.Mode]sandboxShell, len(b.byMode))
 		for m := range b.byMode {
 			box, err := b.build(m)
 			if err != nil {
-				_, _ = fmt.Fprintf(b.warn, "embedded: %v; %s commands keep the sandbox without the new writable directories\n", err, m)
-
-				continue
+				return sandboxShell{}, false, fmt.Errorf("failed to build the sandbox for the session's writable directories: %w", err)
 			}
+			fresh[m] = box
+		}
+		for m, box := range fresh {
 			b.byMode[m], b.built[box.shell] = box, m
 		}
+		b.version = v
 	}
 	box, ok := b.byMode[mode]
 
-	return box, ok
+	return box, ok, nil
 }
 
 // modeOf is the mode of a shell built in this run.
@@ -166,15 +171,23 @@ func (b sandboxedBash) available() bool { return b.boxes != nil }
 
 // current is the sandbox mode the next command runs in and its
 // translator: the unsandboxed one in yolo mode or without a sandbox.
-func (b sandboxedBash) current() (sandbox.Mode, sandboxShell) {
+func (b sandboxedBash) current() (sandbox.Mode, sandboxShell, error) {
 	mode := b.mode.get().Sandbox()
+	box, err := b.box(mode)
+
+	return mode, box, err
+}
+
+// box is the mode's translator for the grants as they are now.
+func (b sandboxedBash) box(mode sandbox.Mode) (sandboxShell, error) {
 	if b.boxes != nil {
-		if box, ok := b.boxes.get(mode); ok {
-			return mode, box
+		box, ok, err := b.boxes.get(mode)
+		if err != nil || ok {
+			return box, err
 		}
 	}
 
-	return mode, sandboxShell{Translator: b.Translator}
+	return sandboxShell{Translator: b.Translator}, nil
 }
 
 // Translate asks the approver how the command runs.
@@ -193,14 +206,17 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil || args.Command == "" {
 		return func(tc tool.Context) tool.CallStatus { return b.Translator.Translate(tc, call) } // the runner's translator reports bad arguments
 	}
-	mode, box := b.current()
+	mode, box, err := b.current()
 	sandboxed := box.shell != ""
 	escalated := args.Permissions == permEscalated && sandboxed
-	if escalated && b.grantWorktrees(mode, args.Command) {
+	if err == nil && escalated && b.grantWorktrees(mode, args.Command) {
 		// The command now runs in the sandbox, which writes there; if it
 		// needs more, it fails with the hint and the model escalates again.
 		escalated = false
-		mode, box = b.current()
+		_, err = b.box(mode) // the new shell builds; the command takes it when it starts
+	}
+	if err != nil {
+		return refuse(tool.ErrorStatus(err.Error(), 0))
 	}
 	d := b.approver.Decide(ctx, approval.Request{
 		Command: args.Command, Cwd: b.cwd, Justification: args.Justification, PrefixRule: args.PrefixRule,
@@ -215,7 +231,16 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	case approval.Unsandboxed:
 		return func(tc tool.Context) tool.CallStatus { return b.Translator.Translate(tc, call) }
 	case approval.Sandboxed:
-		return func(tc tool.Context) tool.CallStatus { return box.Translate(tc, call) }
+		// The shell for the grants when the command starts, not when it
+		// was decided: one dropped meanwhile must not reach it.
+		return func(tc tool.Context) tool.CallStatus {
+			box, err := b.box(mode)
+			if err != nil {
+				return tool.ErrorStatus(err.Error(), 0)
+			}
+
+			return box.Translate(tc, call)
+		}
 	case approval.Deny:
 	}
 

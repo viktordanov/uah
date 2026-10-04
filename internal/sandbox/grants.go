@@ -61,52 +61,62 @@ func NewGrants(workspace string, notify func(Grant)) *Grants {
 // is new. A path that is not an existing directory, is not resolved, or
 // fails Grantable is refused; so is one a grant already covers.
 func (g *Grants) Add(path string, reason GrantReason) bool {
-	if g == nil || !Grantable(path) {
-		return false
-	}
-	info, ok := sameDir(path, nil)
-	if !ok {
-		return false
-	}
-	g.mu.Lock()
-	for _, have := range g.grants {
-		if within(path, have.Path) {
-			g.mu.Unlock()
+	return g.add(Grant{Path: path, Reason: reason}, nil, true)
+}
 
-			return false
-		}
+// AddWorktree grants the worktree of the workspace's repository that holds
+// path (Worktrees.Of), when allow accepts its root, and returns the root
+// when it added it. The grant holds for the directory the check read, so
+// one swapped in at the same path between the check and the grant is not
+// granted.
+func (g *Grants) AddWorktree(path string, allow func(root string) bool) (string, bool) {
+	if g == nil {
+		return "", false
 	}
-	added := Grant{Path: path, Reason: reason}
-	g.grants = append(g.grants, granted{Grant: added, dir: info})
-	g.version++
-	notify := g.notify
-	g.mu.Unlock()
-	if notify != nil {
-		notify(added)
+	root, dir, ok := g.Worktrees.check(path)
+	if !ok || !allow(root) || !g.add(Grant{Path: root, Reason: GrantWorktree}, dir, true) {
+		return "", false
 	}
 
-	return true
+	return root, true
 }
 
 // Keep adds a grant kept from before a resume when it is still Valid,
 // without telling notify, and reports whether it did.
 func (g *Grants) Keep(gr Grant) bool {
-	if g == nil || !g.Valid(gr) {
+	if g == nil {
 		return false
 	}
-	info, ok := sameDir(gr.Path, nil)
+	dir, ok := g.valid(gr)
+
+	return ok && g.add(gr, dir, false)
+}
+
+// add adds the grant for the directory dir, or the one at its path now
+// when dir is nil, telling notify when tell is set.
+func (g *Grants) add(gr Grant, dir os.FileInfo, tell bool) bool {
+	if g == nil || !Grantable(gr.Path) {
+		return false
+	}
+	info, ok := sameDir(gr.Path, dir)
 	if !ok {
 		return false
 	}
 	g.mu.Lock()
-	defer g.mu.Unlock()
 	for _, have := range g.grants {
-		if have.Grant == gr {
+		if within(gr.Path, have.Path) {
+			g.mu.Unlock()
+
 			return false
 		}
 	}
 	g.grants = append(g.grants, granted{Grant: gr, dir: info})
 	g.version++
+	notify := g.notify
+	g.mu.Unlock()
+	if tell && notify != nil {
+		notify(gr)
+	}
 
 	return true
 }
@@ -185,12 +195,18 @@ func sameDir(path string, was os.FileInfo) (os.FileInfo, bool) {
 // can prove, and a sidecar a sandboxed command could write must not widen
 // what the session may write.
 func (g *Grants) Valid(gr Grant) bool {
-	if gr.Reason != GrantWorktree || !Grantable(gr.Path) || resolveDir(gr.Path) != gr.Path {
-		return false
-	}
-	root, ok := g.Worktrees.Of(gr.Path)
+	_, ok := g.valid(gr)
 
-	return ok && root == gr.Path
+	return ok
+}
+
+func (g *Grants) valid(gr Grant) (os.FileInfo, bool) {
+	if gr.Reason != GrantWorktree || !Grantable(gr.Path) || resolveDir(gr.Path) != gr.Path {
+		return nil, false
+	}
+	root, dir, ok := g.Worktrees.check(gr.Path)
+
+	return dir, ok && root == gr.Path
 }
 
 // GrantFor returns the directory an approval may offer to make writable for

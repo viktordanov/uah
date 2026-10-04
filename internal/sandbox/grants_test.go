@@ -160,3 +160,20 @@ func TestPolicy_Protects(t *testing.T) {
 	assert.False(t, p.Protects(filepath.Join(ws, "src")))
 	assert.False(t, p.Protects(realPath(t, t.TempDir())))
 }
+
+// TestGrants_AddWorktree grants the worktree that holds a path, only when
+// allow accepts its root, and nothing for a path in no such worktree.
+func TestGrants_AddWorktree(t *testing.T) {
+	r := newRepo(t)
+	g := sandbox.NewGrants(r.main, nil)
+	target := filepath.Join(r.bar, "x", "new.go")
+
+	_, ok := g.AddWorktree(target, func(string) bool { return false })
+	assert.False(t, ok, "not allowed")
+	_, ok = g.AddWorktree(filepath.Join(r.base, "elsewhere"), func(string) bool { return true })
+	assert.False(t, ok, "in no worktree")
+	root, ok := g.AddWorktree(target, func(string) bool { return true })
+	assert.True(t, ok)
+	assert.Equal(t, realPath(t, r.bar), root)
+	assert.Equal(t, []sandbox.Grant{{Path: root, Reason: sandbox.GrantWorktree}}, g.List())
+}

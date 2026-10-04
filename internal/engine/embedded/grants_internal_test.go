@@ -1,10 +1,13 @@
 package embedded
 
 import (
+	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/sandbox"
 )
@@ -26,4 +29,40 @@ func TestCommandPaths(t *testing.T) {
 	}, got)
 	assert.Equal(t, []string{cwd}, commandPaths("ls . .", cwd), "each once")
 	assert.Empty(t, commandPaths("echo 'unclosed", cwd), "a command that does not parse names none")
+}
+
+// TestBoxes_FailClosed: when the grants change and a shell cannot be built
+// again, no command gets a shell, not even the one built before, and the
+// next command tries again.
+func TestBoxes_FailClosed(t *testing.T) {
+	grants := sandbox.NewGrants(t.TempDir(), nil)
+	fail := true
+	built := 0
+	b := &boxes{
+		build: func(sandbox.Mode) (sandboxShell, error) {
+			if fail {
+				return sandboxShell{}, errors.New("disk full")
+			}
+			built++
+
+			return sandboxShell{shell: fmt.Sprintf("sh-%d", built)}, nil
+		},
+		grants: grants, byMode: map[sandbox.Mode]sandboxShell{sandbox.WorkspaceWrite: {shell: "sh-0"}}, built: map[string]sandbox.Mode{},
+	}
+	box, ok, err := b.get(sandbox.WorkspaceWrite)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "sh-0", box.shell)
+
+	require.True(t, grants.Add(sandbox.ResolvePath(t.TempDir()), sandbox.GrantApproved))
+	_, _, err = b.get(sandbox.WorkspaceWrite)
+	require.ErrorContains(t, err, "disk full")
+	_, _, err = b.get(sandbox.WorkspaceWrite)
+	require.Error(t, err, "still failing, tried again")
+
+	fail = false
+	box, ok, err = b.get(sandbox.WorkspaceWrite)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "sh-1", box.shell)
 }
