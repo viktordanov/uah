@@ -738,3 +738,112 @@ func waitUntil(t *testing.T, check func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// The keys read before the terminal's input ended reach the model before
+// the end ends the program.
+func TestInputEndAfterTheKeys(t *testing.T) {
+	log := newEvents()
+	p := NewProgram(counter{log: log}, Options{In: strings.NewReader("abc"), Out: &output{}, Width: 10, Height: 2,
+		Profile: colorprofile.TrueColor, endOnEOF: true})
+	_, err := p.Run(context.Background())
+	require.ErrorIs(t, err, errTerminalGone)
+	assert.Equal(t, 3, count(log.all(), "update term.KeyPressMsg"))
+}
+
+// slowView is a model whose View takes longer than the frame budget.
+type slowView struct {
+	counter
+	clk *fakeClock
+}
+
+func (m slowView) Update(msg Msg) (Model, Cmd) {
+	next, cmd := m.counter.Update(msg)
+	m.counter = next.(counter) //nolint:forcetypeassert // counter's own
+
+	return m, cmd
+}
+
+func (m slowView) View() View {
+	m.clk.advance(time.Second / 10)
+
+	return m.counter.View()
+}
+
+// A frame that fails to write and took longer than the budget is tried
+// again on the timer, not at once, and failing frames end the program.
+func TestFailingSlowFramesYield(t *testing.T) {
+	out := &failing{}
+	clk := newFakeClock()
+	inR, inW := io.Pipe()
+	defer inW.Close()
+	log := newEvents()
+	p := NewProgram(slowView{counter: counter{log: log}, clk: clk}, Options{In: inR, Out: out, Width: 20, Height: 4,
+		Profile: colorprofile.TrueColor, clock: clk})
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.Run(context.Background())
+		done <- err
+	}()
+	waitUntil(t, func() bool { return log.viewCount() == 1 })
+	out.fail.Store(true)
+	p.Send(countMsg{})
+	for {
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, errBroken)
+			assert.Equal(t, 1+maxWriteFails, log.viewCount(), "one view per try")
+
+			return
+		case <-time.After(10 * time.Millisecond):
+			assert.LessOrEqual(t, log.viewCount(), 1+maxWriteFails, "the retries wait for the timer")
+			clk.advance(time.Second / FrameRate)
+		}
+	}
+}
+
+// When Run's context ends while a program runs on the released terminal,
+// the program's context ends too and Run returns.
+func TestExecStopsWithTheContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	inR, inW := io.Pipe()
+	defer inW.Close()
+	log := newEvents()
+	p := NewProgram(counter{log: log}, Options{In: inR, Out: &output{}, Width: 20, Height: 4, Profile: colorprofile.TrueColor})
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.Run(ctx)
+		done <- err
+	}()
+	waitUntil(t, func() bool { return log.viewCount() == 1 })
+	started := make(chan struct{})
+	ended := make(chan struct{})
+	p.Send(cmdMsg{cmd: Exec(&blocking{started: started, ended: ended}, nil)})
+	<-started
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not end while the program ran")
+	}
+	<-ended
+}
+
+// blocking is a program that runs until its context ends.
+type blocking struct {
+	ctx            context.Context
+	started, ended chan struct{}
+}
+
+func (*blocking) SetStdin(io.Reader)               {}
+func (*blocking) SetStdout(io.Writer)              {}
+func (*blocking) SetStderr(io.Writer)              {}
+func (b *blocking) SetContext(ctx context.Context) { b.ctx = ctx }
+
+func (b *blocking) Run() error {
+	close(b.started)
+	<-b.ctx.Done()
+	close(b.ended)
+
+	return b.ctx.Err()
+}

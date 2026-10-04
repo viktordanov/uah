@@ -48,14 +48,14 @@ func TestReadInputDeliversTheLastKeys(t *testing.T) {
 func TestInputEndReportedOnATerminal(t *testing.T) {
 	for _, tty := range []bool{true, false} {
 		pr, pw := io.Pipe()
-		tm := &terminal{in: pr, tty: tty, input: make(chan Msg, 64), inputErr: make(chan error, 1)}
+		tm := &terminal{in: pr, tty: tty, eofEnds: tty, input: make(chan Msg, 64)}
 		require.NoError(t, tm.startInput(context.Background()))
 		_ = pw.Close()
 		<-tm.readDone
 		select {
-		case err := <-tm.inputErr:
+		case msg := <-tm.input:
 			assert.True(t, tty, "headless input ending is no error")
-			assert.ErrorIs(t, err, errTerminalGone)
+			assert.ErrorIs(t, msg.(inputEndMsg).err, errTerminalGone) //nolint:forcetypeassert // the only message
 		default:
 			assert.False(t, tty, "a terminal's input ending is reported")
 		}

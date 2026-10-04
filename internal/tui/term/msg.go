@@ -6,6 +6,7 @@
 package term
 
 import (
+	"context"
 	"image/color"
 	"io"
 	"time"
@@ -137,6 +138,13 @@ type ExecCommand interface {
 	SetStdin(r io.Reader)
 	SetStdout(w io.Writer)
 	SetStderr(w io.Writer)
+}
+
+// ExecContext is what an ExecCommand implements to be stopped: Exec gives
+// it a context that ends when uah is told to stop (SIGTERM, SIGHUP) or
+// Run's context ends while it runs, such as for exec.CommandContext.
+type ExecContext interface {
+	SetContext(ctx context.Context)
 }
 
 // ExecCallback turns the program's error, nil when it succeeded, into the

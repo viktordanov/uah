@@ -108,10 +108,14 @@ type terminal struct {
 	profile     colorprofile.Profile
 	saved       *xterm.State
 
-	input    chan Msg
-	inputErr chan error
-	winch    chan os.Signal
-	stop     chan os.Signal
+	input chan Msg
+	// eofEnds makes the input's end an error, as on a terminal; tests
+	// set it headless.
+	eofEnds bool
+	// orig is the terminal's mode before the program first entered it.
+	orig  *xterm.State
+	winch chan os.Signal
+	stop  chan os.Signal
 	// reader is the running input reader; readDone is closed when it ends.
 	reader   cancelReader
 	readDone chan struct{}
@@ -132,7 +136,7 @@ type fder interface{ Fd() uintptr }
 func openTerminal(o Options) (*terminal, error) {
 	t := &terminal{
 		in: o.In, out: o.Out, env: o.Env, w: o.Width, h: o.Height, profile: o.Profile,
-		input: make(chan Msg, 64), inputErr: make(chan error, 1),
+		input: make(chan Msg, 64), eofEnds: o.endOnEOF,
 	}
 	if t.profile == colorprofile.Unknown {
 		t.profile = colorprofile.Detect(o.Out, o.Env)
@@ -149,7 +153,7 @@ func openTerminal(o Options) (*terminal, error) {
 	if !inOK || !outOK || !xterm.IsTerminal(in.Fd()) || !xterm.IsTerminal(out.Fd()) {
 		return nil, errNotTerminal
 	}
-	t.tty, t.inFd, t.outFd = true, in.Fd(), out.Fd()
+	t.tty, t.inFd, t.outFd, t.eofEnds = true, in.Fd(), out.Fd(), true
 	w, h, err := xterm.GetSize(t.outFd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read the terminal's size: %w", err)
@@ -186,6 +190,9 @@ func (t *terminal) enter() error {
 			return fmt.Errorf("failed to put the terminal in raw mode: %w", err)
 		}
 		t.saved = saved
+		if t.orig == nil {
+			t.orig = saved
+		}
 		if t.winch == nil {
 			t.winch, t.stop = make(chan os.Signal, 1), make(chan os.Signal, 4)
 			signal.Notify(t.winch, syscall.SIGWINCH)
@@ -233,6 +240,16 @@ func (t *terminal) release(restore string) error {
 	return err
 }
 
+// reset puts the terminal back as the program found it after a program
+// on the released terminal was stopped, which may have left its own
+// modes: the first mode, the main screen, the cursor shown, autowrap on.
+func (t *terminal) reset() {
+	_ = t.write(resetFrame + autowrapOn + cursorShow + altScreenOff)
+	if t.orig != nil {
+		_ = xterm.Restore(t.inFd, t.orig)
+	}
+}
+
 // reacquire takes the terminal back after release. It leaves the size
 // alone: the caller reads it with newSize, so a resize while the terminal
 // was released reaches the screen and the model.
@@ -270,6 +287,10 @@ func (t *terminal) dropInput() {
 	}
 }
 
+// inputEndMsg is the input's end or failure, after the keys read before
+// it; it ends the program.
+type inputEndMsg struct{ err error }
+
 // errTerminalGone is the terminal's input ending while the TUI runs, as
 // when the terminal closed without a SIGHUP.
 var errTerminalGone = errors.New("the terminal's input ended")
@@ -291,16 +312,17 @@ func (t *terminal) startInput(ctx context.Context) error {
 		}
 		switch {
 		case err == nil || errors.Is(err, io.EOF):
-			if !t.tty {
+			if !t.eofEnds {
 				return // a headless program's input may end
 			}
 			err = errTerminalGone
 		case errors.Is(err, context.Canceled):
 			return
 		}
+		// On the queue, so the keys read before it are handled first.
 		select {
-		case t.inputErr <- err:
-		default:
+		case t.input <- inputEndMsg{err: err}:
+		case <-stop:
 		}
 	}(t.readDone, t.readStop)
 

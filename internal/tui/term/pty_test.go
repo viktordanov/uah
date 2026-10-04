@@ -161,7 +161,7 @@ func (m ptyModel) Update(msg term.Msg) (term.Model, term.Cmd) {
 		case "e":
 			script := `stty -a > "$TERM_PTY_DIR/exec-stty"; printf 'editor-ran> '; read line; printf '%s' "$line" > "$TERM_PTY_DIR/exec-line"`
 
-			return m, term.Exec(&execCmd{exec.Command("sh", "-c", script)}, func(err error) term.Msg { return execDoneMsg{err} })
+			return m, term.Exec(&execCmd{args: []string{"sh", "-c", script}}, func(err error) term.Msg { return execDoneMsg{err} })
 		}
 	}
 
@@ -184,12 +184,29 @@ func (m ptyModel) View() term.View {
 	return term.NewView(strings.Join(lines, "\n"))
 }
 
-// execCmd is an exec.Cmd as term.Exec runs it.
-type execCmd struct{ *exec.Cmd }
+// execCmd is a program as term.Exec runs it, killed when its context ends.
+type execCmd struct {
+	args     []string
+	ctx      context.Context
+	stdin    io.Reader
+	out, err io.Writer
+}
 
-func (c *execCmd) SetStdin(r io.Reader)  { c.Stdin = r }
-func (c *execCmd) SetStdout(w io.Writer) { c.Stdout = w }
-func (c *execCmd) SetStderr(w io.Writer) { c.Stderr = w }
+func (c *execCmd) SetStdin(r io.Reader)           { c.stdin = r }
+func (c *execCmd) SetStdout(w io.Writer)          { c.out = w }
+func (c *execCmd) SetStderr(w io.Writer)          { c.err = w }
+func (c *execCmd) SetContext(ctx context.Context) { c.ctx = ctx }
+
+func (c *execCmd) Run() error {
+	ctx := c.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cmd := exec.CommandContext(ctx, c.args[0], c.args[1:]...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = c.stdin, c.out, c.err
+
+	return cmd.Run()
+}
 
 // ptyRun is a child on a pty, the emulator that shows its output, and the
 // raw bytes it wrote.
@@ -606,4 +623,26 @@ func TestPtyInterruptInTheEditor(t *testing.T) {
 	r.send("q")
 	assert.Equal(t, 0, r.wait())
 	r.assertRestored()
+}
+
+// SIGTERM while the editor runs ends uah at once: the editor is killed and
+// the terminal restored, where the loop would otherwise wait for it.
+func TestPtyStopsDuringTheEditor(t *testing.T) {
+	t.Parallel()
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGHUP} {
+		t.Run(sig.String(), func(t *testing.T) {
+			t.Parallel()
+			r := startPty(t, 80, 24)
+			r.waitScreen(80, 24, "", "", "")
+
+			r.send("e")
+			r.waitFor("the editor's prompt", func() bool {
+				return !r.altScreen() && strings.Contains(strings.Join(r.rows(), "\n"), "editor-ran>")
+			})
+			r.signal(sig)
+			assert.Equal(t, 0, r.wait())
+			r.assertRestored()
+			assert.False(t, r.altScreen())
+		})
+	}
 }

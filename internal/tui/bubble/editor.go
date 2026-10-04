@@ -108,7 +108,7 @@ func draftDirExposed(p sandbox.Policy, dir string) bool {
 // file (0600) in dir, <uah home>/editor (0700), runs the editor on it, reads
 // it back into saved, and removes it.
 type editorRun struct {
-	ctx            context.Context // a term.ExecCommand's Run takes none
+	ctx            context.Context // a term.ExecCommand's Run takes none; term.Exec sets it (SetContext)
 	dir            string
 	args           []string
 	text           string
@@ -116,6 +116,10 @@ type editorRun struct {
 	stdin          io.Reader
 	stdout, stderr io.Writer
 }
+
+// SetContext is the context term.Exec gives the editor: it ends, and
+// kills the editor, when uah is told to stop while the editor runs.
+func (r *editorRun) SetContext(ctx context.Context) { r.ctx = ctx }
 
 func (r *editorRun) SetStdin(in io.Reader)   { r.stdin = in }
 func (r *editorRun) SetStdout(out io.Writer) { r.stdout = out }

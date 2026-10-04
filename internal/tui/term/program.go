@@ -38,6 +38,9 @@ type Options struct {
 
 	// clock is the time source (default the real one); loop tests fake it.
 	clock clock
+	// endOnEOF makes a headless program end when its input ends, as one
+	// on a terminal does; for tests.
+	endOnEOF bool
 }
 
 // Program runs a model on a terminal: one goroutine owns the model, takes
@@ -75,6 +78,9 @@ type Program struct {
 	// fatal ends the loop with an error: the terminal could not be taken
 	// back after Exec, or frames keep failing to write.
 	fatal error
+	// stopped is set when a stop signal or the context ended Run while a
+	// program ran on the released terminal.
+	stopped bool
 	// writeFails counts the frames that failed to write in a row; resend
 	// makes the next frame send the modes again after one did.
 	writeFails int
@@ -151,7 +157,7 @@ func (p *Program) Run(ctx context.Context) (final Model, err error) {
 		return p.model, err
 	}
 
-	err = p.loop(w, h)
+	err = p.loop(w, h) //nolint:contextcheck // the loop runs on p.ctx, made from ctx above
 	if lerr := t.leave(p.restore()); err == nil {
 		err = lerr
 	}
@@ -175,13 +181,19 @@ func (p *Program) loop(w, h int) error {
 		}
 	}()
 	for !p.quit {
-		// A frame that failed to write leaves dirty set, and is tried
-		// again on the timer.
-		for p.dirty && frame == nil {
+		if p.dirty && frame == nil {
 			if wait := time.Second/FrameRate - p.clock.Since(p.last); wait > 0 {
 				frame, stop = p.clock.Timer(wait)
 			} else {
 				p.draw()
+				if p.fatal != nil {
+					return p.fatal
+				}
+				// A frame that failed to write leaves dirty set: it is
+				// tried again a frame later, however long it took.
+				if p.dirty {
+					frame, stop = p.clock.Timer(time.Second / FrameRate)
+				}
 			}
 		}
 		select {
@@ -195,8 +207,6 @@ func (p *Program) loop(w, h int) error {
 			if p.term.stops(sig) {
 				return nil
 			}
-		case err := <-p.term.inputErr:
-			return fmt.Errorf("failed to read the terminal: %w", err)
 		case msg := <-p.msgs:
 			p.handle(msg)
 		case <-frame:
@@ -204,6 +214,9 @@ func (p *Program) loop(w, h int) error {
 			p.draw()
 		}
 		p.drain()
+		if p.stopped {
+			return nil
+		}
 		if p.panicked != nil {
 			panic(p.panicked)
 		}
@@ -254,6 +267,9 @@ func (p *Program) handle(msg Msg) {
 		_ = p.term.write(oscClipboard(string(msg)))
 	case execMsg:
 		p.runExec(msg)
+	case inputEndMsg:
+		// After the keys read before it, which came first on the queue.
+		p.fatal = fmt.Errorf("failed to read the terminal: %w", msg.err)
 	case panicMsg:
 		p.panicked = msg.String()
 	default:
@@ -333,7 +349,15 @@ func (p *Program) runExec(msg execMsg) {
 	msg.cmd.SetStdin(p.term.in)
 	msg.cmd.SetStdout(p.term.out)
 	msg.cmd.SetStderr(p.term.out)
-	err := msg.cmd.Run()
+	stopped, err := p.runReleased(msg.cmd)
+	if stopped {
+		// The program's modes may be left on the terminal, so its first
+		// ones are restored; Run then ends.
+		p.stopped = true
+		p.term.reset()
+
+		return
+	}
 	if rerr := p.term.reacquire(p.ctx); rerr != nil {
 		p.fatal = fmt.Errorf("failed to take the terminal back: %w", rerr)
 
@@ -348,6 +372,39 @@ func (p *Program) runExec(msg execMsg) {
 		p.update(msg.fn(err))
 	} else {
 		p.dirty = true
+	}
+}
+
+// runReleased runs c on the released terminal. A stop signal (SIGTERM,
+// SIGHUP; SIGINT is the program's ctrl+c) or the end of Run's context
+// ends the context c gets through ExecContext, which kills it, and
+// stopped is set; a program without one is not waited for then.
+func (p *Program) runReleased(c ExecCommand) (stopped bool, err error) {
+	ctx, cancel := context.WithCancel(p.ctx)
+	defer cancel()
+	cc, killable := c.(ExecContext)
+	if killable {
+		cc.SetContext(ctx)
+	}
+	done := make(chan error, 1)
+	go func() { done <- c.Run() }()
+	ended := p.ctx.Done()
+	for {
+		select {
+		case err := <-done:
+			return stopped, err
+		case sig := <-p.term.stop:
+			if !p.term.stops(sig) {
+				continue
+			}
+		case <-ended:
+			ended = nil
+		}
+		stopped = true
+		cancel()
+		if !killable {
+			return true, nil
+		}
 	}
 }
 
