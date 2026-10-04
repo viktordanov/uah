@@ -358,6 +358,11 @@ func (p *Program) runExec(msg execMsg) {
 	msg.cmd.SetStdout(p.term.out)
 	msg.cmd.SetStderr(p.term.out)
 	stopped, err := p.runReleased(msg.cmd)
+	if p.panicked != nil {
+		p.term.reset()
+
+		return
+	}
 	if stopped {
 		// The program's modes may be left on the terminal, so its first
 		// ones are restored; Run then ends.
@@ -395,7 +400,17 @@ func (p *Program) runReleased(c ExecCommand) (stopped bool, err error) {
 		cc.SetContext(ctx)
 	}
 	done := make(chan error, 1)
-	go func() { done <- c.Run() }()
+	go func() {
+		// A panic in the program is raised again on the loop, so Run
+		// restores the terminal and its callers' deferred calls run.
+		defer func() {
+			if r := recover(); r != nil {
+				p.panicked = panicMsg{value: r, stack: debug.Stack()}.String()
+				done <- nil
+			}
+		}()
+		done <- c.Run()
+	}()
 	ended := p.ctx.Done()
 	for {
 		select {

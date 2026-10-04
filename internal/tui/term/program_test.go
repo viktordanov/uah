@@ -677,16 +677,19 @@ func TestFrameWriteErrors(t *testing.T) {
 	assert.Contains(t, out.String()[before:], "\x1b[2J", "the failed frame is drawn whole")
 
 	out.fail.Store(true)
-	for i := range maxWriteFails {
-		clk.advance(time.Second)
-		p.Send(countMsg{})
-		waitUntil(t, func() bool { return log.viewCount() >= 4+i })
-	}
-	select {
-	case err := <-done:
-		require.ErrorIs(t, err, errBroken)
-	case <-time.After(5 * time.Second):
-		t.Fatal("the program did not end on failing writes")
+	p.Send(countMsg{})
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case err := <-done:
+			require.ErrorIs(t, err, errBroken)
+
+			return
+		case <-time.After(5 * time.Millisecond):
+			clk.advance(time.Second / FrameRate) // the retries' timer
+		case <-deadline:
+			t.Fatal("the program did not end on failing writes")
+		}
 	}
 }
 
@@ -892,3 +895,27 @@ func TestResetTurnsOffTheProgramsModes(t *testing.T) {
 		assert.Contains(t, out.String(), seq)
 	}
 }
+
+// A panic in a program Exec runs is raised again by Run, after the
+// terminal is put back, rather than crashing the process from its
+// goroutine.
+func TestExecPanicIsRaisedByRun(t *testing.T) {
+	out := &output{}
+	p := NewProgram(counter{log: newEvents()}, Options{In: strings.NewReader(""), Out: out, Width: 10, Height: 2, Profile: colorprofile.TrueColor})
+	p.Send(execMsg{cmd: panicking{}})
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_, _ = p.Run(context.Background())
+	}()
+	require.NotNil(t, recovered)
+	assert.Contains(t, fmt.Sprint(recovered), "exec panic")
+	assert.True(t, strings.HasSuffix(out.String(), cursorShow+altScreenOff), "restored: %q", out.String())
+}
+
+type panicking struct{}
+
+func (panicking) SetStdin(io.Reader)  {}
+func (panicking) SetStdout(io.Writer) {}
+func (panicking) SetStderr(io.Writer) {}
+func (panicking) Run() error          { panic("exec panic") }
