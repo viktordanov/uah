@@ -74,11 +74,11 @@ func TestBoxes_FailClosed(t *testing.T) {
 // that holds the workspace, also under a case alias, and not one inside a
 // protected path of another grant.
 func TestWithGrants(t *testing.T) {
-	base := sandbox.ResolvePath(t.TempDir())
+	base := sandbox.ResolvePath(harnesstest.OutsideDir(t, "uah-withgrants-")) // outside $TMPDIR, a writable root
 	ws := filepath.Join(base, "Repo", "child")
 	outer := filepath.Join(base, "outer")
 	inner := filepath.Join(outer, ".agents", "inner")
-	for _, d := range []string{ws, inner} {
+	for _, d := range []string{ws, inner, filepath.Join(ws, "sub"), filepath.Join(outer, "other")} {
 		require.NoError(t, os.MkdirAll(d, 0o755))
 	}
 	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws}
@@ -87,6 +87,16 @@ func TestWithGrants(t *testing.T) {
 		assert.Equal(t, []string{outer}, withGrants(p, order).WritableRoots, "inside the other grant's .agents")
 	}
 	assert.Empty(t, withGrants(p, []string{filepath.Join(base, "Repo")}).WritableRoots, "holds the workspace")
+	assert.Empty(t, withGrants(p, []string{filepath.Join(ws, "sub")}).WritableRoots, "inside the workspace")
+	configured := p
+	configured.WritableRoots = []string{outer}
+	assert.Equal(t, []string{outer}, withGrants(configured, []string{inner}).WritableRoots, "inside a configured root")
+	if upper := filepath.Join(base, "OUTER"); sandbox.ResolvePath(upper) == upper {
+		if _, err := os.Stat(upper); err == nil {
+			configured.WritableRoots = []string{upper}
+			assert.Equal(t, []string{upper}, withGrants(configured, []string{filepath.Join(outer, "other")}).WritableRoots, "inside a configured root spelled in another case")
+		}
+	}
 	if alias := filepath.Join(base, "repo"); sandbox.ResolvePath(alias) == alias {
 		if _, err := os.Stat(alias); err == nil {
 			assert.Empty(t, withGrants(p, []string{alias}).WritableRoots, "holds the workspace under another case")

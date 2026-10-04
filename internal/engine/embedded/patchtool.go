@@ -312,7 +312,7 @@ func (g patchGate) offer(policy sandbox.Policy, resolved []string) string {
 		return ""
 	}
 	dir := sandbox.GrantFor(resolved)
-	if dir == "" || policy.Holds(dir) {
+	if dir == "" || policy.Holds(dir) || policy.InRoot(dir) {
 		return ""
 	}
 	policy.WritableRoots = append(slices.Clip(policy.WritableRoots), dir)

@@ -72,6 +72,21 @@ func (p Policy) Holds(dir string) bool {
 	return false
 }
 
+// InRoot reports whether path is one of the policy's writable roots or
+// inside one, by name without case or by identity. A grant there adds
+// nothing it may write, and under another spelling than the root's it
+// could keep its protected paths out of the root's rule in Seatbelt, which
+// compares names as strings, so the engine leaves it out.
+func (p Policy) InRoot(path string) bool {
+	for _, r := range p.Writable() {
+		if holds(r, path) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // protects reports whether the protected path covers path: path is it or
 // inside it, its names compared without case, as macOS's default file
 // system and Linux's casefold directories compare them; or path, or one of

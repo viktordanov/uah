@@ -39,7 +39,7 @@ func grantWorktrees(grants *sandbox.Grants, policy sandbox.Policy, paths []strin
 		if policy.CanWriteResolved(p) {
 			continue
 		}
-		if root, ok := grants.AddWorktree(p, func(root string) bool { return !policy.Protects(root) && !policy.Holds(root) }); ok {
+		if root, ok := grants.AddWorktree(p, func(root string) bool { return !policy.Protects(root) && !policy.Holds(root) && !policy.InRoot(root) }); ok {
 			added = append(added, root)
 		}
 	}

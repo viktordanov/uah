@@ -112,7 +112,8 @@ func (g *Grants) add(gr Grant, dir os.FileInfo, tell bool) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if gr.Path = Canonical(gr.Path); !Grantable(gr.Path) {
+	canonical, ok := Canonical(gr.Path)
+	if gr.Path = canonical; !ok || !Grantable(gr.Path) {
 		return "", false
 	}
 	if _, ok := sameDir(gr.Path, info); !ok {
@@ -314,41 +315,46 @@ func isProtectedName(name string, names []string) bool {
 
 // Canonical returns an existing path as the file system spells it: each
 // name as its directory lists it, so a case alias or another Unicode
-// normalization on macOS becomes the stored name. A name its directory
-// does not list under any spelling is kept as given.
-func Canonical(path string) string {
+// normalization on macOS becomes the stored name. ok is false when a
+// directory on the way cannot be listed or does not list the name under
+// any spelling: the stored spelling is then unknown.
+func Canonical(path string) (string, bool) {
 	out := string(filepath.Separator)
 	for name := range strings.SplitSeq(path, string(filepath.Separator)) {
 		if name == "" {
 			continue
 		}
-		out = filepath.Join(out, storedName(out, name))
+		stored, ok := storedName(out, name)
+		if !ok {
+			return path, false
+		}
+		out = filepath.Join(out, stored)
 	}
 
-	return out
+	return out, true
 }
 
 // storedName is the name dir lists for name: name itself, else the entry
 // that is the same file.
-func storedName(dir, name string) string {
+func storedName(dir, name string) (string, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return name
+		return "", false
 	}
 	for _, e := range entries {
 		if e.Name() == name {
-			return name
+			return name, true
 		}
 	}
 	want, err := os.Lstat(filepath.Join(dir, name))
 	if err != nil {
-		return name
+		return "", false
 	}
 	for _, e := range entries {
 		if info, err := os.Lstat(filepath.Join(dir, e.Name())); err == nil && os.SameFile(info, want) {
-			return e.Name()
+			return e.Name(), true
 		}
 	}
 
-	return name
+	return "", false
 }

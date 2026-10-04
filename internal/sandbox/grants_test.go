@@ -190,10 +190,31 @@ func TestGrants_Canonical(t *testing.T) {
 	if _, err := os.Stat(alias); err != nil {
 		t.Skip("this file system tells case apart")
 	}
-	assert.Equal(t, filepath.Join(outer, "Inner"), sandbox.Canonical(filepath.Join(alias, "inner")))
+	canonical, ok := sandbox.Canonical(filepath.Join(alias, "inner"))
+	assert.True(t, ok)
+	assert.Equal(t, filepath.Join(outer, "Inner"), canonical)
 
 	g := sandbox.NewGrants(base, nil)
 	require.True(t, g.Add(alias, sandbox.GrantApproved))
 	assert.Equal(t, []string{outer}, g.Roots())
 	assert.False(t, g.Add(filepath.Join(base, "outer", "inner"), sandbox.GrantApproved), "inside it, under another case")
+}
+
+// TestGrants_CanonicalUnlisted: a directory under a parent that cannot be
+// listed has no known spelling, so it is not granted.
+func TestGrants_CanonicalUnlisted(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root lists any directory")
+	}
+	t.Setenv("HOME", t.TempDir())
+	base := realPath(t, t.TempDir())
+	locked := filepath.Join(base, "locked")
+	dir := filepath.Join(locked, "Outer")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.Chmod(locked, 0o111))
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+
+	_, ok := sandbox.Canonical(dir)
+	assert.False(t, ok)
+	assert.False(t, sandbox.NewGrants(base, nil).Add(dir, sandbox.GrantApproved))
 }

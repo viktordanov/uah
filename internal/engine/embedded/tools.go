@@ -216,8 +216,8 @@ func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 }
 
 // withGrants adds the granted directories to the policy's writable roots,
-// whatever order they were granted in, leaving out a grant that is or
-// holds one of the policy's own roots, and then a grant that a protected
+// whatever order they were granted in, leaving out a grant that is, holds,
+// or lies inside one of the policy's own roots, and then a grant that a protected
 // path of any root, the other grants included, covers. So no grant opens
 // part of a protected path, as Seatbelt's rule for an inner root and
 // bubblewrap's later bind would, and none takes in a root's protected
@@ -225,7 +225,7 @@ func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 func withGrants(p sandbox.Policy, grants []string) sandbox.Policy {
 	var roots []string
 	for _, g := range grants {
-		if !p.Holds(g) {
+		if !p.Holds(g) && !p.InRoot(g) {
 			roots = append(roots, g)
 		}
 	}
