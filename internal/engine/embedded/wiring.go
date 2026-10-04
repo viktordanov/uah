@@ -155,7 +155,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if err != nil {
 		return nil, err
 	}
-	w.e.forkTemps.Delete(req.SessionID) // the store has the fork's correction (forkNote)
+	w.doneForkNote(req, s)
 	if sw.searches, err = w.searchLog(req.Provider, string(s.id)); err != nil {
 		return nil, err
 	}

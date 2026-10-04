@@ -55,15 +55,24 @@ func (w *wiring) prepared(ctx context.Context, req core.Request, messages []core
 }
 
 // forkNote is what a fork's first run is told of its own $TMPDIR, when
-// the history it copied names its parent's (Engine.Fork); "" otherwise.
-// The run's store records it, and the wiring forgets the fork then.
+// the history it copied names its parent's (Engine.Fork, forkTempPath);
+// "" otherwise. Once the run's store records it, the wiring removes the
+// file (doneForkNote), so a later run does not repeat it.
 func (w *wiring) forkNote(req core.Request) string {
-	parent, ok := w.e.forkTemps.Load(req.SessionID)
-	if !ok || w.e.cfg.Sandbox == nil {
+	parent, err := os.ReadFile(forkTempPath(w.l.SessionsDir, req.SessionID))
+	if err != nil || w.e.cfg.Sandbox == nil {
 		return ""
 	}
 
 	return fmt.Sprintf(forkTempNote, session.TempDir(w.l.SessionsDir, req.SessionID), parent)
+}
+
+// doneForkNote removes a fork's note once the store has recorded the run's
+// messages with it.
+func (w *wiring) doneForkNote(req core.Request, s runStore) {
+	if len(s.early) > 0 {
+		_ = os.Remove(forkTempPath(w.l.SessionsDir, req.SessionID))
+	}
 }
 
 // forkTempNote corrects the prepared context a fork copied from its parent.

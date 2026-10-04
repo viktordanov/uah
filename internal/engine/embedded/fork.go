@@ -75,11 +75,20 @@ func (e *Engine) Fork(ctx context.Context, parentID, childID, callID string) err
 		return err
 	}
 	if temp := uahsession.TempDir(dir, parentID); namesPath(items[:cut], temp) {
-		e.forkTemps.Store(childID, temp)
+		if err := os.WriteFile(forkTempPath(dir, childID), []byte(temp), 0o600); err != nil {
+			return fmt.Errorf("failed to note the fork's $TMPDIR: %w", err)
+		}
 	}
 
 	return nil
 }
+
+// forkTempPath is sessions/<id>.forktmp: the parent's $TMPDIR, which the
+// fork's copied history names, until a run of the fork records its
+// correction (forkNote). It is a file, so the correction survives a first
+// run that fails before recording it, a close, and a resume in a new
+// process.
+func forkTempPath(dir, id string) string { return filepath.Join(dir, id+".forktmp") }
 
 // namesPath reports whether a developer message of the items, such as the
 // prepared context, names path.
