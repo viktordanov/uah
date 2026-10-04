@@ -4,7 +4,7 @@
 Hooks run a user's command at a session event, with Claude Code's contract, so existing hook scripts work unchanged. This package runs the commands, combines their decisions, and keeps the trust store for project hooks. The session and the engine decide when each event fires.
 
 <!-- memoria:export id="summary" -->
-Hooks run a command at a session event with Claude Code's contract: the event arrives as JSON on stdin, exit 0 continues, exit 2 blocks with stderr as the reason, and any other exit is reported and ignored. Project hooks run only after `uah hooks trust` records their exact commands and the content of any local script they run.
+Hooks run a command at a session event with Claude Code's contract: the event arrives as JSON on stdin, exit 0 continues, exit 2 blocks with stderr as the reason, and any other exit is reported and ignored. In a session under a tool policy, a PreToolUse or PermissionRequest hook that fails blocks its call instead. Project hooks run only after `uah hooks trust` records their exact commands and the content of any local script they run.
 <!-- /memoria:export -->
 
 Hooks are `[[hooks.<Event>]]` entries in the configuration; the keys are in the [configuration reference](../../docs/configuration.md#hooks). `uah hooks` lists the hooks for a workspace and whether each runs.
@@ -33,7 +33,7 @@ command = "osascript -e 'display notification \"uah is idle\"'"
 | --- | --- | --- | --- |
 | `SessionStart` | When the session opens (`source`: startup or resume) | Add context to the first message (`additionalContext` or plain stdout); show a `systemMessage` | session |
 | `UserPromptSubmit` | Before a message is sent | Block it (exit 2 or `"decision": "block"`); add context | session |
-| `PreToolUse` | Before each tool call | Deny it (exit 2, or `permissionDecision` `"deny"` or `"ask"`); the reason is the tool's error. Allow it (`"allow"`): an approval it needs is given without asking anyone, but a `forbid` rule still refuses it. Rewrite it (`updatedInput`) | engine |
+| `PreToolUse` | Before each tool call | Deny it (exit 2, or `permissionDecision` `"deny"` or `"ask"`); the reason is the tool's error. Allow it (`"allow"`): an approval it needs is given without asking anyone, but a `forbid` rule still refuses it, and a call the tool policy does not allow never reaches the hook. Rewrite it (`updatedInput`) | engine |
 | `PostToolUse` | After each tool call | Observe only | session |
 | `Stop` | When the agent finished and nothing is queued | Keep it going: `"decision": "block"` with a `reason` sends the reason as the next message, at most 5 times in a row. `stop_hook_active` is true after the first | session |
 | `SubagentStart` | When a subagent starts, before its first message (`agent_id`, `agent_type`, `agent_transcript_path`; `session_id` is the parent's) | Observe only | internal/agents |
@@ -62,14 +62,18 @@ A subagent fires the subagent hooks only, as in Claude Code. `SessionStart`, `Se
 The session runs its hooks on one worker goroutine, in order, so a slow hook never blocks the session loop. PreToolUse hooks run on the coordinator's goroutine, as Claude Code's do, so a slow hook delays the agent up to its timeout.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="decisions" files="hooks.go payload.go" -->
+<!-- memoria:section id="decisions" files="hooks.go payload.go exec.go" -->
 ## Output and decisions
 
 | Exit | Outcome |
 | --- | --- |
 | 0 | Continue. Stdout that starts with `{` is read as JSON output; invalid JSON is an error |
 | 2 | Block, with stderr as the reason |
-| Other, or a timeout | An error: reported and ignored |
+| Other, a crash, or a timeout | An error: reported and ignored, unless the runner fails closed (below) |
+
+A hook that exits 0 while a process it started still holds its output open is read when `WaitDelay` (1 s) expires: what it wrote by then is its answer, so a `"deny"` it printed still blocks. Before uah 1.8.5, the wait's error made such a hook an ignored failure, and the call ran. A hook stopped because the run stopped is an error with the reason "stopped before it finished", not a timeout, and the engine then refuses the call rather than run it unchecked.
+
+**Failures.** By default a hook that fails is reported and ignored, as in Claude Code and in Codex (`codex-rs/hooks` at b741e48, where a failed PreToolUse hook does not block either, nor does an exit 2 without a reason on stderr). `Runner.FailClosed` changes that for the events that decide whether a tool call runs, `Gates`: PreToolUse and PermissionRequest. Such a hook then blocks its call when it exits with a code other than 0 or 2, crashes, times out, prints JSON that does not parse, or answers a `permissionDecision` other than `allow`, `deny`, or `ask`. The result is `OutcomeBlocked`, with a reason that names the failure. `internal/app` sets it for a session under a tool policy (`[tools] allow` or `deny`, `--tools`, `--deny-tools`), and `Clone` keeps it, so a subagent's runner fails closed too. The other events keep the default: they guard no call. A project hook that is not trusted is skipped, not failed, in every session.
 
 `Decision` combines one event's results. The JSON output can set `continue: false` with a `stopReason`, `decision: "block"` with a `reason`, a `systemMessage` to show, and `hookSpecificOutput` with `permissionDecision`, `permissionDecisionReason`, `updatedInput`, or `additionalContext`. For `UserPromptSubmit` and `SessionStart`, plain stdout without JSON is context, as in Claude Code.
 
@@ -115,5 +119,5 @@ An untrusted hook is skipped and reported once per command. The file is written 
 <!-- memoria:section id="tests" files="hooks_test.go trust_test.go" -->
 ## Tests
 
-`hooks_test.go` pins the exit codes, the stdin payload, PreToolUse decisions, timeouts, validation, and the subagent rules (`TestRun_Subagents`); `internal/app`'s `TestSetup_SubagentHooks` runs every event through a real session with a subagent. `trust_test.go` pins script hashing, commands without a script and their workspace scope, old entries, and the "script changed" report. The session's event handling is tested in `internal/session/hooks_test.go`, and PreToolUse and PermissionRequest in `internal/engine/embedded`.
+`hooks_test.go` pins the exit codes, the stdin payload, PreToolUse decisions, timeouts, validation, the subagent rules (`TestRun_Subagents`), failing closed (`TestRun_FailClosed`), a stopped hook (`TestRun_Canceled`), and a hook whose background process holds its output (`TestRun_BackgroundProcessKeepsOutput`); `internal/app`'s `TestSetup_SubagentHooks` runs every event through a real session with a subagent. `trust_test.go` pins script hashing, commands without a script and their workspace scope, old entries, and the "script changed" report. The session's event handling is tested in `internal/session/hooks_test.go`, and PreToolUse and PermissionRequest in `internal/engine/embedded`.
 <!-- /memoria:section -->

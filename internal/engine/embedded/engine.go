@@ -30,6 +30,7 @@ import (
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/sandbox"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 const tierPriority = "priority"
@@ -120,6 +121,13 @@ type Config struct {
 	// run ends (runs), so an idle process's footprint is its live heap
 	// rather than its last run's peak.
 	ReturnMemory bool
+	// Tools is the tool policy: the tools every session on the engine may
+	// use, subagents' included (policy.go). The zero Policy allows every
+	// tool.
+	Tools toolpolicy.Policy
+	// NoSkills turns skills off: no skill is discovered, and none is
+	// listed in the prompt or offered through SkillUse.
+	NoSkills bool
 	// Subagents, when set, offers its tools to the runs it attaches and
 	// hears when the user interrupts a run; the engine closes it when it is
 	// an io.Closer.

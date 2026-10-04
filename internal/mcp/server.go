@@ -480,15 +480,23 @@ func (m *Manager) qualify() []Tool {
 			})
 		}
 	}
-	slices.SortFunc(candidates, func(a, b Tool) int {
+
+	return Qualify(candidates)
+}
+
+// Qualify gives the tools their qualified names, in server and tool order
+// so names are stable: mcp__<server>__<tool>, hashed when that is too long
+// or taken (namer).
+func Qualify(tools []Tool) []Tool {
+	slices.SortFunc(tools, func(a, b Tool) int {
 		return cmp.Or(cmp.Compare(a.Server, b.Server), cmp.Compare(a.Tool, b.Tool))
 	})
 	n := newNamer()
-	for i := range candidates {
-		candidates[i].Name = n.name(candidates[i].Server, candidates[i].Tool)
+	for i := range tools {
+		tools[i].Name = n.name(tools[i].Server, tools[i].Tool)
 	}
 
-	return candidates
+	return tools
 }
 
 // schema returns the input schema as a JSON object, defaulting to an

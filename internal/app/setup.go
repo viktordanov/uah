@@ -26,6 +26,7 @@ import (
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/store"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 	planusage "github.com/viktordanov/uah/internal/usage"
 )
 
@@ -56,7 +57,7 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	var resumed session.Info
 	opts := session.Options{}
 	if in.SessionRef != "" {
-		info, err := FindSession(ctx, stateDir, in.SessionRef)
+		info, err := findResumed(ctx, stateDir, in.SessionRef)
 		if err != nil {
 			return Result{}, err
 		}
@@ -110,12 +111,12 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	} else {
 		catalog.Catalog(ctx, catalog.Provider(), models.Offline) // the cache only, no network
 	}
-	opts.Settings, opts.Yolo, opts.Goals = r.Settings, in.Yolo, r.Goals
+	opts.Settings, opts.Yolo, opts.Goals, opts.Tools = r.Settings, in.Yolo, r.Goals, r.Tools
 	opts.Notices = append(opts.Notices, modelNotices(catalog.Cached(r.Settings.Provider), r)...)
 	// The session's own files go to runDir; the model cache stays shared.
 	runDir := cmp.Or(in.RunStateDir, stateDir)
 	opts.SessionsDir = filepath.Join(runDir, "sessions")
-	if opts.Hooks, err = loadHooks(cfg, in.Workspace); err != nil {
+	if opts.Hooks, err = loadHooks(cfg, in.Workspace, r.Tools.Restricted()); err != nil {
 		return Result{}, err
 	}
 	r.Sandbox = absPolicy(r.Sandbox, in.Workspace)
@@ -143,8 +144,9 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 }
 
 // loadHooks builds the hook runner for the configured hooks (nil when there
-// are none).
-func loadHooks(cfg config.Config, workspace string) (*hooks.Runner, error) {
+// are none). With failClosed, as in a session under a tool policy, a
+// PreToolUse or PermissionRequest hook that fails blocks its call.
+func loadHooks(cfg config.Config, workspace string, failClosed bool) (*hooks.Runner, error) {
 	list, err := cfg.HookList()
 	if err != nil {
 		return nil, usage(err)
@@ -159,6 +161,9 @@ func loadHooks(cfg config.Config, workspace string) (*hooks.Runner, error) {
 	runner, err := hooks.New(list, trust, workspace)
 	if err != nil {
 		return nil, usage(err)
+	}
+	if failClosed {
+		runner.FailClosed()
 	}
 
 	return runner, nil
@@ -186,7 +191,7 @@ func newEngine(r Resolved, stateDir, sandboxDir string, logger *slog.Logger, p p
 		InstructionFiles: instructionFiles(opts.Instructions), InstructionsOff: !r.Instructions,
 		Compaction: r.Compaction, ContextWindow: r.Settings.ContextWindow,
 		BeforeCompact: preCompactHook(opts.Hooks, r.Settings), Subagents: p.subagents, AskUser: p.askUser,
-		Goals: !r.Goals.Disabled, ReturnMemory: true,
+		Goals: !r.Goals.Disabled, ReturnMemory: true, Tools: r.Tools, NoSkills: r.NoSkills,
 	}
 
 	return embedded.New(ecfg)
@@ -248,6 +253,31 @@ func absPolicy(p sandbox.Policy, workspace string) sandbox.Policy {
 	p.WritableRoots = roots
 
 	return p
+}
+
+// findResumed finds the session to resume, with the tool policy it ran
+// under.
+func findResumed(ctx context.Context, stateDir, ref string) (session.Info, error) {
+	info, err := FindSession(ctx, stateDir, ref)
+	if err != nil {
+		return session.Info{}, err
+	}
+	info.Tools, err = savedTools(stateDir, info.ID)
+
+	return info, err
+}
+
+// savedTools reads the tool policy a session ran under from its sidecar.
+// The session list skips a sidecar it cannot read, but a resume must not:
+// it would drop the policy and widen the session's tools. A session
+// without a sidecar ran under none.
+func savedTools(stateDir, id string) (*toolpolicy.Policy, error) {
+	sc, _, err := session.ReadSidecar(filepath.Join(stateDir, "sessions"), id)
+	if err != nil {
+		return nil, fmt.Errorf("cannot resume session %s: its sidecar, which keeps its tool policy, is unreadable: %w", id, err)
+	}
+
+	return sc.Tools, nil
 }
 
 // HookTrustFile records the project hook commands the user approved.

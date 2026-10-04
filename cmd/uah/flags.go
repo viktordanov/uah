@@ -19,6 +19,7 @@ import (
 	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // sessionFlags are shared by the TUI and `uah exec`.
@@ -104,9 +105,22 @@ func sessionFlags() []cli.Flag {
 			Name:  flagNoContextPreparation,
 			Usage: "start new sessions without prepared context (the environment, sandbox, workspace, agent files, and harness); " + app.EnvContextPreparation + "=off does the same",
 		},
+		&cli.StringFlag{
+			Name: flagTools, Usage: "the only tools the model may use, comma-separated: built-in names, mcp__<server>__<tool>, or mcp__<server>__* " +
+				`("" allows none); narrows [tools] allow, never widens it`,
+			DefaultText: "every tool [tools] allows",
+		},
+		&cli.StringFlag{Name: flagDenyTools, Usage: "tools the model may never use, comma-separated, besides [tools] deny"},
+		&cli.BoolFlag{Name: "no-skills", Usage: "discover and offer no skills; [skills] enabled = false does the same"},
 		&cli.StringFlag{Name: "log-level", Usage: "diagnostic log level: debug, info, warn, error", Value: "warn", Validator: oneOfMap("log-level", app.LogLevels)},
 	}
 }
+
+// The tool policy's flags.
+const (
+	flagTools     = "tools"
+	flagDenyTools = "deny-tools"
+)
 
 // flagSessionID is --session-id, the ID of a new session.
 const flagSessionID = "session-id"
@@ -174,7 +188,20 @@ func inputs(cmd *cli.Command) app.Inputs {
 		ContextPreparation: contextPreparation(cmd),
 		EffortUpdates:      os.Getenv(app.EnvEffortUpdates),
 		RequestUserInput:   os.Getenv(app.EnvRequestUserInput),
+		Tools:              toolsFlag(cmd),
+		DenyTools:          toolpolicy.Parse(cmd.String(flagDenyTools)),
+		NoSkills:           cmd.Bool("no-skills"),
 	}
+}
+
+// toolsFlag is --tools as a list: nil when not given, and empty, allowing
+// no tools, for --tools "".
+func toolsFlag(cmd *cli.Command) []string {
+	if !cmd.IsSet(flagTools) {
+		return nil
+	}
+
+	return toolpolicy.Parse(cmd.String(flagTools))
 }
 
 // contextPreparation is off with --no-context-preparation, else its

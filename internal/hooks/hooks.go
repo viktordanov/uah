@@ -105,6 +105,8 @@ type Runner struct {
 	report  func(Result)
 	parent  func(sessionID string) string
 	skipped map[string]bool // untrusted commands already reported
+	// failClosed blocks a call whose gating hook failed (FailClosed).
+	failClosed bool
 }
 
 // New validates the hooks and returns a runner. Project hooks run only when
@@ -165,7 +167,24 @@ func (r *Runner) Clone() *Runner {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	return &Runner{hooks: slices.Clone(r.hooks), trust: r.trust, workspace: r.workspace, parent: r.parent}
+	return &Runner{hooks: slices.Clone(r.hooks), trust: r.trust, workspace: r.workspace, parent: r.parent, failClosed: r.failClosed}
+}
+
+// Gates are the events whose hooks decide whether a tool call runs.
+var Gates = []Event{PreToolUse, PermissionRequest}
+
+// FailClosed makes a gating hook (Gates) that fails block its call: an
+// error exit other than 2, a crash, a timeout, output that is not valid
+// JSON, or a permissionDecision uah does not know. Without it, such a
+// failure is reported and ignored, as in Claude Code and Codex. A session
+// under a tool policy sets it. Clones made after the call share it.
+func (r *Runner) FailClosed() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failClosed = true
 }
 
 // SetParents tells the runner which sessions are subagents: parent returns
@@ -273,7 +292,7 @@ func (r *Runner) Run(ctx context.Context, in Input) Decision {
 			report(Result{Hook: h, Outcome: OutcomeRunning})
 		}
 		if ok {
-			res = r.exec(ctx, h, in)
+			res = r.closed(in.Event, r.exec(ctx, h, in))
 		}
 		if report != nil {
 			report(res)
@@ -286,6 +305,28 @@ func (r *Runner) Run(ctx context.Context, in Input) Decision {
 
 	return d
 }
+
+// closed turns a gating hook's failure into a block when the runner fails
+// closed (FailClosed).
+func (r *Runner) closed(event Event, res Result) Result {
+	r.mu.Lock()
+	closed := r.failClosed
+	r.mu.Unlock()
+	if !closed || !slices.Contains(Gates, event) {
+		return res
+	}
+	switch {
+	case res.Outcome == OutcomeError:
+		res.Outcome, res.Reason = OutcomeBlocked, "the hook failed ("+res.Reason+"), and this session blocks a call whose hook fails"
+	case res.Outcome == OutcomeOK && res.Output.HookSpecificOutput != nil && !slices.Contains(decisions, res.Output.HookSpecificOutput.PermissionDecision):
+		res.Outcome, res.Reason = OutcomeBlocked, fmt.Sprintf("the hook answered permissionDecision %q, which uah does not know, and this session blocks a call whose hook fails", res.Output.HookSpecificOutput.PermissionDecision)
+	}
+
+	return res
+}
+
+// decisions are the permissionDecision values uah knows ("" is none).
+var decisions = []string{"", "allow", "deny", "ask"}
 
 // Decision combines the results of one event's hooks.
 type Decision struct {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/hooks"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // LayerDir holds configuration layers: every *.toml in it merges after the
@@ -176,8 +177,24 @@ func decode(path string, into *Config) (bool, error) {
 	if err := decodeBytes(path, data, into); err != nil {
 		return true, err
 	}
+	if err := validateTools(path, into.Tools); err != nil {
+		return true, err
+	}
 
 	return true, resolvePaths(into, filepath.Dir(path))
+}
+
+// validateTools checks the names in [tools] allow and deny.
+func validateTools(path string, t Tools) error {
+	var names []string
+	if t.Allow != nil {
+		names = *t.Allow
+	}
+	if err := toolpolicy.Validate(append(slices.Clone(names), t.Deny...)); err != nil {
+		return fmt.Errorf("%s: [tools]: %w", path, err)
+	}
+
+	return nil
 }
 
 func tagHooks(byEvent map[string][]Hook, source hooks.Source) {

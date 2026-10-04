@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/approval"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // Saved are the settings a session keeps in its sidecar whenever they
@@ -44,7 +46,7 @@ func savedOf(s Settings) Saved {
 // and effort of the newest run. A session without saved settings (from
 // before uah kept them) keeps its newest run's.
 func (in *Info) ApplySidecar(sc Sidecar) {
-	in.Source, in.Parent, in.LastSequence = sc.Source, sc.Parent, sc.LastSequence
+	in.Source, in.Parent, in.LastSequence, in.Tools = sc.Source, sc.Parent, sc.LastSequence, sc.Tools
 	if sc.LastActivity.After(in.LastActivity) {
 		in.LastActivity = sc.LastActivity
 	}
@@ -71,6 +73,21 @@ func saveSettings(sessionsDir, id string, s Settings) error {
 
 		return true
 	})
+}
+
+// saveTools records a restricted tool policy in the session's sidecar.
+func (s *Session) saveTools(p toolpolicy.Policy) {
+	if !p.Restricted() {
+		return
+	}
+	s.warnIf(updateSidecar(s.sessionsDir, s.id, func(sc *Sidecar) bool {
+		if sc.Tools != nil && reflect.DeepEqual(*sc.Tools, p) {
+			return false
+		}
+		sc.Tools = &p
+
+		return true
+	}))
 }
 
 // updateSidecar changes the session's sidecar with change, creating it when

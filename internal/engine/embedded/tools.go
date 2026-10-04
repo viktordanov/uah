@@ -24,14 +24,15 @@ import (
 // tools builds the registry the coordinator runs: Bash, ViewImage, and
 // workspace skills, as the runner registers them, MCP tools, and Codex's
 // apply_patch, the agent tools, request_user_input, and the goal tools, with PreToolUse
-// hooks around them. Its static definitions are the tools the model is offered,
+// hooks around them and the tool policy around those (policy.go). Its static definitions are the tools the model is offered,
 // so a tool added or changed here reaches both. approvals bounds the hooks
 // and approvals of the calls: the run's context, ended early by an
 // interrupt.
 func (w *wiring) tools(ctx, approvals context.Context, req core.Request, sessionID session.ID) (tool.Registry, error) {
 	scope := w.e.scope(string(sessionID))
 	req.SessionID = string(sessionID)
-	req.DisallowedTools = scope.disallow(req.DisallowedTools)
+	policy := w.e.cfg.Tools
+	req.DisallowedTools = policyDisallow(policy, scope.disallow(req.DisallowedTools))
 	translators, err := w.translators(req, sessionID) //nolint:contextcheck,nolintlint // on Linux, the sandbox probes bwrap once per process, with its own timeout; not on darwin
 	if err != nil {
 		return nil, err
@@ -41,7 +42,11 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 		b.ctx = approvals
 		translators.Bash = b
 	}
-	skills, skillErrs := discoverSkills(req.Workspace, w.getenv)
+	var skills []tool.Skill
+	var skillErrs []error
+	if !w.e.cfg.NoSkills {
+		skills, skillErrs = discoverSkills(req.Workspace, w.getenv)
+	}
 	registry := tool.NewRegistry(translators, toolNames(req, len(skills) > 0)...)
 	if sandboxed && b.available() {
 		registry = w.withSandbox(registry, req)
@@ -60,13 +65,27 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	gate := w.mcpGate(approvals, never)
 	gate.approved = scope.approvesTool
 	resources := w.e.cfg.MCP != nil && w.e.cfg.MCP.HasServers()
-	registry = withMCP(registry, scope.mcpTools(mcpTools), resources, scope.disallowResources(req.DisallowedTools), gate)
+	var servers []string
+	if resources {
+		servers = w.e.cfg.MCP.Names()
+	}
+	mp := newMCPPolicy(policy, servers, func(msg string) { _, _ = fmt.Fprintf(w.l.Stderr, "mcp> %s\n", msg) })
+	if policy.Restricted() {
+		gate.servers = mp.allowsServer
+	}
+	allowed := mp.tools(mcpTools)
+	if policy.Restricted() {
+		w.opAllowed = operationAllowed(policy, allowed, mp.allowsServer)
+	}
+	registry = withMCP(registry, scope.mcpTools(allowed), resources, scope.disallowResources(req.DisallowedTools), gate)
 	registry = withPatch(registry, offersPatch(w.e.models, req), w.patchGate(approvals, req))
 	registry = w.withAgents(registry, req)
 	registry = withQuestions(registry, questionTranslator{offered: w.offersQuestions(req), root: !isSubagent(req.SessionID), ctx: approvals, ask: w.askUser})
 	registry = withGoals(registry, goalTranslator{offered: w.offersGoals(req), root: !isSubagent(req.SessionID), ctx: approvals, goal: w.goal})
 
-	return withPreToolUse(approvals, registry, w.e.cfg.Hooks, req, w.l.SessionsDir), nil
+	registry = withPreToolUse(approvals, registry, w.e.cfg.Hooks, req, w.l.SessionsDir)
+
+	return withPolicy(registry, policy, allowed, mcpTools), nil
 }
 
 // withSandbox offers Bash with the escalation arguments and a note on the
