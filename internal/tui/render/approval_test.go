@@ -25,6 +25,12 @@ func TestScreen_Approval(t *testing.T) {
 		At: t0, ID: "a3", Command: `mcp__docs__search {"q":"x"}`, Justification: "Search the docs.", MCPTool: "mcp__docs__search",
 	})
 	golden(t, "approval-mcp", screen(s, ""))
+
+	s = apply(base(), session.ApprovalRequested{
+		At: t0, ID: "a4", Command: "apply_patch /workspace/proj-worktrees/other/a.go", Justification: "the patch writes outside the writable roots",
+		Escalation: true, GrantRoot: "/workspace/proj-worktrees/other",
+	})
+	golden(t, "approval-grant", screen(s, ""))
 }
 
 // TestScreen_ApprovalNarrow: the approval's panel at 40 columns, as the

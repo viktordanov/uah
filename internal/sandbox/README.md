@@ -10,13 +10,14 @@ Commands run in the operating system's sandbox, as in Codex: Seatbelt on macOS a
 The profile and the bubblewrap layout are adapted from Codex rust-v0.156.1 (Apache-2.0; see `seatbelt/LICENSE-codex`). The decisions are recorded in the [sandbox plan](../../docs/design/sandbox.md), and the keys are in the [configuration reference](../../docs/configuration.md#sandbox-and-approvals).
 
 1. [Modes](#modes)
-2. [How a command is sandboxed](#how-a-command-is-sandboxed)
-3. [Platforms](#platforms)
-4. [Environment](#environment)
-5. [Tests](#tests)
+2. [Session grants](#session-grants)
+3. [How a command is sandboxed](#how-a-command-is-sandboxed)
+4. [Platforms](#platforms)
+5. [Environment](#environment)
+6. [Tests](#tests)
 <!-- /memoria:section -->
 
-<!-- memoria:section id="modes" files="sandbox.go gitdir.go canwrite.go" -->
+<!-- memoria:section id="modes" files="sandbox.go gitdir.go canwrite.go spell.go" -->
 ## Modes
 
 The mode comes from `--sandbox`, `UAH_SANDBOX`, or `sandbox_mode`. The names are Codex's.
@@ -27,11 +28,17 @@ The mode comes from `--sandbox`, `UAH_SANDBOX`, or `sandbox_mode`. The names are
 | `read-only` | Read any file; write only the session's temporary directory; no network |
 | `danger-full-access` | Anything the user can: no sandbox. Only yolo mode (`--yolo`) runs in it; `sandbox_mode` and `--sandbox` refuse the name |
 
-`Policy.Writable` returns the writable roots with symlinks resolved. `Protected` returns the paths that stay read-only inside each root: `.git`, `.uah`, `.agents`, and `.codex` (and `.uagent`, the old project directory, until it is moved), and the directory a worktree's `.git` file points to. They are protected because a sandboxed command could otherwise plant code that runs later outside the sandbox, such as a git hook. So `git commit` needs an escalation.
+`Policy.Writable` returns the writable roots spelled by `Canonical` (below). `Protected` returns the paths that stay read-only inside each root: `.git`, `.uah`, `.agents`, and `.codex` (and `.uagent`, the old project directory, until it is moved), and the directory a worktree's `.git` file points to. They are protected because a sandboxed command could otherwise plant code that runs later outside the sandbox, such as a git hook. So `git commit` needs an escalation.
 
 `Policy.ReadOnly` adds absolute paths that stay read-only in the same way inside any root that holds them, and whose directories between the root and the path cannot be renamed, so a command cannot move one aside and put its own in its place. A writable root inside a ReadOnly path is dropped from `Writable`, so it cannot open part of the path again. Both checks also see other names: Seatbelt compares names without case, so a root spelled `STATE` holds `state/sandbox` (the path is protected under the root's spelling) and a root spelled `SANDBOX` is dropped; a directory that is the same file under another name counts too. The directory of the sandboxing scripts is one (see [below](#how-a-command-is-sandboxed)): app setup and the embedded engine add it, and `Shell` adds its own directory to every policy it wraps.
 
 `CanWrite(path)` is the check `apply_patch` uses: `ResolvePath` resolves the path's symlinks (a dangling one is followed), then `CanWriteResolved` checks the resolved path against the roots and the protected and ReadOnly paths. A protected path also covers its other names: names are compared without case (macOS's default file system and Linux's casefold directories ignore it, so `.GIT` is `.git`), and a path whose existing directories include the protected directory itself under another name, such as another Unicode normalization, is refused by the directory's identity. Seatbelt and bubblewrap see the real file, so this matters only for writes uah makes itself. A caller that writes the resolved path itself, without following symlinks, checks with `CanWriteResolved`, so the path it checked is the path it writes.
+
+### One spelling for each path
+
+Every path that reaches a policy's decisions goes through one function, `Canonical` (`spell.go`): a writable root, a protected path, a `ReadOnly` path, a grant, and a path that `CanWrite`, `Protects`, `Holds`, or `InRoot` checks. It makes the path absolute, resolves its symlinks (`ResolvePath`), and spells each existing name as its directory lists it. A case alias or another Unicode normalization on macOS, or a path through a symlink, then becomes one string, so the string comparisons uah makes (the exclusions it puts under each root in the Seatbelt profile, the binds it orders for bubblewrap, `CanWrite`) never treat two spellings of one directory differently. Names past the deepest existing directory are kept as given; uah's own comparisons with a protected path ignore case, and so does Seatbelt. It fails closed: when a directory on the way cannot be listed, or a name cannot be looked up for a reason other than not existing, the spelling is unknown. A root that does not spell, or whose protected paths do not, is left out of `Writable`, together with any root that holds it, which would otherwise write what it protects; a `ReadOnly` path that does not spell leaves out every root. A checked path that does not spell is neither writable nor grantable.
+
+Each decision spells from one snapshot of the policy (`layout`): the roots, what stays read-only in each, and the `ReadOnly` paths, read once, with one reading of each directory, which nothing keeps after the decision. `Writable`, `CanWrite`, `Protects`, `Holds`, `InRoot`, the Seatbelt profile, and the bubblewrap arguments each take one snapshot, so a root is never accepted on one reading and its exclusions taken from another. A protected name that is a symlink, also one that leads nowhere yet, protects both the link and where it leads, in every root's rule. `TestSpelling_OneDirectoryOneString` feeds random case and symlink spellings of every root, `ReadOnly` path, grant, and checked path to a policy, and requires the same roots, Seatbelt profile, bubblewrap arguments, and decisions as for the stored spellings.
 
 ### The session's temporary directory
 
@@ -40,6 +47,30 @@ The mode comes from `--sandbox`, `UAH_SANDBOX`, or `sandbox_mode`. The names are
 It applies in every mode, unsandboxed ones included: a command escalated out of the sandbox, and every command in yolo mode, gets the same `$TMPDIR`, so a file one command writes there is where the next one looks. Nothing is special-cased per tool: Go puts its work directory under `$TMPDIR` by itself, and a cache that cannot be written elsewhere, such as `GOCACHE` in read-only mode, can be pointed at it. The model is told so in the prepared context (`internal/contextprep/sandbox.go`).
 
 The user's own `!` commands (`internal/usershell`) have no session directory and keep the user's `$TMPDIR`.
+<!-- /memoria:section -->
+
+<!-- memoria:section id="grants" files="grants.go worktree.go gitdir.go canwrite.go" -->
+## Session grants
+
+`Grants` are the directories a session made writable for the rest of the session ([configuration](../../docs/configuration.md#session-grants)). The engine adds them to the policy's `WritableRoots` for every patch and command, so they behave as `writable_roots` do, protected paths included. A session owns one `Grants`, and its subagents share it. `Add` takes only an existing directory given by its real path that passes `Grantable`: not the file system's root; neither the home directory nor a directory that holds it, compared without case and by identity; not a directory with a protected name (`~/.uah`, `~/.codex`); and not inside a `.git`, `.uah`, or `.uagent` directory, whose hooks and configuration run outside the sandbox. A worktree Codex keeps under `~/.codex/worktrees` can be granted, since `~/.codex` itself stays outside the grant. A grant keeps its directory as the file system spells it (`Canonical`: each name as its directory lists it), so a case alias on macOS never makes two grants, or a grant and another root's protected path, name one directory in two ways that Seatbelt, which compares names as strings, would take apart. A directory whose spelling cannot be read, because a directory on the way cannot be listed, is not granted. A directory inside an earlier grant is not added again.
+
+A grant holds only for the directory it was made for: `Roots`, `List`, and `Version` first drop a grant whose directory is gone, or was replaced by another directory or a symlink (`os.SameFile` against the directory added), so a path swapped after the grant never leads the sandbox elsewhere. Each new or dropped grant raises `Version`, so the engine builds the sandboxing shells again, and a new one calls the session's `notify`. The engine adds the grants to a policy whatever order they were made in: it leaves out a grant that is, holds, or lies inside one of the policy's own roots (`Policy.Holds`, `Policy.InRoot`, by name without case or by identity), which could name protected paths in a spelling Seatbelt, comparing names as strings, would not match, and then a grant inside a protected path or a `ReadOnly` path of any root, the other grants included (`Policy.Protects`), which would open part of it again through Seatbelt's rule for the inner root or bubblewrap's later bind.
+
+`Valid` checks a grant again when a session resumes, and `Keep` adds one that holds. Only a worktree grant can hold: an approved grant rests on the user's answer alone, and a sidecar must not widen what a session may write. `GrantFor` is the directory an approval offers for a patch: the git working tree that holds all its files, else their common existing directory, if that is `Grantable`.
+
+`Worktrees.Of(path)` finds a worktree of the workspace's repository without running git. It reads the files `git worktree add` writes:
+
+1. The nearest `.git` entry at or above the path decides, so a nested repository or a submodule is never taken for the repository around it. A symlink named `.git` is no repository.
+2. A `.git` directory is its own git directory. A `.git` file leads to one (`gitdir:`). The git directory's `commondir` leads to the common directory. Every path is resolved, so `/tmp` and `/private/tmp` are one.
+3. The common directory must be the workspace's, and the worktree must not be the workspace's own.
+4. The worktree's directory must not hold the common directory, by name without case or by identity, unless as its own `.git`: the repository's hooks would be writable under the grant, and git runs them outside the sandbox.
+5. The repository must list the worktree. A linked worktree's git directory must be `<common>/worktrees/<name>`, and that directory's `gitdir` file must point back at the worktree's `.git` file, in the worktree's directory: a hard link to that file elsewhere is the same file in another directory. The main checkout's `.git` must be the common directory itself, a real directory. A submodule's git directory has no `commondir`, so its common directory is its own.
+
+`NewWorktrees` reads the workspace's repository at once, when the session opens and before it runs any command, and the workspace must pass steps 1, 2, and 5 itself. So a `.git` entry a command plants in a workspace outside any repository (bubblewrap cannot protect a missing `.git`) makes it no repository's worktree. Each target is read afresh; only the workspace's repository is kept. Directories are compared by identity (`os.SameFile`), so another spelling of one, such as another case on macOS, is the same directory. `Grants.AddWorktree` checks a path and grants its worktree in one step, held to the directory the check read: its identity is taken before the repository's files are read and checked again after, so a directory swapped in at the same path meanwhile is not granted.
+
+Step 5 is the defense against a crafted `.git` file. Without it, a sandboxed command could write `gitdir: <common>/worktrees/bar` into a `.git` file in any directory it can write, such as `/tmp/x`, and so claim that directory. It cannot forge the link back, because the common directory is outside the writable roots or protected inside them.
+
+Codex (`openai/codex` at `afb436d`, 2026-10-04) has no automatic grant. Its patch approval request carries a `grant_root` field ("allow writes under this root for the remainder of the session"), but `codex-rs/core` always sends `None`, and the app server marks the field as unclear if honored. Its patch prompt offers "Yes, and don't ask again for these files" instead, which approves those paths for the session. Its `request_permissions` tool is the nearest thing that works: the model asks for file system or network permissions, and the user grants them for the turn or the session (`PermissionGrantScope`). uah's choice "allow writes to `<dir>`" is what `grant_root` describes, applied to commands too, and it is offered only to the user. uah adds the automatic grant for a worktree of the same repository, which Codex does not have.
 <!-- /memoria:section -->
 
 <!-- memoria:section id="shell" files="shell.go denied.go sandbox.go" -->
@@ -63,6 +94,8 @@ When the platform has no sandbox, `Wrap` returns `ErrUnavailable`. The engine th
 | Linux | `bwrap.go`, `wrap_linux.go` | `bwrap` from `PATH`: the disk read-only, each writable root bound writable with its protected paths bound read-only over it (each directory between the root and a `ReadOnly` path is first bound over itself: a mount point cannot be renamed), new user, PID, and IPC namespaces, a new network namespace (no network) unless the policy allows it, and all capabilities dropped. Where a container forbids mounting `/proc`, the layout leaves it out, as Codex does |
 | Other | `wrap_other.go` | No sandbox (`ErrUnavailable`) |
 
+bubblewrap mounts every protected path read-only after every writable bind, shallowest first, so no writable root, one nested in another or one a protected symlink leads into, covers it again.
+
 On Linux, a protected name that does not exist yet, such as `.git` in a workspace that is not a repository root, is not protected: bubblewrap can only mount over existing paths. Codex creates an empty directory for it, which breaks git in a subdirectory of a repository, so uah does not. Seatbelt protects missing names.
 <!-- /memoria:section -->
 
@@ -72,7 +105,7 @@ On Linux, a protected name that does not exist yet, such as `.git` in a workspac
 Commands get the whole environment, as in Codex. `EnvPolicy` is Codex's `[shell_environment_policy]`: `inherit` (`all`, `core`, `none`), `ignore_default_excludes = false` to drop `*KEY*`, `*SECRET*`, and `*TOKEN*`, then `exclude`, `set`, and `include_only`, in Codex's order. When the policy is not the default, the script starts with `env -i` and copies each kept variable as `NAME="$NAME"` when the command runs, so no inherited value is written to disk. With a `TempDir`, the script then sets `TMPDIR`, `TMP`, `TEMP`, and `TMPPREFIX` into it, whatever the policy says about them.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="seatbelt_test.go bwrap_test.go shell_test.go denied_test.go env_test.go wrap_darwin_test.go wrap_linux_test.go canwrite_test.go" -->
+<!-- memoria:section id="tests" files="seatbelt_test.go bwrap_test.go shell_test.go denied_test.go env_test.go wrap_darwin_test.go wrap_linux_test.go canwrite_test.go worktree_test.go grants_test.go spell_test.go" -->
 ## Tests
 
 | Test | Pins |
@@ -80,6 +113,8 @@ Commands get the whole environment, as in Codex. `EnvPolicy` is Codex's `[shell_
 | `seatbelt_test.go`, `bwrap_test.go` | The profile and the bubblewrap arguments for each mode, against golden files in `testdata` |
 | `wrap_darwin_test.go`, `wrap_linux_test.go` | Real sandboxed commands: writes inside and outside the roots, protected paths, network, exit codes, and inherited file descriptors, and a read-only command that writes only its `$TMPDIR`: zsh heredocs, fish's `psub`, `mktemp`, and `go build` work. macOS's `/bin/bash` 3.2 still makes heredoc files outside `$TMPDIR`, so its heredocs fail in read-only mode. Each runs only on its platform |
 | `shell_test.go`, `env_test.go`, `denied_test.go` | The script, a changed, symlinked, or open script and an open directory replaced, a script's mode read back from its header after the policy changed (never from a FIFO or another file), the environment policy, the temporary directory's variables over it, and the denial heuristic |
+| `spell_test.go` | One spelling for each path: random case and symlink spellings give the same policy, and a path under a directory that cannot be listed fails closed |
+| `worktree_test.go`, `grants_test.go` | Real repositories made with `git init` and `git worktree add`: a linked worktree from the main checkout and from a subdirectory, the main checkout from a linked worktree, a path through a symlink, a bare repository's worktrees, `--relative-paths` links; not an unrelated repository, a plain directory, a nested repository, a submodule, or crafted `.git` files and symlinks; a worktree that holds the common directory, a forged workspace; `Grantable` and the home directory, `Add`, a removed or replaced grant, `Valid` for an approved grant and after a worktree is removed, `GrantFor`, and `Policy.Protects` |
 | `TestSeatbeltShellScriptsStayReadOnly`, `TestLinuxShellScriptsStayReadOnly`, `canwrite_test.go` | A sandboxed command cannot replace, remove, or add a script, or rename the scripts' directory or a directory above it, when it is under `$TMPDIR`; `CanWrite` refuses a `ReadOnly` path |
 
 The package has build-tagged halves, so lint runs for both linux and darwin.

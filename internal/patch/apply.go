@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -86,7 +87,9 @@ func compute(fsys files, cwd string, hunks []Hunk) ([]Change, error) {
 			c.Old = old
 			if h.MovePath != "" {
 				c.MovePath, c.MoveAbs = h.MovePath, Resolve(cwd, h.MovePath)
-				files.remove(c.Abs)
+				if !sameEntry(fsys, c.Abs, c.MoveAbs) {
+					files.remove(c.Abs)
+				}
 				files.set(c.MoveAbs, c.New)
 			} else {
 				files.set(c.Abs, c.New)
@@ -105,11 +108,11 @@ type overlay struct {
 	files map[string]*string
 }
 
-func (o overlay) set(path, text string) { o.files[path] = &text }
-func (o overlay) remove(path string)    { o.files[path] = nil }
+func (o overlay) set(path, text string) { o.files[o.fsys.key(path)] = &text }
+func (o overlay) remove(path string)    { o.files[o.fsys.key(path)] = nil }
 
 func (o overlay) read(path string) (string, error) {
-	if text, ok := o.files[path]; ok {
+	if text, ok := o.files[o.fsys.key(path)]; ok {
 		if text == nil {
 			return "", fs.ErrNotExist
 		}
@@ -227,12 +230,28 @@ func write(fsys files, c Change) error {
 		if err := writeFile(fsys, c.MoveAbs, c.New, perm); err != nil {
 			return err
 		}
+		if sameEntry(fsys, c.Abs, c.MoveAbs) {
+			return nil // moved onto itself under another spelling: an update
+		}
 		if err := fsys.remove(c.Abs); err != nil {
 			return fmt.Errorf("Failed to remove original %s: %w", c.Abs, err) //nolint:staticcheck // Codex's message
 		}
 	}
 
 	return nil
+}
+
+// sameEntry reports whether two paths name one file: the same target, or,
+// when both exist, the same file under two spellings, such as a case alias
+// or a symlinked directory. Moving a file onto itself must not remove it.
+func sameEntry(fsys files, a, b string) bool {
+	if fsys.key(a) == fsys.key(b) {
+		return true
+	}
+	ai, aerr := fsys.lstat(a)
+	bi, berr := fsys.lstat(b)
+
+	return aerr == nil && berr == nil && os.SameFile(ai, bi)
 }
 
 func writeFile(fsys files, path, text string, perm fs.FileMode) error {

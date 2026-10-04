@@ -24,6 +24,8 @@ type Approval struct {
 	Prefix []string
 	// MCPTool, when set, offers "don't ask again" for this MCP tool.
 	MCPTool string
+	// GrantRoot, when set, offers to allow writes to it for the session.
+	GrantRoot string
 	// Answered hides the choices once the answer is on its way.
 	Answered bool
 	Since    time.Time
@@ -52,7 +54,7 @@ func (s State) PendingApproval() (Approval, bool) {
 func (s *State) requestApproval(e session.ApprovalRequested) {
 	s.Approvals = append(s.Approvals, Approval{
 		ID: e.ID, Command: e.Command, Justification: e.Justification, Escalation: e.Escalation, Prefix: e.ProposedPrefix,
-		MCPTool: e.MCPTool, Since: e.At,
+		MCPTool: e.MCPTool, GrantRoot: e.GrantRoot, Since: e.At,
 	})
 	s.Scroll = 0
 }
@@ -74,6 +76,8 @@ func (s *State) resolveApproval(e session.ApprovalResolved) {
 		s.notice(session.LevelInfo, "✔ approved, and from now on commands that start with `"+strings.Join(a.Prefix, " ")+"`: "+command)
 	case approval.ApproveTool:
 		s.notice(session.LevelInfo, "✔ approved, and from now on the tool "+a.MCPTool+": "+command)
+	case approval.ApproveGrant:
+		s.notice(session.LevelInfo, "✔ approved, and writes to "+a.GrantRoot+" for this session: "+command)
 	case approval.Decline:
 		s.notice(session.LevelWarning, "✗ declined: "+command)
 	}
@@ -85,7 +89,8 @@ func (s *State) answer(e Answer) (State, []Effect) {
 		return *s, nil
 	}
 	a := &s.Approvals[0]
-	if (e.Answer == approval.ApprovePrefix && len(a.Prefix) == 0) || (e.Answer == approval.ApproveTool && a.MCPTool == "") {
+	if (e.Answer == approval.ApprovePrefix && len(a.Prefix) == 0) || (e.Answer == approval.ApproveTool && a.MCPTool == "") ||
+		(e.Answer == approval.ApproveGrant && a.GrantRoot == "") {
 		return *s, nil
 	}
 	a.Answered = true

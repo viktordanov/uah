@@ -18,8 +18,10 @@ import (
 //	--ro-bind / / --dev /dev                   the whole disk read-only, a minimal /dev
 //	--bind R R                                 each existing writable root, shallowest first
 //	  --bind D D                               each directory between R and a ReadOnly path in it
-//	  --ro-bind P P                            each existing protected path in R, and ReadOnly path
-//	--ro-bind G G                              a worktree's gitdir inside a writable root, after every bind
+//	--ro-bind P P                              after every bind, shallowest first: each existing
+//	                                           protected path and ReadOnly path inside a writable
+//	                                           root, a worktree's gitdir and a protected symlink's
+//	                                           target included
 //	--unshare-user --unshare-pid --unshare-ipc
 //	--unshare-net                              unless the policy has network
 //	--proc /proc --cap-drop ALL
@@ -45,34 +47,39 @@ func bwrapLayout(p Policy, mountProc bool) []string {
 		"--ro-bind", "/", "/",
 		"--dev", "/dev",
 	}
-	var roots []string
-	for _, r := range p.Writable() {
+	var layouts []rootLayout
+	for _, r := range p.layout().roots {
 		// bwrap needs every bind source to exist; Codex skips missing roots.
-		if exists(r) {
-			roots = append(roots, r)
+		if exists(r.root) {
+			layouts = append(layouts, r)
 		}
 	}
-	slices.SortStableFunc(roots, byDepth)
-	// A protected path outside its own root, such as a worktree's gitdir,
-	// goes after every bind so a later root bind cannot cover it.
+	slices.SortStableFunc(layouts, func(a, b rootLayout) int { return byDepth(a.root, b.root) })
+	var roots []string
+	for _, r := range layouts {
+		roots = append(roots, r.root)
+	}
+	// Every protected path goes after every bind, shallowest first, so no
+	// writable bind, a root nested in another or one a protected symlink
+	// leads into, can cover it: the policy refuses such writes
+	// (CanWrite), and the mounts must too.
 	var later []string
-	for _, root := range roots {
+	for _, r := range layouts {
+		root := r.root
 		args = append(args, "--bind", root, root)
-		protected := p.protectedIn(root)
+		protected := slices.Clone(r.protected)
 		slices.SortStableFunc(protected, byDepth)
 		// A directory between the root and a ReadOnly path is bound over
 		// itself first: a mount point cannot be renamed (EBUSY), so a
 		// command cannot move the protected path away and put its own in
 		// its place. Each comes before every read-only bind, which it
 		// would otherwise cover.
-		for _, dir := range readOnlyAncestors(root, p.readOnlyIn(root)) {
+		for _, dir := range readOnlyAncestors(root, r.readOnly) {
 			args = append(args, "--bind", dir, dir)
 		}
 		for _, path := range protected {
-			if under(path, []string{root}) {
-				args = protect(args, path)
-			} else if under(path, roots) && !slices.Contains(later, path) {
-				// Outside every root it is already read-only.
+			// Outside every root it is already read-only.
+			if under(path, roots) && !slices.Contains(later, path) {
 				later = append(later, path)
 			}
 		}

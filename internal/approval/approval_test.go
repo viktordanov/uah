@@ -164,3 +164,29 @@ func TestForbidden(t *testing.T) {
 		}
 	}
 }
+
+// TestDecide_Grant pins the grant choice: the prompt offers the request's
+// GrantRoot, ApproveGrant runs the action and returns the directory, and
+// any other approval, or a prompt without a directory, returns none.
+func TestDecide_Grant(t *testing.T) {
+	a := approval.New(approval.Config{})
+	req := approval.Request{Command: "apply_patch /w/b/a.txt", Escalated: true, Tool: "apply_patch", GrantRoot: "/w/b"}
+
+	user := &answer{with: approval.ApproveGrant}
+	d := a.Decide(context.Background(), req, user.ask)
+	assert.Equal(t, approval.Decision{Run: approval.Unsandboxed, Grant: "/w/b"}, d)
+	require.Len(t, user.prompts, 1)
+	assert.Equal(t, "/w/b", user.prompts[0].GrantRoot)
+	assert.True(t, approval.ApproveGrant.Approved())
+
+	d = a.Decide(context.Background(), req, (&answer{with: approval.Approve}).ask)
+	assert.Empty(t, d.Grant, "a plain approval grants nothing")
+
+	req.GrantRoot = ""
+	d = a.Decide(context.Background(), req, (&answer{with: approval.ApproveGrant}).ask)
+	assert.Equal(t, approval.Decision{Run: approval.Unsandboxed}, d, "nothing offered, nothing granted")
+
+	req.GrantRoot, req.Approved = "/w/b", true
+	d = a.Decide(context.Background(), req, (&answer{with: approval.ApproveGrant}).ask)
+	assert.Empty(t, d.Grant, "a hook's approval asks no one and grants nothing")
+}

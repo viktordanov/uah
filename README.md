@@ -301,6 +301,7 @@ Press shift+tab in the TUI. It cycles three modes, and the footer shows the curr
 | yolo (only with `--yolo`) | Anything your user can: no sandbox | Nothing: every command, patch, and MCP tool runs unasked; only `forbid` rules refuse |
 
 - A change applies from the next command, even mid-run.
+- In workspace and auto mode, a patch or an escalated command that writes into another git worktree of the workspace's repository makes that worktree writable for the rest of the session, without asking, and the transcript says `writable for this session: <path>`. In workspace mode, the prompt for a patch outside the workspace can also allow writes to its directory for the session (`w`). See [session grants](docs/configuration.md#session-grants).
 - A resumed session keeps its mode, with its model, effort, fast mode, and adaptive effort. Yolo mode is kept only when you give `--yolo` again; without it the session opens in the configured mode.
 - To start in a mode, set `permission_mode` in the [configuration](#configuration). `--sandbox read-only` or `--sandbox workspace-write` also picks a mode for one session.
 - `--yolo` (Codex's `--dangerously-bypass-approvals-and-sandbox`, which uah also accepts) starts the TUI or `uah exec` in yolo mode, and adds yolo after auto in the shift+tab cycle. Without the flag, yolo is not offered, and no file can set it. It takes no `--sandbox` or `--ask`. Use it only where something outside uah sandboxes the machine. The footer shows `yolo mode` in the warning color, and the terminal title says `yolo`. Subagents run in their parent's mode.
@@ -672,10 +673,10 @@ The usage package reads the ChatGPT subscription's rate limits for the openai-co
 
 ---
 
-<!-- memoria:section id="development" files=".github/workflows/ci.yml .github/workflows/release.yml scripts/package-release.sh .golangci.yml cmd/uah/compaction.go testing/fakellm/fakellm.go testing/harnesstest/harnesstest.go testing/harnesstest/runner.go testing/harnesstest/home.go" -->
+<!-- memoria:section id="development" files=".github/workflows/ci.yml .github/workflows/release.yml scripts/package-release.sh .golangci.yml cmd/uah/compaction.go testing/fakellm/fakellm.go testing/harnesstest/harnesstest.go testing/harnesstest/runner.go testing/harnesstest/home.go testing/harnesstest/git.go" -->
 ## Development
 
-Tests need no model or tokens: the engine runs against `testing/fakellm`, a scripted Responses API, and session and TUI tests also run on uagent's fake runner through `harnesstest.RunnerEngine`, a test-only engine. One test drives the real `uah-core-runner` and the embedded engine with the same script and requires the same events; `go test -short` skips it. Tests never read your `~/.uah` or `~/.codex`: each package that could runs through `harnesstest.IsolatedMain`, which gives it a temporary `UAH_HOME`, `HOME`, and `CODEX_HOME`.
+Tests need no model or tokens: the engine runs against `testing/fakellm`, a scripted Responses API, and session and TUI tests also run on uagent's fake runner through `harnesstest.RunnerEngine`, a test-only engine. One test drives the real `uah-core-runner` and the embedded engine with the same script and requires the same events; `go test -short` skips it. Tests never read your `~/.uah` or `~/.codex`: each package that could runs through `harnesstest.IsolatedMain`, which gives it a temporary `UAH_HOME`, `HOME`, and `CODEX_HOME`. Tests that need real repositories make them with `harnesstest.Git`, which reads no user or system git configuration.
 
 ```sh
 go run ./cmd/uah --version   # build and run

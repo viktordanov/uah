@@ -54,3 +54,23 @@ func TestApproval_MCPTool(t *testing.T) {
 	s, _ = apply(s, session.ApprovalResolved{At: t0, ID: "a2", Decision: approval.ApproveTool})
 	assert.Equal(t, "✔ approved, and from now on the tool mcp__docs__search: mcp__docs__search {}", s.Items[len(s.Items)-1].Text)
 }
+
+// A patch prompt with a directory to grant offers "allow writes to it for
+// this session"; one without does not.
+func TestApproval_GrantRoot(t *testing.T) {
+	opened := session.SessionOpened{At: t0, ID: "s1", Settings: settings()}
+	s, _ := apply(state.New(t0), opened,
+		session.ApprovalRequested{At: t0, ID: "a1", Command: "apply_patch /x/a.txt"},
+		session.ApprovalRequested{At: t0, ID: "a2", Command: "apply_patch /work/b/a.txt", GrantRoot: "/work/b"})
+
+	s, effects := apply(s, state.Answer{Answer: approval.ApproveGrant})
+	assert.Empty(t, effects, "no directory offered")
+	s, _ = apply(s, state.Answer{Answer: approval.Approve}, session.ApprovalResolved{At: t0, ID: "a1", Decision: approval.Approve})
+
+	a, _ := s.PendingApproval()
+	assert.Equal(t, "/work/b", a.GrantRoot)
+	s, effects = apply(s, state.Answer{Answer: approval.ApproveGrant})
+	assert.Equal(t, []state.Effect{state.EffResolve{ID: "a2", Answer: approval.ApproveGrant}}, effects)
+	s, _ = apply(s, session.ApprovalResolved{At: t0, ID: "a2", Decision: approval.ApproveGrant})
+	assert.Equal(t, "✔ approved, and writes to /work/b for this session: apply_patch /work/b/a.txt", s.Items[len(s.Items)-1].Text)
+}

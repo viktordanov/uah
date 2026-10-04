@@ -246,6 +246,7 @@ func backtrackIntent(key string) any {
 
 // onApprovalKey answers the approval overlay: y approves, s approves and
 // allows the proposed prefix, a approves and always allows the MCP tool,
+// w approves and allows writes to the offered directory for the session,
 // n, esc, and ctrl+c decline. Other keys wait.
 func (m Model) onApprovalKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	switch msg.String() {
@@ -255,6 +256,8 @@ func (m Model) onApprovalKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 		return m.dispatch(state.Answer{Answer: approval.ApprovePrefix})
 	case "a":
 		return m.dispatch(state.Answer{Answer: approval.ApproveTool})
+	case "w":
+		return m.dispatch(state.Answer{Answer: approval.ApproveGrant})
 	case "n", keyEsc, keyCtrlC:
 		return m.dispatch(state.Answer{Answer: approval.Decline})
 	}

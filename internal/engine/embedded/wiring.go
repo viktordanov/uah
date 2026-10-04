@@ -26,6 +26,7 @@ import (
 	"github.com/viktordanov/uah/internal/compaction"
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/instructions"
+	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
 )
 
@@ -46,7 +47,7 @@ func (b backend) Start(ctx context.Context, l harness.Launch) (harness.Process, 
 		e: b.e, l: l, getenv: b.e.cfg.Getenv, emit: start.emit, notify: start.opts.Notify, ask: start.opts.Ask,
 		askAnytime: start.opts.AskAnytime, askUser: start.opts.AskUser, goal: start.opts.Goal, inject: start.opts.Inject,
 		tier: start.opts.ServiceTier, adaptive: start.opts.AdaptiveEffort, settings: start.opts.Settings,
-		mode: newModeCell(start.opts, b.e.cfg),
+		mode: newModeCell(start.opts, b.e.cfg), grants: start.opts.Grants,
 	}
 	b.e.runs.started()
 	a, err := w.start(ctx, start.opts)
@@ -93,6 +94,9 @@ type wiring struct {
 	settings func() engine.LiveSettings
 	// mode is the run's permission mode, which Run.SetMode changes.
 	mode *modeCell
+	// grants are the session's grants (engine.Options.Grants), whose
+	// directories each command's and patch's policy adds (policy).
+	grants *sandbox.Grants
 	// bashTools, when set, keeps Bash's definition in each model request
 	// in step with the mode.
 	bashTools func([]llm.Tool) []llm.Tool

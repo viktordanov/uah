@@ -3,6 +3,7 @@ package sandbox
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -17,25 +18,79 @@ func (p Policy) CanWrite(path string) bool {
 
 // CanWriteResolved is CanWrite for a path ResolvePath returned: it takes
 // path as it is, without following its symlinks again, for a caller that
-// then writes that exact path without following symlinks.
+// then writes that exact path without following symlinks. The path is
+// spelled with the roots, in one snapshot (layout), and one that does not
+// spell is not writable.
 func (p Policy) CanWriteResolved(path string) bool {
 	if p.Mode == FullAccess {
 		return true
 	}
-	roots := p.Writable()
+	l := p.layout()
+	path, ok := l.sp.spell(path)
+	if !ok {
+		return false
+	}
 	inside := false
-	for _, r := range roots {
-		if within(path, r) {
+	for _, r := range l.roots {
+		if within(path, r.root) {
 			inside = true
 		}
-		for _, protected := range p.protectedIn(r) {
-			if protects(ResolvePath(protected), path) {
+		for _, protected := range r.protected {
+			if protects(protected, path) {
 				return false
 			}
 		}
 	}
 
 	return inside
+}
+
+// Protects reports whether path is, or is inside, a path the policy keeps
+// read-only: a protected path of one of its writable roots, or one of its
+// ReadOnly paths, also under another name. A writable root there would
+// open part of it again, as Seatbelt's rule for the inner root and
+// bubblewrap's later bind would, so the engine grants no such directory.
+// A path that does not spell counts as protected.
+func (p Policy) Protects(path string) bool {
+	l := p.layout()
+	path, ok := l.sp.canonical(path)
+	if !ok || l.insideReadOnly(path) {
+		return true
+	}
+	for _, r := range l.roots {
+		for _, protected := range r.protected {
+			if protects(protected, path) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// Holds reports whether dir is, or holds, one of the policy's writable
+// roots, by name without case or by identity. A grant there would take in
+// that root's protected paths under a name the sandbox may not compare
+// them by, so the engine grants no such directory. A directory that does
+// not spell counts as holding one.
+func (p Policy) Holds(dir string) bool {
+	l := p.layout()
+	dir, ok := l.sp.canonical(dir)
+
+	return !ok || slices.ContainsFunc(l.roots, func(r rootLayout) bool { return holds(dir, r.root) })
+}
+
+// InRoot reports whether path is one of the policy's writable roots or
+// inside one, by name without case or by identity. A grant there adds
+// nothing it may write, and under another spelling than the root's it
+// could keep its protected paths out of the root's rule in Seatbelt, which
+// compares names as strings, so the engine leaves it out. A path that does
+// not spell counts as inside one.
+func (p Policy) InRoot(path string) bool {
+	l := p.layout()
+	path, ok := l.sp.canonical(path)
+
+	return !ok || slices.ContainsFunc(l.roots, func(r rootLayout) bool { return holds(r.root, path) })
 }
 
 // protects reports whether the protected path covers path: path is it or

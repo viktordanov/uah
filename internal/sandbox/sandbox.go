@@ -75,53 +75,155 @@ type Policy struct {
 }
 
 // Writable returns the directories a command may write under the policy,
-// absolute and with symlinks resolved where they exist: the TempDir in
-// ReadOnly; the workspace, the writable roots, /tmp, uah's own $TMPDIR, and
-// the TempDir in WorkspaceWrite; none in FullAccess, which has no sandbox.
-// A root inside one of the ReadOnly paths is left out, so it cannot open
-// up part of that path again.
+// spelled by Canonical: the TempDir in ReadOnly; the workspace, the
+// writable roots, /tmp, uah's own $TMPDIR, and the TempDir in
+// WorkspaceWrite; none in FullAccess, which has no sandbox. A root inside
+// one of the ReadOnly paths is left out, so it cannot open up part of that
+// path again, and so is a root that it or one of its protected paths
+// cannot spell: its spelling, and so what the sandbox compares it with,
+// is unknown (layout).
 func (p Policy) Writable() []string {
-	var roots []string
-	switch p.Mode {
-	case ReadOnly:
-		roots = []string{p.TempDir}
-	case WorkspaceWrite:
-		roots = append([]string{p.Workspace}, p.WritableRoots...)
-		roots = append(roots, "/tmp")
-		if tmp := os.Getenv("TMPDIR"); tmp != "" {
-			roots = append(roots, tmp)
-		}
-		roots = append(roots, p.TempDir)
-	case FullAccess:
-		return nil
-	}
 	var out []string
-	for _, r := range roots {
-		if r == "" {
-			continue
-		}
-		if resolved, err := filepath.EvalSymlinks(r); err == nil {
-			r = resolved
-		}
-		r = filepath.Clean(r)
-		if !slices.Contains(out, r) && !p.insideReadOnly(r) {
-			out = append(out, r)
-		}
+	for _, r := range p.layout().roots {
+		out = append(out, r.root)
 	}
 
 	return out
 }
 
+// candidates are the roots the mode names, as given.
+func (p Policy) candidates() []string {
+	switch p.Mode {
+	case ReadOnly:
+		return []string{p.TempDir}
+	case WorkspaceWrite:
+		roots := append([]string{p.Workspace}, p.WritableRoots...)
+		roots = append(roots, "/tmp")
+		if tmp := os.Getenv("TMPDIR"); tmp != "" {
+			roots = append(roots, tmp)
+		}
+
+		return append(roots, p.TempDir)
+	case FullAccess:
+	}
+
+	return nil
+}
+
+// layout is one snapshot of a policy, every path in it spelled by one
+// speller: the writable roots with what stays read-only inside each, and
+// the ReadOnly paths. Each decision reads one snapshot, so a root is never
+// accepted on one spelling and checked on another, and a path that fails
+// to spell anywhere in it fails the whole decision closed.
+type layout struct {
+	sp       *speller
+	roots    []rootLayout
+	readOnly []string
+}
+
+// rootLayout is a writable root, the paths that stay read-only inside it
+// or because of it (protected, ReadOnly paths spelled under it included),
+// and its ReadOnly paths alone, which bubblewrap binds specially.
+type rootLayout struct {
+	root      string
+	protected []string
+	readOnly  []string
+}
+
+// layout spells the policy. A ReadOnly path that does not spell might be
+// anywhere, so the layout then has no roots at all; a root that does not
+// spell, or whose protected paths do not, is left out.
+func (p Policy) layout() layout {
+	l := layout{sp: newSpeller()}
+	for _, ro := range p.ReadOnly {
+		if ro == "" {
+			continue
+		}
+		spelled, ok := l.sp.canonical(ro)
+		if !ok {
+			return layout{sp: l.sp}
+		}
+		l.readOnly = append(l.readOnly, spelled)
+	}
+	// failed are the roots left out because they or their protected
+	// paths do not spell: a root that holds one would otherwise open
+	// what they protect, so it is left out too.
+	var failed []string
+	for _, r := range p.candidates() {
+		if r == "" {
+			continue
+		}
+		root, ok := l.sp.canonical(r)
+		if !ok {
+			failed = append(failed, ResolvePath(r))
+
+			continue
+		}
+		if slices.ContainsFunc(l.roots, func(have rootLayout) bool { return have.root == root }) || l.insideReadOnly(root) {
+			continue
+		}
+		if rl, ok := l.rootLayout(root); ok {
+			l.roots = append(l.roots, rl)
+		} else {
+			failed = append(failed, root)
+		}
+	}
+	l.roots = slices.DeleteFunc(l.roots, func(r rootLayout) bool {
+		return slices.ContainsFunc(failed, func(f string) bool { return holds(r.root, f) })
+	})
+
+	return l
+}
+
 // insideReadOnly reports whether path is one of the ReadOnly paths or
 // inside one, also under another name for it (protects).
-func (p Policy) insideReadOnly(path string) bool {
-	for _, ro := range p.ReadOnly {
-		if ro != "" && protects(ResolvePath(ro), path) {
-			return true
+func (l layout) insideReadOnly(path string) bool {
+	return slices.ContainsFunc(l.readOnly, func(ro string) bool { return protects(ro, path) })
+}
+
+// rootLayout is what stays read-only in root: each of ProtectedNames,
+// whether or not it exists yet, and, when it is a symlink, where it leads,
+// even if nothing is there yet; the directory a .git file points to (a
+// worktree's "gitdir:"); and the ReadOnly paths at or under root, spelled
+// under root: a root that names one of the path's directories in another
+// case, or by another name for the same directory, still holds the path.
+// ok is false when one of them does not spell.
+func (l layout) rootLayout(root string) (rootLayout, bool) {
+	rl := rootLayout{root: root}
+	add := func(path string) {
+		if !slices.Contains(rl.protected, path) {
+			rl.protected = append(rl.protected, path)
+		}
+	}
+	for _, name := range ProtectedNames {
+		at, ok := l.sp.under(root, name)
+		if !ok {
+			return rootLayout{}, false
+		}
+		add(at)
+		if info, err := os.Lstat(at); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			target, ok := l.sp.canonical(at)
+			if !ok {
+				return rootLayout{}, false
+			}
+			add(target)
+		}
+	}
+	if target := gitdirTarget(filepath.Join(root, ".git")); target != "" {
+		spelled, ok := l.sp.canonical(target)
+		if !ok {
+			return rootLayout{}, false
+		}
+		add(spelled)
+	}
+	for _, ro := range l.readOnly {
+		if path, ok := underRoot(ro, root); ok && !slices.Contains(rl.readOnly, path) {
+			rl.readOnly = append(rl.readOnly, path)
+			add(path)
 		}
 	}
 
-	return false
+	return rl, true
 }
 
 // Protected returns the paths inside root that stay read-only: each of
@@ -134,39 +236,6 @@ func Protected(root string) []string {
 	}
 	if target := gitdirTarget(filepath.Join(root, ".git")); target != "" {
 		out = append(out, target)
-	}
-
-	return out
-}
-
-// protectedIn returns the paths inside root that stay read-only: Protected
-// and the policy's ReadOnly paths at or under root, resolved.
-func (p Policy) protectedIn(root string) []string {
-	out := Protected(root)
-	for _, path := range p.readOnlyIn(root) {
-		if !slices.Contains(out, path) {
-			out = append(out, path)
-		}
-	}
-
-	return out
-}
-
-// readOnlyIn returns the policy's ReadOnly paths at or under root,
-// resolved and spelled under root: a root that names one of the path's
-// directories in another case, or by another name for the same directory,
-// still holds the path, and Seatbelt, which compares names without case,
-// would otherwise let the root open it.
-func (p Policy) readOnlyIn(root string) []string {
-	var out []string
-	for _, path := range p.ReadOnly {
-		if path == "" {
-			continue
-		}
-		path, ok := underRoot(ResolvePath(path), root)
-		if ok && !slices.Contains(out, path) {
-			out = append(out, path)
-		}
 	}
 
 	return out

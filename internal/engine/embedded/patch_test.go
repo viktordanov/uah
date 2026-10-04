@@ -16,6 +16,7 @@ import (
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/hooks"
+	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/rules"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
@@ -38,6 +39,10 @@ type patchOpts struct {
 	hooks       []hooks.Hook
 	// rules are the command rules for the workspace.
 	rules func(ws string) []rules.Rule
+	// permission, when set, is the session's permission mode, and
+	// autoReview puts the auto-reviewer in front of the user.
+	permission approval.Mode
+	autoReview bool
 }
 
 // applyPatch is a model that applies the patch, its input the raw patch,
@@ -67,9 +72,13 @@ func newPatchEnv(t *testing.T, o patchOpts, replies func(ws, outside string) []f
 	eng := embedded.New(embedded.Config{
 		StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, Hooks: runner,
 		Sandbox: &policy, SandboxDir: filepath.Join(e.StateDir, "sandbox"),
-		Approver: approval.New(approval.Config{Rules: ruleSet}),
+		Approver: approval.New(approval.Config{Rules: ruleSet}), AutoReview: o.autoReview, Review: review.Config{Model: "gpt-test"},
 	})
-	e.s, err = session.Open(context.Background(), eng, session.Options{Settings: e.settings(), Interactive: o.interactive, Hooks: runner})
+	settings := e.settings()
+	if o.permission != "" {
+		settings = settings.WithMode(o.permission)
+	}
+	e.s, err = session.Open(context.Background(), eng, session.Options{Settings: settings, Interactive: o.interactive, Hooks: runner})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = e.s.Close() })
 	e.ev = &events{t: t, s: e.s}

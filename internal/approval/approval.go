@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -67,6 +68,10 @@ type Request struct {
 	// user.
 	Tool  string
 	Input json.RawMessage
+	// GrantRoot, when set, is a directory the user may allow writes to for
+	// the rest of the session (ApproveGrant), offered for a patch that
+	// writes outside the writable roots.
+	GrantRoot string
 }
 
 // Run is how a decided command runs.
@@ -88,6 +93,10 @@ type Decision struct {
 	// runs, Reason is a warning for the user, such as a rule that could not
 	// be saved.
 	Reason string
+	// Grant is the directory the user allowed writes to for the session
+	// (ApproveGrant): the Request's GrantRoot. The auto-reviewer, hooks,
+	// and rules never set it.
+	Grant string
 }
 
 // Prompt is what the user is asked.
@@ -106,6 +115,8 @@ type Prompt struct {
 	// MCPTool, when set, is the qualified name (mcp__<server>__<tool>) of
 	// the MCP tool asked about, and offers ApproveTool for it.
 	MCPTool string
+	// GrantRoot, when set, offers ApproveGrant for this directory.
+	GrantRoot string
 }
 
 // Answer is the user's choice.
@@ -119,7 +130,10 @@ const (
 	// approval_mode to approve from now on, as Codex's "Allow and don't ask
 	// me again".
 	ApproveTool Answer = "approve_tool"
-	Decline     Answer = "decline"
+	// ApproveGrant approves a patch and makes Prompt.GrantRoot writable
+	// for the rest of the session, for patches and sandboxed commands.
+	ApproveGrant Answer = "approve_grant"
+	Decline      Answer = "decline"
 )
 
 // declinePrefix starts a decline that carries its own reason.
@@ -130,7 +144,9 @@ const declinePrefix = "decline: "
 func DeclineBecause(reason string) Answer { return Answer(declinePrefix + reason) }
 
 // Approved reports whether the answer lets the command run.
-func (a Answer) Approved() bool { return a == Approve || a == ApprovePrefix || a == ApproveTool }
+func (a Answer) Approved() bool {
+	return a == Approve || a == ApprovePrefix || a == ApproveTool || a == ApproveGrant
+}
 
 // DeclineReason is the reason a DeclineBecause answer carries.
 func (a Answer) DeclineReason() (string, bool) {
@@ -233,6 +249,24 @@ func (a *Approver) Forbidden(command string) (reason string, forbidden bool) {
 	return "", false
 }
 
+// ForbiddenPath reports whether a forbid rule on the tool and one path,
+// such as ["apply_patch", "/work/secret"], names a path that same accepts,
+// and why. A caller that checks a path rules may name in another spelling,
+// such as a case alias or a path through a symlink, passes a same that
+// compares the files themselves, which the words of Forbidden cannot.
+func (a *Approver) ForbiddenPath(tool string, same func(path string) bool) (reason string, forbidden bool) {
+	for _, r := range a.policy().Rules() {
+		if r.Decision != rules.Forbidden || len(r.Pattern) != 2 || !slices.Contains(r.Pattern[0], tool) {
+			continue
+		}
+		if slices.ContainsFunc(r.Pattern[1], same) {
+			return forbiddenReason(r), true
+		}
+	}
+
+	return "", false
+}
+
 // byRule decides without asking when a rule settles it, or when nothing
 // needs approval; done is false when the user must be asked.
 func byRule(req Request, rule rules.Rule, matched bool) (d Decision, done bool) {
@@ -255,7 +289,7 @@ func byRule(req Request, rule rules.Rule, matched bool) (d Decision, done bool) 
 func prompt(req Request, rule rules.Rule, matched bool, commands [][]string) Prompt {
 	p := Prompt{
 		Command: req.Command, Cwd: req.Cwd, Justification: req.Justification, Escalation: req.Escalated || req.NoSandbox,
-		Tool: req.Tool, Input: req.Input,
+		Tool: req.Tool, Input: req.Input, GrantRoot: req.GrantRoot,
 	}
 	if !matched {
 		p.ProposedPrefix = proposePrefix(req.PrefixRule, commands)
@@ -272,6 +306,8 @@ func (a *Approver) answer(answer Answer, p Prompt, run Run) Decision {
 	switch answer {
 	case Approve, ApproveTool:
 		return Decision{Run: run}
+	case ApproveGrant:
+		return Decision{Run: run, Grant: p.GrantRoot}
 	case ApprovePrefix:
 		if len(p.ProposedPrefix) > 0 {
 			if err := a.allow(p.ProposedPrefix); err != nil {

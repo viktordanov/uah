@@ -109,6 +109,8 @@ func (s *Session) loop() { //nolint:gocyclo // a dispatch switch over a closed s
 			m()
 		case evNotify:
 			s.emit(m.event)
+		case evGrant:
+			s.onGrant(m.grant)
 		case evEnded:
 			if s.onEnded(m) {
 				return

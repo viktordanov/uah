@@ -8,6 +8,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/approval"
+	"github.com/viktordanov/uah/internal/sandbox"
 )
 
 // Subagents runs the child agents a session's agent starts; internal/agents
@@ -105,6 +106,9 @@ type AgentParent struct {
 	// Inject gives the parent's agent a message without a turn of its own,
 	// as a child's <subagent_notification> (nil: none); withdraw takes it back unsent.
 	Inject func(text string) (withdraw func())
+	// Grants are the parent session's grants, which its children share
+	// (Options.Grants).
+	Grants *sandbox.Grants
 }
 
 // AgentTool is a tool a run is offered, with its JSON Schema parameters.

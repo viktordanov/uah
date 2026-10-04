@@ -264,7 +264,8 @@ func (m *Manager) role(name string) (Role, error) {
 // session opens with, and the parent's settings as they are now (see
 // liveSettings). Only what makes it a child differs: its ID, its sidecar's
 // source and parent, approvals asked through the parent, the parent's
-// permission mode, and its model and effort: the spawn call's, else the
+// grants (shared, so a directory either makes writable is writable for
+// both), the parent's permission mode, and its model and effort: the spawn call's, else the
 // role's, else the configured defaults, else the parent's. A fork takes
 // the spawn call's, else the parent's: its request is to share the
 // parent's prefix, which neither a role nor a default may change. A
@@ -279,7 +280,7 @@ func (m *Manager) role(name string) (Role, error) {
 func (m *Manager) childOptions(p engine.AgentParent, c *child, role Role, rec record, saved *session.Saved) session.Options {
 	opts := m.tmpl
 	opts.ID, opts.Resumed, opts.Source, opts.Parent = c.id, saved != nil, session.SourceSubagent, c.parent
-	opts.Ask, opts.Hooks = m.askFor(c), opts.Hooks.Clone()
+	opts.Ask, opts.Hooks, opts.Grants = m.askFor(c), opts.Hooks.Clone(), p.Grants
 	// A child's text never streams: neither its parent nor its view shows
 	// it as it arrives.
 	opts.Stream = false

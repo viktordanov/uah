@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 
 	"github.com/viktordanov/uah-core/harness/operation"
@@ -72,9 +73,21 @@ func (j *patchJobs) run(op operation.Operation, state operation.RemoteJobState, 
 
 		return
 	}
-	state.TerminalResult = patch.Summary(changes)
+	state.TerminalResult = patch.Summary(changes) + grantedNote(plan.Granted)
 	state.Handle, _ = json.Marshal(engine.PatchHandle{Files: patch.Diffs(changes)}) //nolint:errchkjson // plain strings and ints always encode
 	j.finish(operation.UpdateRemoteJob(op, state, operation.StatusCompleted))
+}
+
+// grantedNote tells the model which directories the patch made writable
+// for the session, so its later commands write there in the sandbox
+// instead of asking to leave it.
+func grantedNote(dirs []string) string {
+	var b strings.Builder
+	for _, d := range dirs {
+		b.WriteString("uah: " + d + " is now writable for the rest of this session, for patches and for commands in the sandbox.\n")
+	}
+
+	return b.String()
 }
 
 // beforePatchWrite, when set, runs after the patch was approved and
