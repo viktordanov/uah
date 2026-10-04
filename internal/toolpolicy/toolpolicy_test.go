@@ -116,34 +116,30 @@ func TestPolicy_NarrowKeepsServers(t *testing.T) {
 	a := toolpolicy.Policy{Allow: []string{"mcp__a__*"}}
 	b := toolpolicy.Policy{Allow: []string{"mcp__a__b__delete"}}
 	for _, both := range []toolpolicy.Policy{a.Narrow(b), b.Narrow(a)} {
-		assert.False(t, both.AllowsTool("mcp__a__b__delete", "a__b"))
-		assert.True(t, both.AllowsTool("mcp__a__b__delete", "a"))
-		assert.False(t, both.AllowsTool("mcp__a__read", "a"))
+		assert.False(t, both.AllowsMCP("a__b", "delete"))
+		assert.True(t, both.AllowsMCP("a", "b__delete"))
+		assert.False(t, both.AllowsMCP("a", "read"))
 		assert.False(t, both.AllowsServer("a"), "b allows one tool, not the server")
 	}
 	assert.Nil(t, toolpolicy.Policy{}.Narrow(b).Within, "one list needs no Within")
 }
 
-// TestPolicy_AllowsMCP: an exact name allows an MCP tool only when it is
-// the tool's own, unambiguous name, since mcp's namer can hand a hashed or
-// ambiguous name to another tool when the tool lists change; a server
-// pattern always matches by the server.
+// TestPolicy_AllowsMCP: an MCP tool is allowed by its identity, its
+// server and its own raw name, never by the name the model sees.
 func TestPolicy_AllowsMCP(t *testing.T) {
 	t.Parallel()
-	exact := toolpolicy.Policy{Allow: []string{"mcp__docs__search", "mcp__a__b__c", "mcp__docs__long_0123456789ab"}}
-	assert.True(t, exact.AllowsMCP("mcp__docs__search", "docs", "search"))
-	assert.False(t, exact.AllowsMCP("mcp__docs__search", "docs", "search!"), "another tool holds the name only when hashed")
-	assert.False(t, exact.AllowsMCP("mcp__a__b__c", "a__b", "c"), "the name may be server a's tool b__c, and only that one can hold it")
-	assert.True(t, exact.AllowsMCP("mcp__a__b__c", "a", "b__c"), "the server is the name's first part, so no other server's tool gets it")
-	assert.False(t, exact.AllowsMCP("mcp__docs__long_0123456789ab", "docs", "long"), "a hashed name")
-	assert.True(t, exact.Allows("mcp__a__b__c"), "by name alone it is in the list")
-	sanitized := toolpolicy.Policy{Allow: []string{"mcp__docs__read_file"}}
-	assert.True(t, sanitized.AllowsMCP("mcp__docs__read_file", "docs", "read_file"))
-	assert.False(t, sanitized.AllowsMCP("mcp__docs__read_file", "docs", "read-file"), "read.file could hold the name next")
-	assert.False(t, sanitized.AllowsMCP("mcp__docs__read_file", "docs", "read.file"))
+	p := toolpolicy.Policy{Allow: []string{"mcp__docs__search", "mcp__docs__read-file", "mcp__a__b__c", "mcp__gh__*"}}
+	assert.True(t, p.AllowsMCP("docs", "search"))
+	assert.True(t, p.AllowsMCP("docs", "read-file"))
+	assert.False(t, p.AllowsMCP("docs", "read.file"), "same exposed name, another tool")
+	assert.False(t, p.AllowsMCP("docs", "read_file"))
+	assert.True(t, p.AllowsMCP("a", "b__c"), "the server is the first part")
+	assert.False(t, p.AllowsMCP("a__b", "c"))
+	assert.True(t, p.AllowsMCP("gh", "anything"))
+	assert.False(t, p.AllowsMCP("gh__x", "y"), "a pattern never takes another server")
+	assert.False(t, p.AllowsMCP("docs.v2", "x"))
 
-	pattern := toolpolicy.Policy{Allow: []string{"mcp__a__b__*"}}
-	assert.True(t, pattern.AllowsMCP("mcp__a__b__c", "a__b", "c"))
-	assert.False(t, pattern.AllowsMCP("mcp__a__b__c", "a", "b__c"))
-	assert.True(t, toolpolicy.Policy{Allow: []string{"mcp__docs__*"}}.AllowsMCP("mcp__docs__long_0123456789ab", "docs", "long"))
+	deny := toolpolicy.Policy{Deny: []string{"mcp__docs__read_file"}}
+	assert.False(t, deny.AllowsMCP("docs", "read-file"), "a deny entry matches the sanitized name too")
+	assert.True(t, deny.AllowsMCP("docs", "list"))
 }

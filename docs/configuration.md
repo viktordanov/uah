@@ -225,8 +225,10 @@ The tool policy limits the tools the model may use, for example for a headless, 
 A name is one of these:
 
 1. A built-in tool: `Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `web_search`, `request_user_input`, the agent tools `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent`, the goal tools `get_goal`, `create_goal`, and `update_goal`, and the MCP resource tools `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource`.
-2. An MCP tool by the name the model sees, `mcp__<server>__<tool>`, as `/mcp` lists it. The name allows the tool only while it is the tool's own name: not a name uah shortened and gave a hash suffix, not one whose server part contains `__`, and not one whose tool part uah changed (`read-file` becomes `read_file`). Such names can pass to another tool when the servers' tool lists change, so those tools need their server's pattern.
-3. Every tool of one MCP server: `mcp__<server>__*`, or `mcp__<server>`. The pattern matches the tools of that server only, never of another server whose name starts the same way. Two configured servers with the same exposed name (`a-b` and `a.b` are both `a_b`) cannot be told apart, so the policy allows none of their tools, by pattern or by name.
+2. An MCP tool: `mcp__<server>__<tool>`, where `<server>` is the server's name as the model sees it (`/mcp` lists it) and `<tool>` is the tool's own name as the server lists it, `read-file` say, not the `read_file` of the model's name. uah allows a tool by that identity, never by the name the model sees, so the entry allows nothing while the server has no such tool, and it never passes to another tool when tool lists change.
+3. Every tool of one MCP server: `mcp__<server>__*`, or `mcp__<server>`. The pattern matches the tools of that server only, never of another server whose name starts the same way.
+
+Under a policy, uah offers no MCP tool whose name the model sees is not unambiguously its own, and says so on stderr (`mcp> tool policy: left out …`) when the policy names it: a tool whose name another tool's would equal (`read-file` and `read.file`), whose name uah shortened with a hash suffix, or of a server whose name another configured server shares (`a-b` and `a.b` are both `a_b`) or has `__`. The MCP resource tools do not reach such a server either. Rename the server in the configuration to allow its tools.
 
 Another name is an error, so a typo cannot deny nothing. Other tools' names are errors too, with a hint: `Edit` and `Write` are `apply_patch` in uah, and `Agent` is `spawn_agent`.
 

@@ -69,11 +69,12 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	if resources {
 		servers = w.e.cfg.MCP.Names()
 	}
-	mp := newMCPPolicy(policy, servers)
+	mp := newMCPPolicy(policy, servers, func(msg string) { _, _ = fmt.Fprintf(w.l.Stderr, "mcp> %s\n", msg) })
 	if policy.Restricted() {
 		gate.servers = mp.allowsServer
 	}
-	registry = withMCP(registry, scope.mcpTools(mp.tools(mcpTools)), resources, scope.disallowResources(req.DisallowedTools), gate)
+	allowed := mp.tools(mcpTools)
+	registry = withMCP(registry, scope.mcpTools(allowed), resources, scope.disallowResources(req.DisallowedTools), gate)
 	registry = withPatch(registry, offersPatch(w.e.models, req), w.patchGate(approvals, req))
 	registry = w.withAgents(registry, req)
 	registry = withQuestions(registry, questionTranslator{offered: w.offersQuestions(req), root: !isSubagent(req.SessionID), ctx: approvals, ask: w.askUser})
@@ -81,7 +82,7 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 
 	registry = withPreToolUse(approvals, registry, w.e.cfg.Hooks, req, w.l.SessionsDir)
 
-	return withPolicy(registry, mp, mcpTools), nil
+	return withPolicy(registry, policy, allowed, mcpTools), nil
 }
 
 // withSandbox offers Bash with the escalation arguments and a note on the

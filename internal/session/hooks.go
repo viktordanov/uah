@@ -13,6 +13,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/hooks"
+	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/patch"
 	"github.com/viktordanov/uah/internal/toolpolicy"
 )
@@ -175,10 +176,15 @@ func (s *Session) postToolUse(f core.ToolFinished) {
 }
 
 // refused reports whether the tool policy refused the call, so it never
-// ran and no hook sees it: the policy does not allow its name, or the
-// engine's refusal says so (an MCP tool the policy refused by its server).
+// ran and no hook sees it: the engine's refusal says so, or the policy does
+// not allow the built-in tool. An MCP tool is allowed by its identity,
+// which only the engine knows, so for one only the refusal counts.
 func refused(p toolpolicy.Policy, name string, f core.ToolFinished) bool {
-	return !p.Allows(name) || !f.OK && strings.HasSuffix(f.Detail, toolpolicy.Refused)
+	if !f.OK && strings.HasSuffix(f.Detail, toolpolicy.Refused) {
+		return true
+	}
+
+	return !strings.HasPrefix(name, mcp.Prefix) && !p.Allows(name)
 }
 
 // sessionEnd runs SessionEnd hooks; each gets at most a second.

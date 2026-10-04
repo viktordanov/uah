@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/viktordanov/uah-core/harness/tool"
 
@@ -18,8 +19,9 @@ import (
 )
 
 // Builtins are the names of uah's own tools, as the model sees them. A
-// policy names these, MCP tools by their exposed names (mcp__<server>__<tool>),
-// or every tool of a server (mcp__<server>__*, or mcp__<server>).
+// policy names these, MCP tools as mcp__<server>__<tool> with the server's
+// exposed name and the tool's own raw name (AllowsMCP), or every tool of a
+// server (mcp__<server>__*, or mcp__<server>).
 var Builtins = []string{
 	tool.BashName, tool.ViewImageName, tool.SkillUseName, patch.ToolName, webSearch, questionTool,
 	spawnAgent, "send_input", "wait_agent", "close_agent", "resume_agent",
@@ -68,26 +70,63 @@ func (p Policy) Restricted() bool { return p.Allow != nil || len(p.Deny) > 0 }
 // known only by its exposed name.
 func (p Policy) Allows(name string) bool { return p.AllowsTool(name, "") }
 
-// AllowsTool reports whether the policy allows the tool name; server is an
-// MCP tool's server ("" for a built-in tool, or when it is not known), so a
-// server pattern matches that server's tools and no other's.
+// AllowsTool reports whether the policy allows a tool by the name the model
+// sees; server is an MCP tool's server ("" for a built-in tool, or when it
+// is not known), so a server pattern matches that server's tools. The
+// engine authorizes MCP tools with AllowsMCP, by identity, instead.
 func (p Policy) AllowsTool(name, server string) bool {
 	return p.allows(name, server, true)
 }
 
-// AllowsMCP reports whether the policy allows an MCP tool, named name and
-// tool by its server. A server pattern matches by the server. An exact name
-// allows the tool only when the name is unambiguous: the tool's own,
-// unhashed mcp__<server>__<tool>, with no "__" in the server's part, and
-// a tool name that needed no sanitizing. Any other name can pass to
-// another tool when the tool lists change (mcp's namer hands it out again:
-// read-file's name to read.file), so such a tool needs its server's
-// pattern.
-func (p Policy) AllowsMCP(name, server, tool string) bool {
-	s := mcp.Sanitize(server)
-	exact := name == mcp.Prefix+s+"__"+tool && mcp.Sanitize(tool) == tool && !strings.Contains(s, "__")
+// AllowsMCP reports whether the policy allows an MCP tool by its identity:
+// the configured server and the server's own name for the tool, never the
+// name the model sees, which mcp's namer derives and can hand to another
+// tool as the tool lists change. A server pattern (mcp__<server>__*)
+// matches the server's exposed name; an entry mcp__<server>__<tool>
+// matches that server's tool whose raw name is <tool>, so it allows
+// nothing while no such tool exists. A denylist entry also matches the
+// tool's sanitized name, so it refuses more, never less.
+func (p Policy) AllowsMCP(server, tool string) bool {
+	for _, list := range append([][]string{p.Allow}, p.Within...) {
+		if list != nil && !matchMCP(list, server, tool, false) {
+			return false
+		}
+	}
 
-	return p.allows(name, server, exact)
+	return !matchMCP(p.Deny, server, tool, true)
+}
+
+// matchMCP reports whether an entry of the list names the tool, by its
+// server and raw name, or with broad, by its sanitized name too.
+func matchMCP(list []string, server, tool string, broad bool) bool {
+	s := mcp.Sanitize(server)
+	for _, n := range list {
+		if p, ok := serverPattern(n); ok {
+			if p == s {
+				return true
+			}
+
+			continue
+		}
+		es, et, ok := mcpEntry(n)
+		if ok && es == s && (et == tool || broad && et == mcp.Sanitize(tool)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// mcpEntry splits mcp__<server>__<tool> at the first "__" after the
+// prefix: a server's exposed name never has "__" in a name a policy can use.
+func mcpEntry(n string) (server, tool string, ok bool) {
+	rest, ok := strings.CutPrefix(n, mcp.Prefix)
+	if !ok {
+		return "", "", false
+	}
+	server, tool, ok = strings.Cut(rest, "__")
+
+	return server, tool, ok && server != "" && tool != "" && tool != "*"
 }
 
 func (p Policy) allows(name, server string, exact bool) bool {
@@ -194,7 +233,7 @@ func serverPattern(n string) (string, bool) {
 		return "", false
 	}
 	if s, ok := strings.CutSuffix(rest, "__*"); ok {
-		return s, s != ""
+		return s, s != "" && !strings.Contains(s, "__")
 	}
 
 	return rest, rest != "" && !strings.Contains(rest, "__")
@@ -279,9 +318,10 @@ func validName(n string) error {
 	if !ok {
 		return fmt.Errorf("unknown tool %q (want one of %s, mcp__<server>__<tool>, or mcp__<server>__*)", n, strings.Join(Builtins, ", "))
 	}
-	rest = strings.TrimSuffix(rest, "__*")
-	if rest == "" || strings.HasPrefix(rest, "__") || strings.HasSuffix(rest, "__") || mcp.Sanitize(rest) != rest {
-		return fmt.Errorf("invalid MCP tool name %q (want mcp__<server>__<tool> or mcp__<server>__*, in the letters, digits, and _ of the exposed name)", n)
+	server, tool, _ := strings.Cut(rest, "__")
+	if server == "" || mcp.Sanitize(server) != server || strings.HasSuffix(rest, "__") ||
+		strings.Contains(tool, "*") && tool != "*" || strings.ContainsFunc(tool, unicode.IsSpace) {
+		return fmt.Errorf("invalid MCP tool name %q (want mcp__<server>__<tool> with the server's name as /mcp shows it and the tool's own name, or mcp__<server>__*)", n)
 	}
 
 	return nil
