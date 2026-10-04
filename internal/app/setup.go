@@ -77,9 +77,7 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	if err != nil {
 		return Result{}, usage(err)
 	}
-	if notice := config.ProjectMoveNotice(in.Workspace); notice != "" {
-		opts.Notices = append(opts.Notices, notice)
-	}
+	opts.Notices = append(opts.Notices, openNotices(in.Workspace)...)
 	r, err := Resolve(in, resumed, cfg)
 	if err != nil {
 		return Result{}, err
@@ -229,6 +227,38 @@ func instructionFiles(loaded *session.InstructionsLoaded) []string {
 // RealShell is the user's shell for commands: $SHELL, else the login
 // shell, else /bin/sh (shellenv.Resolve).
 func RealShell() string { return shellenv.Current(os.Getenv).Path }
+
+// openNotices are the warnings a session opens with about the workspace
+// and the environment: a project file to move, and the shell picked when
+// $SHELL could not say.
+func openNotices(workspace string) []string {
+	var out []string
+	for _, n := range []string{config.ProjectMoveNotice(workspace), shellNotice(shellenv.Current(os.Getenv))} {
+		if n != "" {
+			out = append(out, n)
+		}
+	}
+
+	return out
+}
+
+// shellNotice tells the user which shell runs commands when $SHELL could
+// not say, as when a service starts uah without the user's environment;
+// "" when $SHELL did.
+func shellNotice(sh shellenv.Shell) string {
+	what := "SHELL is unset"
+	if sh.Env != "" {
+		what = fmt.Sprintf("SHELL (%s) is not an executable file", sh.Env)
+	}
+	switch sh.Source {
+	case shellenv.FromLogin:
+		return fmt.Sprintf("%s; commands run in %s (your login shell)", what, sh.Path)
+	case shellenv.FromDefault:
+		return fmt.Sprintf("%s and the login shell could not be read; commands run in %s", what, sh.Path)
+	}
+
+	return ""
+}
 
 // absPolicy makes the policy's paths absolute: the workspace, and writable
 // roots with ~ for the home directory and others relative to the workspace.
