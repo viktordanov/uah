@@ -11,6 +11,7 @@ import (
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/contextusage"
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/sandbox"
 )
 
 // DefaultMaxAttempts is how many times a model request is sent before
@@ -122,6 +123,12 @@ type Options struct {
 	// the run is live, all from one change (nil: the run's, as it started).
 	// The subagents a run spawns start with them.
 	Settings func() LiveSettings
+	// Grants are the directories the session made writable: writable
+	// roots for patches and sandboxed commands, from the next command
+	// after each is added. The run adds a worktree of the workspace's
+	// repository that a patch or an escalated command writes to, and a
+	// directory the user allows in an approval (nil: none, and none added).
+	Grants *sandbox.Grants
 }
 
 // LiveSettings are the settings a session can change while a run is live.

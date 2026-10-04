@@ -117,7 +117,7 @@ func (w *wiring) withAgents(registry tool.Registry, req core.Request) tool.Regis
 	}
 	offered := a.Attach(engine.AgentParent{
 		SessionID: req.SessionID, Request: req, Settings: w.parentSettings(req),
-		Ask: w.askAnytime, Emit: emit, Inject: w.inject,
+		Ask: w.askAnytime, Emit: emit, Inject: w.inject, Grants: w.grants,
 	})
 
 	return withAgents(registry, offered, a.ToolNames(), req.DisallowedTools)
@@ -198,11 +198,14 @@ func (w *wiring) mcpTools(ctx context.Context) ([]mcp.Tool, error) {
 }
 
 // policy is the configured sandbox policy for the request's workspace,
-// with the session's private temporary directory and the sandbox scripts
-// read-only.
+// with the session's grants as more writable roots, its private temporary
+// directory, and the sandbox scripts read-only.
 func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 	p := *w.e.cfg.Sandbox
 	p.Mode, p.Workspace = mode, req.Workspace
+	if roots := w.grants.Roots(); len(roots) > 0 {
+		p.WritableRoots = append(slices.Clip(p.WritableRoots), roots...)
+	}
 	p.TempDir = uahsession.TempDir(w.l.SessionsDir, req.SessionID)
 	if dir := w.e.cfg.SandboxDir; dir != "" {
 		// The sandbox scripts run outside the sandbox (sandbox.Shell).

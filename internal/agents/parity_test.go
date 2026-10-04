@@ -15,8 +15,8 @@ import (
 
 // TestParity_ChildOptions pins that a child opens with the options the
 // root session opened with, differing only in its ID, its sidecar's source
-// and parent, approvals through the parent, a hook runner of its own with
-// the same hooks, and no streaming. The settings are the parent run's,
+// and parent, approvals through the parent, the parent's grants, a hook
+// runner of its own with the same hooks, and no streaming. The settings are the parent run's,
 // with the default base instructions as the root's: Codex's subagent note
 // goes before the child's task instead.
 func TestParity_ChildOptions(t *testing.T) {
@@ -41,9 +41,11 @@ func TestParity_ChildOptions(t *testing.T) {
 	assert.NotSame(t, runner, child.Hooks, "a runner of its own, so its results stay its own")
 	assert.Equal(t, runner.Hooks(), child.Hooks.Hooks())
 	assert.False(t, child.Stream, "a child's text does not stream")
+	assert.NotNil(t, child.Grants, "the parent's grants")
 	assert.Equal(t, instructions.DefaultPrompt, child.Settings.SystemPrompt)
 	root.Settings.SystemPrompt = child.Settings.SystemPrompt
 	child.ID, child.Source, child.Parent, child.Ask, child.Hooks, child.Stream = root.ID, root.Source, root.Parent, root.Ask, root.Hooks, root.Stream
+	child.Grants = root.Grants
 	assert.Equal(t, root, child)
 }
 

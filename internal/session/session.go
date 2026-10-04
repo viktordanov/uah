@@ -23,6 +23,7 @@ import (
 	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/toolpolicy"
 	"github.com/viktordanov/uah/internal/usershell"
 )
@@ -88,6 +89,10 @@ type Options struct {
 	// Tools is the tool policy the engine applies, recorded in the
 	// sidecar when it restricts anything, so a resume keeps it.
 	Tools toolpolicy.Policy
+	// Grants are the directories the session made writable: a subagent
+	// shares its parent's. Nil, the session makes its own, keeps them in
+	// its sidecar, and gets back on resume the ones that still hold.
+	Grants *sandbox.Grants
 }
 
 // Session is safe to use from any goroutine. All state lives on one internal
@@ -159,6 +164,10 @@ type Session struct {
 	savedQueue []string // what the sidecar keeps as Queued
 	// goal is the session's goal and its accounting (goal.go).
 	goal goalState
+	// grants are the directories the session made writable (grants.go);
+	// ownGrants, its own and kept in its sidecar, not a parent's.
+	grants    *sandbox.Grants
+	ownGrants bool
 }
 
 // Open starts a session. Its first event is SessionOpened.
@@ -183,7 +192,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 	runCtx, stop := context.WithCancel(ctx)
 	s := &Session{
 		id: id, eng: eng, priority: eng.Priority(), yolo: opts.Yolo,
-		in: make(chan any, eventBuffer), out: make(chan core.Event, eventBuffer+queuedRoom(sc)),
+		in: make(chan any, eventBuffer), out: make(chan core.Event, eventBuffer+queuedRoom(sc)+len(sc.Grants)),
 		ctx: runCtx, stop: stop, done: make(chan struct{}),
 		settings: opts.Settings, state: StateIdle, sent: map[string]bool{}, afterTool: map[string]bool{},
 		hooks:       hookState{runner: opts.Hooks, resumed: opts.Resumed, tools: map[string]core.ToolCalled{}},
@@ -211,6 +220,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 		s.noteOpened(opts.FirstPrompt)
 		s.restoreQueue(sc, scErr)
 	}
+	s.openGrants(opts.Grants, opts.Settings.Workspace, sc)
 	s.openGoal(opts.Goals, opts.Parent == "" && opts.Source != SourceSubagent)
 	for _, n := range opts.Notices {
 		s.out <- Notice{At: time.Now(), Level: LevelWarning, Message: n}

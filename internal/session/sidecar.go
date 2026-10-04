@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/viktordanov/uah/internal/goal"
+	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
@@ -77,6 +78,9 @@ type Sidecar struct {
 	// one: a resume narrows its own policy with it, so resuming never
 	// widens a session's tools (internal/toolpolicy).
 	Tools *toolpolicy.Policy `json:"tools,omitempty"`
+	// Grants are the directories the session made writable, each checked
+	// again when the session resumes (sandbox.Grants.Valid).
+	Grants []sandbox.Grant `json:"grants,omitempty"`
 }
 
 // RemoveSidecar deletes a session's sidecar, for a session that never ran.

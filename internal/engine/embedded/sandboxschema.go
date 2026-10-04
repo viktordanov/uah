@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"maps"
+	"strings"
 
 	"github.com/viktordanov/uah-core/harness/llm"
 
@@ -63,7 +64,13 @@ func sandboxNote(p sandbox.Policy) string {
 	case sandbox.ReadOnly:
 		return "Commands run in a read-only sandbox: they can read files and write only $TMPDIR, with " + network + "." + offline
 	case sandbox.WorkspaceWrite:
-		return "Commands run in a sandbox: they can read any file, write only the workspace and temporary directories " +
+		where := "the workspace and temporary directories"
+		if len(p.WritableRoots) > 0 {
+			// The configured writable_roots and the session's grants.
+			where = "the workspace, temporary directories, and " + strings.Join(p.WritableRoots, ", ")
+		}
+
+		return "Commands run in a sandbox: they can read any file, write only " + where + " " +
 			"(.git, .uah, .agents, and .codex stay read-only), and have " + network + "." + offline
 	case sandbox.FullAccess:
 	}

@@ -23,7 +23,7 @@ func (s *Session) startRun(inputs []core.UserInput) {
 	opts := engine.Options{
 		ServiceTier: s.settings.ServiceTier, AdaptiveEffort: s.settings.AdaptiveEffort, Mode: s.settings.Mode, Compact: s.compactPending, CompactFocus: s.compactFocus, Clear: s.clearPending,
 		Ask: s.askFunc(false), AskAnytime: s.askFunc(true), AskUser: s.askUserFunc(), Notify: s.notify, Inject: s.Inject, Stream: s.stream,
-		Goal: s.goalToolFunc(), Settings: s.liveSettings,
+		Goal: s.goalToolFunc(), Settings: s.liveSettings, Grants: s.grants,
 	}
 	sink := func(e core.Event) { s.in <- evRun{event: e} }
 	go func() {
