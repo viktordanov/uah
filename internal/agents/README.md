@@ -51,7 +51,8 @@ The only differences:
 6. a hook runner of its own with the same hooks, so hook results stay with the child's session, which fires the subagent hooks only (see [Events and hooks](#events-and-hooks));
 7. its engine handle, which does not close the shared engine when the child closes;
 8. its prompt cache key, the root session's ID, as Codex keys every agent of a tree;
-9. no streaming: `Stream` is off, since neither the parent nor the agent view shows a child's text as it arrives.
+9. no streaming: `Stream` is off, since neither the parent nor the agent view shows a child's text as it arrives;
+10. the session's grants, shared with the parent (`AgentParent.Grants`), not made anew: a directory either makes writable is writable for both, and only the root session keeps them in its sidecar ([session grants](../../docs/configuration.md#session-grants)). `TestAgents_ChildSharesTheParentsGrants` pins it: the parent's patch grants a worktree, and the child's sandboxed command writes there.
 
 `TestSetup_SubagentParity` (in `internal/app`), `TestParity_ChildOptions`, and `TestParity_ChildSharesTheParentsSystemPrompt` (the same system prompt in the child's request, the note with its task) pin this: a child's model request has the root's system prompt, model, effort, service tier, and tools with the same schemas, less the spawn tools (and `request_user_input`, which the TUI's root has), and its options equal the root's but for the differences above. A capability added to the root session reaches children without a change here.
 <!-- /memoria:section -->
