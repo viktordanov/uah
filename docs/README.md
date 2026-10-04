@@ -60,5 +60,5 @@ Maintenance:
 1. [Architecture](documentation/architecture.md): the package roles and rules every change follows.
 2. [Writing guidance](documentation/writing.md): voice, README shape, and what belongs where.
 3. [Section IDs](documentation/sections.md): the IDs that map README sections to source files.
-4. [Memoria procedure](documentation/memoria.md): which README covers a file, and how to review and acknowledge documentation after a change.
+4. [Memoria procedure](documentation/memoria.md): which README covers a file, how to review and acknowledge documentation after a change, and what to do when the documentation rules change.
 <!-- /memoria:section -->

@@ -1,7 +1,7 @@
 # Maintain the documentation with Memoria
 
 [Memoria](https://github.com/viktordanov/rs-memoria) connects each README to the files it covers and reports when a README needs review.
-This procedure uses Memoria 0.7.0 (configuration `version = 3`). The managed agent skill (`memoria integrations skill install --target claude`) contains the full review contract.
+This procedure uses Memoria 0.8.0 (configuration `version = 3`). The managed agent skill (`memoria integrations skill install --target claude`) contains the full review contract.
 
 ## Which README covers a file
 
@@ -26,7 +26,7 @@ memoria review
 
 1. If the plan says to render, run `memoria render <README>` and read the plan again.
 2. Save the artifact of the next README: `memoria review <README> --save /tmp/uah-memoria`. It prints the saved path and the `ack` command.
-3. Read `memoria review <README>`: what changed and how each change relates to the README, the review mode, and `memoria guidance <README>`.
+3. Read `memoria review <README>`: the Git hunk under each changed input, the review mode, and `memoria guidance <README>`. Add `--details` when a hunk is cut.
 4. Read the sources the mode requires, then the whole README. `full_baseline` means every covered source.
 5. Edit the prose if it no longer matches the code. After any edit, save a fresh artifact.
 6. Acknowledge the saved artifact. The token comes from the artifact:
@@ -41,6 +41,14 @@ memoria ack <README> \
 
 Use `--result no-update` when the prose was already correct. Repeat until the plan is empty, then run `memoria check`. Review providers before consumers: the root README imports the docs summary, so it comes last.
 Never edit an import body by hand, never edit `memoria.lock`, and never acknowledge when the plan is empty.
+
+Routine commands print results, warnings, and errors only. Add `--verbose` or run `memoria lint` to see advisory hints.
+A write command waits up to 10 seconds for another writer's lock. If it then reports `state_busy`, run the same command again.
+
+## When the documentation rules change
+
+A change to `docs/documentation/writing.md`, `docs/documentation/sections.md`, or the guidance in `memoria.toml` does not make a README pending, and `memoria check` still passes.
+Run `memoria guidance --changed` to list the READMEs reviewed under older guidance. For each README that the change affects, run `memoria invalidate doc:<README> --reason "<what changed>"`, then follow the review loop. Never acknowledge a README only to clear this list.
 
 ## Adding a README
 
