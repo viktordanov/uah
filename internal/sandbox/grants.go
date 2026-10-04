@@ -234,6 +234,15 @@ func GrantFor(paths []string) string {
 	if len(paths) == 0 {
 		return ""
 	}
+	inputs := make([]string, 0, len(paths))
+	for _, p := range paths {
+		s, ok := Canonical(p)
+		if !ok {
+			return ""
+		}
+		inputs = append(inputs, s)
+	}
+	paths = inputs
 	dir := ""
 	if t, ok := findTree(paths[0]); ok {
 		dir = t.top

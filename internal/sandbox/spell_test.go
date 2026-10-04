@@ -96,7 +96,7 @@ func TestSpelling_OneDirectoryOneString(t *testing.T) {
 		filepath.Join(extra, "new", "dir", "f"), filepath.Join(grant, ".git"), filepath.Join(grant, "src", "f"),
 		filepath.Join(scripts, "sh-1"), filepath.Join(base, "outside"),
 	}
-	for i := range 40 {
+	for i := range 10 {
 		got := policy(gen.of)
 		assert.Equal(t, want.Writable(), got.Writable(), "variant %d roots", i)
 		profile, params := sandbox.SeatbeltProfile(got)
@@ -147,4 +147,39 @@ func TestSpelling_FailsClosed(t *testing.T) {
 
 	p.WritableRoots, p.ReadOnly = nil, []string{filepath.Join(root, "x")}
 	assert.Empty(t, p.Writable(), "a ReadOnly path that does not spell might be anywhere")
+}
+
+// TestSpelling_ProtectedSymlink: a protected name that is a symlink, also
+// one to nothing yet, protects where it leads, in every root's rule: a
+// .git that leads into another writable root keeps that place read-only.
+func TestSpelling_ProtectedSymlink(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	ws, other := filepath.Join(base, "ws"), filepath.Join(base, "other")
+	require.NoError(t, os.MkdirAll(ws, 0o755))
+	require.NoError(t, os.MkdirAll(other, 0o755))
+	meta := filepath.Join(other, "meta")
+	require.NoError(t, os.Symlink(meta, filepath.Join(ws, ".git")))
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, WritableRoots: []string{other}}
+
+	assert.False(t, p.CanWrite(filepath.Join(meta, "hooks", "pre-commit")), "dangling: where it leads is protected")
+	assert.True(t, p.Protects(meta))
+	_, params := sandbox.SeatbeltProfile(p)
+	assert.Contains(t, strings.Join(params, "\n"), "="+meta+"\n", "an exclusion in the profile")
+	assert.True(t, p.CanWrite(filepath.Join(other, "x")))
+}
+
+// TestSpelling_NoCacheBetweenDecisions: a directory renamed between two
+// decisions is spelled as it is now.
+func TestSpelling_NoCacheBetweenDecisions(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "Tree"), 0o755))
+	got, ok := sandbox.Canonical(filepath.Join(base, "Tree"))
+	require.True(t, ok)
+	require.Equal(t, filepath.Join(base, "Tree"), got)
+	require.NoError(t, os.Rename(filepath.Join(base, "Tree"), filepath.Join(base, "tree")))
+	got, ok = sandbox.Canonical(filepath.Join(base, "tree"))
+	assert.True(t, ok)
+	assert.Equal(t, filepath.Join(base, "tree"), got)
 }

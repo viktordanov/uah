@@ -44,7 +44,7 @@ type seatbeltParam struct {
 // sandbox-exec arguments ("-DKEY=value"). All paths go through parameters,
 // never into the profile text.
 func SeatbeltProfile(p Policy) (profile string, params []string) {
-	writePolicy, writeParams := seatbeltWritePolicy(p, p.Writable())
+	writePolicy, writeParams := seatbeltWritePolicy(p.layout().roots)
 	sections := []string{
 		seatbeltBase,
 		"; allow read-only file operations\n(allow file-read*)",
@@ -76,9 +76,9 @@ func seatbeltNetworkPolicy(enabled bool) string {
 }
 
 // seatbeltWritePolicy allows writes under each root except its protected
-// paths (p.protectedIn), as Codex's build_seatbelt_access_policy does for
-// write roots.
-func seatbeltWritePolicy(p Policy, roots []string) (string, []seatbeltParam) {
+// paths (layout), as Codex's build_seatbelt_access_policy does for write
+// roots.
+func seatbeltWritePolicy(layout []rootLayout) (string, []seatbeltParam) {
 	var (
 		components, anchors, ancestorDenies []string
 		params, ancestors                   []seatbeltParam
@@ -87,10 +87,11 @@ func seatbeltWritePolicy(p Policy, roots []string) (string, []seatbeltParam) {
 	// Codex does for its scratch roots: a workspace under $TMPDIR must not
 	// get its .git back through the $TMPDIR grant.
 	var protected []string
-	for _, root := range roots {
-		protected = append(protected, p.protectedIn(root)...)
+	for _, r := range layout {
+		protected = append(protected, r.protected...)
 	}
-	for i, root := range roots {
+	for i, r := range layout {
+		root := r.root
 		rootKey := fmt.Sprintf("WRITABLE_ROOT_%d", i)
 		params = append(params, seatbeltParam{rootKey, root})
 		// A command must not replace a root that the next policy reuses.

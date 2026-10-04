@@ -277,3 +277,23 @@ func skipWithoutSandbox(t *testing.T) {
 		t.Skipf("no sandbox here: %v", err)
 	}
 }
+
+// TestPatch_ForbidRuleInAnotherSpelling: a forbid rule that names a path
+// through a symlink, or in another case, refuses a patch that names the
+// same file by its own path.
+func TestPatch_ForbidRuleInAnotherSpelling(t *testing.T) {
+	skipWithoutSandbox(t)
+	e := newPatchEnv(t, patchOpts{mode: sandbox.WorkspaceWrite, rules: func(ws string) []rules.Rule {
+		return []rules.Rule{{Pattern: [][]string{{"apply_patch"}, {filepath.Join(ws, "link", "secret.txt")}}, Decision: rules.Forbidden}}
+	}}, func(ws, _ string) []fakellm.Reply {
+		require.NoError(t, os.MkdirAll(filepath.Join(ws, "Real"), 0o755))
+		require.NoError(t, os.Symlink(filepath.Join(ws, "Real"), filepath.Join(ws, "link")))
+		require.NoError(t, os.WriteFile(filepath.Join(ws, "Real", "secret.txt"), []byte("s\n"), 0o644))
+
+		return applyPatch("*** Update File: Real/secret.txt\n@@\n-s\n+leak")
+	})
+	e.ev.finished()
+
+	assert.Contains(t, e.lastOutput(), "not run: a rule forbids this command.")
+	assert.Equal(t, "s\n", readFile(t, filepath.Join(e.Workspace, "Real", "secret.txt")))
+}

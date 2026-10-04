@@ -3,6 +3,7 @@ package sandbox
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -18,22 +19,23 @@ func (p Policy) CanWrite(path string) bool {
 // CanWriteResolved is CanWrite for a path ResolvePath returned: it takes
 // path as it is, without following its symlinks again, for a caller that
 // then writes that exact path without following symlinks. The path is
-// spelled as the roots are (spell), and one that does not spell is not
-// writable.
+// spelled with the roots, in one snapshot (layout), and one that does not
+// spell is not writable.
 func (p Policy) CanWriteResolved(path string) bool {
 	if p.Mode == FullAccess {
 		return true
 	}
-	path, ok := spell(path)
+	l := p.layout()
+	path, ok := l.sp.spell(path)
 	if !ok {
 		return false
 	}
 	inside := false
-	for _, r := range p.Writable() {
-		if within(path, r) {
+	for _, r := range l.roots {
+		if within(path, r.root) {
 			inside = true
 		}
-		for _, protected := range p.protectedIn(r) {
+		for _, protected := range r.protected {
 			if protects(protected, path) {
 				return false
 			}
@@ -48,13 +50,15 @@ func (p Policy) CanWriteResolved(path string) bool {
 // ReadOnly paths, also under another name. A writable root there would
 // open part of it again, as Seatbelt's rule for the inner root and
 // bubblewrap's later bind would, so the engine grants no such directory.
+// A path that does not spell counts as protected.
 func (p Policy) Protects(path string) bool {
-	path, ok := Canonical(path)
-	if !ok || p.insideReadOnly(path) {
-		return true // a path that does not spell is not granted
+	l := p.layout()
+	path, ok := l.sp.canonical(path)
+	if !ok || l.insideReadOnly(path) {
+		return true
 	}
-	for _, r := range p.Writable() {
-		for _, protected := range p.protectedIn(r) {
+	for _, r := range l.roots {
+		for _, protected := range r.protected {
 			if protects(protected, path) {
 				return true
 			}
@@ -67,38 +71,26 @@ func (p Policy) Protects(path string) bool {
 // Holds reports whether dir is, or holds, one of the policy's writable
 // roots, by name without case or by identity. A grant there would take in
 // that root's protected paths under a name the sandbox may not compare
-// them by, so the engine grants no such directory.
+// them by, so the engine grants no such directory. A directory that does
+// not spell counts as holding one.
 func (p Policy) Holds(dir string) bool {
-	dir, ok := Canonical(dir)
-	if !ok {
-		return true // a directory that does not spell is not granted
-	}
-	for _, r := range p.Writable() {
-		if holds(dir, r) {
-			return true
-		}
-	}
+	l := p.layout()
+	dir, ok := l.sp.canonical(dir)
 
-	return false
+	return !ok || slices.ContainsFunc(l.roots, func(r rootLayout) bool { return holds(dir, r.root) })
 }
 
 // InRoot reports whether path is one of the policy's writable roots or
 // inside one, by name without case or by identity. A grant there adds
 // nothing it may write, and under another spelling than the root's it
 // could keep its protected paths out of the root's rule in Seatbelt, which
-// compares names as strings, so the engine leaves it out.
+// compares names as strings, so the engine leaves it out. A path that does
+// not spell counts as inside one.
 func (p Policy) InRoot(path string) bool {
-	path, ok := Canonical(path)
-	if !ok {
-		return true // a path that does not spell is not granted
-	}
-	for _, r := range p.Writable() {
-		if holds(r, path) {
-			return true
-		}
-	}
+	l := p.layout()
+	path, ok := l.sp.canonical(path)
 
-	return false
+	return !ok || slices.ContainsFunc(l.roots, func(r rootLayout) bool { return holds(r.root, path) })
 }
 
 // protects reports whether the protected path covers path: path is it or

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/json/jsontext"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -217,7 +218,12 @@ func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments stri
 	paths := patch.Paths(g.cwd, hunks)
 	targets = patch.Targets{}
 	for _, p := range paths {
-		targets[p] = sandbox.ResolvePath(p)
+		// Spelled once, so two spellings of one file are one target.
+		if target, ok := sandbox.Canonical(p); ok {
+			targets[p] = target
+		} else {
+			targets[p] = sandbox.ResolvePath(p) // the policy refuses what does not spell
+		}
 	}
 	if reason := g.forbidden(hunks, paths, targets); reason != "" {
 		return nil, nil, nil, reason
@@ -353,8 +359,33 @@ func (g patchGate) forbidden(hunks []patch.Hunk, paths []string, targets patch.T
 			return reason
 		}
 	}
+	// A rule may name a path in another spelling than the patch, such as
+	// another case on macOS or through a symlink: compare the files.
+	for _, p := range paths {
+		if reason, ok := g.approver.ForbiddenPath(patch.ToolName, func(named string) bool { return samePath(g.cwd, named, targets[p]) }); ok {
+			return reason
+		}
+	}
 
 	return ""
+}
+
+// samePath reports whether a path a rule names, relative to cwd when not
+// absolute, is target: the same spelling once both are spelled by
+// sandbox.Canonical, or, when both exist, the same file.
+func samePath(cwd, named, target string) bool {
+	if !filepath.IsAbs(named) {
+		named = filepath.Join(cwd, named)
+	}
+	a, aok := sandbox.Canonical(named)
+	b, bok := sandbox.Canonical(target)
+	if aok && bok && a == b {
+		return true
+	}
+	ai, aerr := os.Stat(named)
+	bi, berr := os.Stat(target)
+
+	return aerr == nil && berr == nil && os.SameFile(ai, bi)
 }
 
 // patchCommand describes a patch's writes for the rules and the prompt:

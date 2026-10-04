@@ -9,6 +9,9 @@ import (
 // files is where a patch reads and writes its files, by their absolute
 // paths.
 type files interface {
+	// key is where path is read and written: its target when the files
+	// are confined, so two spellings of one target are one file.
+	key(path string) string
 	stat(path string) (fs.FileInfo, error)
 	lstat(path string) (fs.FileInfo, error)
 	readFile(path string) ([]byte, error)
@@ -23,6 +26,7 @@ type files interface {
 // followed.
 type hostFiles struct{}
 
+func (hostFiles) key(path string) string                 { return filepath.Clean(path) }
 func (hostFiles) stat(path string) (fs.FileInfo, error)  { return os.Stat(path) }
 func (hostFiles) lstat(path string) (fs.FileInfo, error) { return os.Lstat(path) }
 func (hostFiles) readFile(path string) ([]byte, error)   { return os.ReadFile(path) }
@@ -54,4 +58,12 @@ func (t Targets) Compute(cwd string, hunks []Hunk) ([]Change, error) {
 // directory it created stays), and returns that failure.
 func (t Targets) Write(changes []Change) error {
 	return writeAll(confinedFiles(t), changes)
+}
+
+func (t confinedFiles) key(path string) string {
+	if target, ok := t[path]; ok {
+		return filepath.Clean(target)
+	}
+
+	return filepath.Clean(path)
 }

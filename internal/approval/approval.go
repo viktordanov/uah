@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -243,6 +244,24 @@ func (a *Approver) Forbidden(command string) (reason string, forbidden bool) {
 	}
 	if rule, matched := a.policy().Check(commands); matched && rule.Decision == rules.Forbidden {
 		return forbiddenReason(rule), true
+	}
+
+	return "", false
+}
+
+// ForbiddenPath reports whether a forbid rule on the tool and one path,
+// such as ["apply_patch", "/work/secret"], names a path that same accepts,
+// and why. A caller that checks a path rules may name in another spelling,
+// such as a case alias or a path through a symlink, passes a same that
+// compares the files themselves, which the words of Forbidden cannot.
+func (a *Approver) ForbiddenPath(tool string, same func(path string) bool) (reason string, forbidden bool) {
+	for _, r := range a.policy().Rules() {
+		if r.Decision != rules.Forbidden || len(r.Pattern) != 2 || !slices.Contains(r.Pattern[0], tool) {
+			continue
+		}
+		if slices.ContainsFunc(r.Pattern[1], same) {
+			return forbiddenReason(r), true
+		}
 	}
 
 	return "", false

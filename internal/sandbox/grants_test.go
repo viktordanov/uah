@@ -218,3 +218,18 @@ func TestGrants_CanonicalUnlisted(t *testing.T) {
 	assert.False(t, ok)
 	assert.False(t, sandbox.NewGrants(base, nil).Add(dir, sandbox.GrantApproved))
 }
+
+// TestGrantFor_Spellings: two spellings of one directory offer that
+// directory, not their parent.
+func TestGrantFor_Spellings(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	base := realPath(t, t.TempDir())
+	tree := filepath.Join(base, "Tree")
+	require.NoError(t, os.MkdirAll(tree, 0o755))
+	link := filepath.Join(base, "link")
+	require.NoError(t, os.Symlink(tree, link))
+	assert.Equal(t, tree, sandbox.GrantFor([]string{filepath.Join(tree, "a"), filepath.Join(link, "b")}), "through a symlink")
+	if _, err := os.Stat(filepath.Join(base, "TREE")); err == nil {
+		assert.Equal(t, tree, sandbox.GrantFor([]string{filepath.Join(tree, "a"), filepath.Join(base, "tree", "b")}), "another case")
+	}
+}

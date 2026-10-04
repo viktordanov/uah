@@ -134,3 +134,35 @@ func TestTargets_UnapprovedPath(t *testing.T) {
 	assert.Contains(t, err.Error(), "was not approved")
 	assert.NoFileExists(t, filepath.Join(ws, "a.txt"))
 }
+
+// TestTargets_TwoSpellingsOfOneFile: paths that the engine resolved to one
+// target are one file. A move onto itself under another spelling updates
+// it instead of removing it, and two updates through two spellings both
+// apply.
+func TestTargets_TwoSpellingsOfOneFile(t *testing.T) {
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	file := filepath.Join(ws, "Dir", "a.txt")
+	require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+	require.NoError(t, os.WriteFile(file, []byte("one\ntwo\n"), 0o644))
+	alias := filepath.Join(ws, "dir", "a.txt")
+	targets := patch.Targets{file: file, alias: file}
+
+	hunks, err := patch.Parse("*** Begin Patch\n*** Update File: " + file + "\n*** Move to: " + alias + "\n@@\n-one\n+ONE\n*** End Patch")
+	require.NoError(t, err)
+	changes, err := targets.Compute(ws, hunks)
+	require.NoError(t, err)
+	require.NoError(t, targets.Write(changes))
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	assert.Equal(t, "ONE\ntwo\n", string(data), "moved onto itself: kept")
+
+	hunks, err = patch.Parse("*** Begin Patch\n*** Update File: " + file + "\n@@\n-ONE\n+1\n*** Update File: " + alias + "\n@@\n-two\n+2\n*** End Patch")
+	require.NoError(t, err)
+	changes, err = targets.Compute(ws, hunks)
+	require.NoError(t, err)
+	require.NoError(t, targets.Write(changes))
+	data, err = os.ReadFile(file)
+	require.NoError(t, err)
+	assert.Equal(t, "1\n2\n", string(data), "the second update reads the first one's result")
+}
