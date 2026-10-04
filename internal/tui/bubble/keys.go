@@ -1,10 +1,9 @@
 package bubble
 
 import (
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // Keys named in more than one mode.
@@ -23,7 +22,7 @@ const (
 // agent works, ctrl+enter and alt+enter give it the message now, enter after
 // its next tool call, and tab at the end of the run. Shift+Enter and ctrl+j
 // add a line.
-func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) { //nolint:gocyclo // a dispatch switch over a closed set; see docs/documentation/architecture.md
+func (m Model) onKey(msg term.KeyPressMsg) (term.Model, term.Cmd) { //nolint:gocyclo // a dispatch switch over a closed set; see docs/documentation/architecture.md
 	if m.st.Mode == state.ModePicker {
 		return m.onPickerKey(msg)
 	}
@@ -56,7 +55,7 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) { //nolint:gocycl
 		model, cancel := m.dispatch(state.BacktrackCancel{})
 		next, cmd := model.(Model).onKey(msg) //nolint:forcetypeassert // dispatch returns a Model
 
-		return next, tea.Batch(cancel, cmd)
+		return next, term.Batch(cancel, cmd)
 	}
 	if m.st.History.Search != nil {
 		return m.onSearchKey(msg)
@@ -172,14 +171,13 @@ func (m Model) onKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) { //nolint:gocycl
 }
 
 // typeKey gives the key to the composer.
-func (m Model) typeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) typeKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	draft := m.composer.Value()
-	var cmd tea.Cmd
-	m.composer, cmd = m.composer.Update(msg)
+	cmd := m.updateComposer(msg)
 	if next := m.composer.Value(); next != draft {
 		model, effects := m.dispatch(state.DraftChanged{Draft: next})
 
-		return model, tea.Batch(cmd, effects)
+		return model, term.Batch(cmd, effects)
 	}
 
 	return m, cmd
@@ -248,7 +246,7 @@ func backtrackIntent(key string) any {
 // onApprovalKey answers the approval overlay: y approves, s approves and
 // allows the proposed prefix, a approves and always allows the MCP tool,
 // n, esc, and ctrl+c decline. Other keys wait.
-func (m Model) onApprovalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) onApprovalKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	switch msg.String() {
 	case "y":
 		return m.dispatch(state.Answer{Answer: approval.Approve})
@@ -263,7 +261,7 @@ func (m Model) onApprovalKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) onPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) onPickerKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	switch msg.String() {
 	case keyUp, keyCtrlP:
 		return m.dispatch(state.PickerMove{Delta: -1})
@@ -294,14 +292,14 @@ func (m Model) onPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // wheelLines is how far one mouse wheel step scrolls.
 const wheelLines = 3
 
-func (m Model) onWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+func (m Model) onWheel(msg term.MouseWheelMsg) (term.Model, term.Cmd) {
 	if m.st.Mode == state.ModePicker {
 		return m, nil
 	}
 	lines := wheelLines
 	switch msg.Button {
-	case tea.MouseWheelUp:
-	case tea.MouseWheelDown:
+	case term.MouseWheelUp:
+	case term.MouseWheelDown:
 		lines = -wheelLines
 	default:
 		return m, nil
@@ -313,14 +311,14 @@ func (m Model) onWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		m.View()
 		next, drag := m.drag(msg.X, msg.Y)
 
-		return next, tea.Batch(cmd, drag)
+		return next, term.Batch(cmd, drag)
 	}
 
 	return model, cmd
 }
 
 // scroll moves the transcript, stopping at its first line.
-func (m Model) scroll(lines int) (tea.Model, tea.Cmd) {
+func (m Model) scroll(lines int) (term.Model, term.Cmd) {
 	if lines > 0 {
 		m.View() // refresh the limit: frames can lag behind a burst of wheel events
 		scrolled := m.st.Scroll
@@ -361,7 +359,7 @@ func menuIntent(st state.State, key, draft string) any {
 
 // onConfigKey drives the /config panel: ↑↓ choose, enter or space change,
 // ← → cycle back and forth, esc closes (or stops typing a value).
-func (m Model) onConfigKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) onConfigKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	editing := m.st.Config.Editing
 	switch msg.String() {
 	case keyUp, keyCtrlP:
@@ -396,7 +394,7 @@ func (m Model) onConfigKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // onModelPickerKey drives the /model picker: ↑↓ choose, enter picks the
 // model or applies the effort, esc goes back to the models or closes.
-func (m Model) onModelPickerKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) onModelPickerKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	switch msg.String() {
 	case keyUp, keyCtrlP:
 		return m.dispatch(state.ModelPickMove{Delta: -1})

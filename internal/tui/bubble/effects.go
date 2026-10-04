@@ -5,11 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 var (
@@ -19,11 +18,11 @@ var (
 )
 
 // run turns an effect into a command that does its I/O off the update loop.
-func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch switch over a closed set; see docs/documentation/architecture.md
+func (m Model) run(e state.Effect) term.Cmd { //nolint:gocyclo // a dispatch switch over a closed set; see docs/documentation/architecture.md
 	sess := m.sess
-	fail := func(err error) tea.Msg { return state.Failed{Err: err} }
-	withSession := func(fn func(*session.Session) error) tea.Cmd {
-		return m.calls.next(func() tea.Msg {
+	fail := func(err error) term.Msg { return state.Failed{Err: err} }
+	withSession := func(fn func(*session.Session) error) term.Cmd {
+		return m.calls.next(func() term.Msg {
 			if sess == nil {
 				return fail(errNoSession)
 			}
@@ -63,7 +62,7 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 	case state.EffShell:
 		ctx := m.ctx
 
-		return func() tea.Msg { // not in m.calls: it runs until the command ends
+		return func() term.Msg { // not in m.calls: it runs until the command ends
 			if sess == nil {
 				return fail(errNoSession)
 			}
@@ -90,7 +89,7 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 	case state.EffSetSettings:
 		return withSession(func(s *session.Session) error { _, err := s.SetSettings(e.Settings); return err })
 	case state.EffWithdraw:
-		return m.calls.next(func() tea.Msg {
+		return m.calls.next(func() term.Msg {
 			if sess == nil {
 				return fail(errNoSession)
 			}
@@ -105,7 +104,7 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 			return withdrawnMsg{text: e.Text}
 		})
 	case state.EffLoadSessions:
-		return func() tea.Msg {
+		return func() term.Msg {
 			infos, err := m.deps.Sessions()
 			if err != nil {
 				return fail(err)
@@ -122,7 +121,7 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 			return nil
 		}
 
-		return func() tea.Msg {
+		return func() term.Msg {
 			counts, err := m.deps.Activity()
 			if err != nil {
 				return fail(err)
@@ -136,32 +135,32 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 		return m.loadCache(e)
 	case state.EffLoadModels:
 		if m.deps.Models == nil { // no list, so /model says so instead of loading forever
-			return func() tea.Msg {
+			return func() term.Msg {
 				return state.ModelsLoaded{Catalog: models.Catalog{Provider: e.Provider, Origin: models.OriginNone}}
 			}
 		}
 
-		return func() tea.Msg { return state.ModelsLoaded{Catalog: m.deps.Models(m.ctx, e.Provider)} }
+		return func() term.Msg { return state.ModelsLoaded{Catalog: m.deps.Models(m.ctx, e.Provider)} }
 	case state.EffLoadFiles:
 		dir := m.deps.Cwd
 
-		return func() tea.Msg { return state.FilesLoaded{Paths: workspaceFiles(m.ctx, dir)} }
+		return func() term.Msg { return state.FilesLoaded{Paths: workspaceFiles(m.ctx, dir)} }
 	case state.EffLoadConfig:
 		if m.deps.Config == nil {
-			return func() tea.Msg { return state.ConfigLoaded{Err: errNoConfig} }
+			return func() term.Msg { return state.ConfigLoaded{Err: errNoConfig} }
 		}
 
-		return func() tea.Msg { return m.deps.Config(m.ctx) }
+		return func() term.Msg { return m.deps.Config(m.ctx) }
 	case state.EffSaveConfig:
 		if m.deps.SaveConfig == nil {
-			return func() tea.Msg { return state.ConfigSaved{Key: e.Key, Value: e.Value, Err: errNoConfig} }
+			return func() term.Msg { return state.ConfigSaved{Key: e.Key, Value: e.Value, Err: errNoConfig} }
 		}
 
-		return func() tea.Msg {
+		return func() term.Msg {
 			return state.ConfigSaved{Key: e.Key, Value: e.Value, Err: m.deps.SaveConfig(e.Key, e.Value)}
 		}
 	case state.EffListMCP:
-		return func() tea.Msg {
+		return func() term.Msg {
 			if sess == nil {
 				return fail(errNoSession)
 			}
@@ -182,7 +181,7 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 			return state.MCPListed{Servers: servers, Supported: ok, Verbose: e.Verbose}
 		}
 	case state.EffContext:
-		return func() tea.Msg {
+		return func() term.Msg {
 			if sess == nil {
 				return fail(errNoSession)
 			}
@@ -209,7 +208,7 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 	case state.EffEditDraft:
 		return m.editDraft(e.Text)
 	case state.EffQuit:
-		return m.calls.next(func() tea.Msg {
+		return m.calls.next(func() term.Msg {
 			if sess != nil {
 				_ = sess.Close()
 			}
@@ -222,8 +221,8 @@ func (m Model) run(e state.Effect) tea.Cmd { //nolint:gocyclo // a dispatch swit
 }
 
 // open opens a session and reports it with its history.
-func (m Model) open(id string) tea.Cmd {
-	return func() tea.Msg {
+func (m Model) open(id string) term.Cmd {
+	return func() term.Msg {
 		s, history, err := m.deps.Open(m.ctx, id)
 		if err != nil {
 			return state.Failed{Err: fmt.Errorf("failed to open session: %w", err)}
@@ -234,11 +233,11 @@ func (m Model) open(id string) tea.Cmd {
 }
 
 // switchTo closes the current session and opens another.
-func (m Model) switchTo(id string) tea.Cmd {
+func (m Model) switchTo(id string) term.Cmd {
 	sess := m.sess
 	next := m.open(id)
 
-	return m.calls.next(func() tea.Msg {
+	return m.calls.next(func() term.Msg {
 		if sess != nil {
 			_ = sess.Close()
 		}

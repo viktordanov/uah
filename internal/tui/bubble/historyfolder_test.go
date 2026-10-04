@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/viktordanov/uah/internal/history"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
 
@@ -81,20 +81,20 @@ func TestTUI_HistoryPerFolder(t *testing.T) {
 	})
 	first := d.m.(bubble.Model).Exit().SessionID
 
-	d.key(tea.KeyUp, 0)
+	d.key(term.KeyUp, 0)
 	assert.Equal(t, "fix here", d.draft())
-	d.key(tea.KeyUp, 0)
+	d.key(term.KeyUp, 0)
 	assert.Equal(t, "fix here", d.draft(), "no other folder's prompt, and no line without a folder")
-	d.key(tea.KeyDown, 0)
-	d.key('r', tea.ModCtrl)
+	d.key(term.KeyDown, 0)
+	d.key('r', term.ModCtrl)
 	d.typeText("fix")
 	assert.Equal(t, "fix here", d.draft())
-	d.key('r', tea.ModCtrl)
+	d.key('r', term.ModCtrl)
 	assert.Equal(t, "fix here", d.draft(), "the search sees this folder only")
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 
 	d.typeText("hi there")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• hello")
 	d.waitIdle() // /new waits while a run is live
 	d.until("the prompt in the file with its folder", func() bool {
@@ -105,27 +105,27 @@ func TestTUI_HistoryPerFolder(t *testing.T) {
 
 	moveTo(there)
 	d.typeText("/new")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.until("a session in the other folder", func() bool {
 		m := d.m.(bubble.Model)
 
 		return m.Exit().SessionID != first && m.Prompts() == 1
 	})
-	d.key(tea.KeyUp, 0)
+	d.key(term.KeyUp, 0)
 	assert.Equal(t, "fix there", d.draft(), "the other folder's history")
-	d.key(tea.KeyUp, 0)
+	d.key(term.KeyUp, 0)
 	assert.Equal(t, "fix there", d.draft())
-	d.key('c', tea.ModCtrl)
+	d.key('c', term.ModCtrl)
 
 	d.typeText("/resume " + first)
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.until("the first session again", func() bool {
 		m := d.m.(bubble.Model)
 
 		return m.Exit().SessionID == first && m.Prompts() == 2
 	})
-	d.key(tea.KeyUp, 0)
+	d.key(term.KeyUp, 0)
 	assert.Equal(t, "hi there", d.draft(), "back in the first folder, its prompts, this process's too")
-	d.key(tea.KeyUp, 0)
+	d.key(term.KeyUp, 0)
 	assert.Equal(t, "fix here", d.draft())
 }

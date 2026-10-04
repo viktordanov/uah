@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // The test binary is the editor: VISUAL names it, and TestMain sends it
@@ -64,12 +64,12 @@ func fakeEditor(path string) int {
 	return 0
 }
 
-// fakeExec stands in for tea.Exec, which only a tea.Program runs: it holds
+// fakeExec stands in for term.Exec, which only a term.Program runs: it holds
 // the edit ctrl+g started until the test runs it.
 type fakeExec struct {
 	record string // what the editor saw
 	home   string // uah's home, $UAH_HOME
-	run    func() tea.Msg
+	run    func() term.Msg
 }
 
 // useFakeEditor makes the test binary the editor, with an argument as
@@ -87,8 +87,8 @@ func useFakeEditor(t *testing.T, d *bubble.Deps, action string) *fakeExec {
 	t.Setenv(fakeEditorEnv, action)
 	t.Setenv(fakeEditorSeenEnv, record)
 	fe.record = record
-	d.Exec = func(c tea.ExecCommand, fn tea.ExecCallback) tea.Cmd {
-		fe.run = func() tea.Msg { return fn(c.Run()) }
+	d.Exec = func(c term.ExecCommand, fn term.ExecCallback) term.Cmd {
+		fe.run = func() term.Msg { return fn(c.Run()) }
 
 		return nil
 	}
@@ -96,7 +96,7 @@ func useFakeEditor(t *testing.T, d *bubble.Deps, action string) *fakeExec {
 	return fe
 }
 
-// edit runs the edit ctrl+g started, as tea.Program would, and hands its
+// edit runs the edit ctrl+g started, as term.Program would, and hands its
 // result to the model.
 func (d *driver) edit(fe *fakeExec) {
 	d.t.Helper()
@@ -130,13 +130,13 @@ func TestTUI_EditTheDraftInTheEditor(t *testing.T) {
 	fe := useFakeEditor(t, &d, "edit")
 	dr := start(t, d)
 	dr.until("the session is open", func() bool { return dr.m.(bubble.Model).Exit().SessionID != "" })
-	dr.key('v', tea.ModCtrl)
+	dr.key('v', term.ModCtrl)
 	dr.waitFor("λ [Image #1]")
-	dr.key('v', tea.ModCtrl)
+	dr.key('v', term.ModCtrl)
 	dr.waitFor("[Image #1] [Image #2]")
 	dr.typeText("compare")
 
-	dr.key('g', tea.ModCtrl)
+	dr.key('g', term.ModCtrl)
 	dr.edit(fe)
 	want := "[Image #2] compare\nsecond line\nthird with [Image #9]"
 	assert.Equal(t, want, dr.draft())
@@ -156,7 +156,7 @@ func TestTUI_EditTheDraftInTheEditor(t *testing.T) {
 	_, err = os.Stat(got.Path)
 	assert.ErrorIs(t, err, os.ErrNotExist, "the file is removed afterwards")
 
-	dr.key(tea.KeyEnter, 0)
+	dr.key(term.KeyEnter, 0)
 	dr.waitFor("• an image")
 	reqs := llm.Requests()
 	require.Len(t, reqs, 1)
@@ -174,24 +174,24 @@ func TestTUI_EditorRoundTripsFailsAndEmpties(t *testing.T) {
 	dr := start(t, d)
 	dr.until("the session is open", func() bool { return dr.m.(bubble.Model).Exit().SessionID != "" })
 	paste := "line one\n\n  line three  \nfunc f() {\n\treturn\n}"
-	dr.send(tea.PasteMsg{Content: paste})
+	dr.send(term.PasteMsg{Content: paste})
 	before := dr.draft()
 	require.Contains(t, before, "line three")
 
-	dr.key('g', tea.ModCtrl)
+	dr.key('g', term.ModCtrl)
 	dr.edit(fe)
 	assert.Equal(t, before, readSeen(t, fe.record).Text)
 	assert.Equal(t, before, dr.draft())
 
 	t.Setenv(fakeEditorEnv, "fail") // the editor reads it when it starts
-	dr.key('g', tea.ModCtrl)
+	dr.key('g', term.ModCtrl)
 	dr.edit(fe)
 	assert.Contains(t, dr.view(), "the draft is unchanged")
 	assert.Contains(t, dr.view(), fmt.Sprintf("editor: %s: exit status 3", filepath.Base(os.Args[0])))
 	assert.Equal(t, before, dr.draft())
 
 	t.Setenv(fakeEditorEnv, "empty")
-	dr.key('g', tea.ModCtrl)
+	dr.key('g', term.ModCtrl)
 	dr.edit(fe)
 	assert.Empty(t, dr.draft())
 }
@@ -205,7 +205,7 @@ func TestTUI_EditorRefusesAnExposedDraftDir(t *testing.T) {
 	dr := start(t, d)
 	dr.until("the session is open", func() bool { return dr.m.(bubble.Model).Exit().SessionID != "" })
 	dr.typeText("a draft")
-	dr.key('g', tea.ModCtrl)
+	dr.key('g', term.ModCtrl)
 	dr.waitFor("the draft is unchanged")
 	assert.Contains(t, dr.view(), "sandboxed commands can write")
 	assert.Nil(t, fe.run, "no editor ran")

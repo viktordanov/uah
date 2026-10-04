@@ -1,18 +1,17 @@
 package bubble
 
 import (
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/history"
 	"github.com/viktordanov/uah/internal/tui/render"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // onSearchKey drives the ctrl+r search, whose query is the footer's: ctrl+r
 // and ↑ go to older matches, ctrl+s and ↓ to newer ones, enter keeps the
 // match, esc and ctrl+c put the draft back, backspace and ctrl+u edit the
 // query, and text goes into it. Other keys do nothing, as in Codex.
-func (m Model) onSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) onSearchKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	switch msg.String() {
 	case "ctrl+r", keyUp:
 		return m.dispatch(state.SearchMove{Older: true})
@@ -27,7 +26,7 @@ func (m Model) onSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+u":
 		return m.dispatch(state.SearchClear{})
 	}
-	if msg.Text != "" && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
+	if msg.Text != "" && msg.Mod&(term.ModCtrl|term.ModAlt) == 0 {
 		return m.dispatch(state.SearchType{Text: msg.Text})
 	}
 
@@ -37,7 +36,7 @@ func (m Model) onSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // runHistory reads and appends the history file off the update loop; ok
 // is false for any other effect. A failure shows as an error notice. A prompt joins the recorder's queue here,
 // on the loop, so prompts reach the file in the order they were sent.
-func (m Model) runHistory(e state.Effect) (tea.Cmd, bool) {
+func (m Model) runHistory(e state.Effect) (term.Cmd, bool) {
 	switch e := e.(type) {
 	case state.EffLoadPrompts:
 		if m.prompts == nil {
@@ -45,7 +44,7 @@ func (m Model) runHistory(e state.Effect) (tea.Cmd, bool) {
 		}
 		file := m.prompts.File()
 
-		return func() tea.Msg {
+		return func() term.Msg {
 			entries, err := file.Load()
 			if err != nil {
 				return state.Failed{Err: err} // ↑ recalls this process's prompts only
@@ -64,7 +63,7 @@ func (m Model) runHistory(e state.Effect) (tea.Cmd, bool) {
 		m.prompts.Add(history.Entry{SessionID: e.SessionID, TS: m.deps.Now().Unix(), Text: e.Text, Workspace: e.Workspace})
 		recorder := m.prompts
 
-		return func() tea.Msg {
+		return func() term.Msg {
 			if err := recorder.Flush(); err != nil {
 				return state.Failed{Err: err} // the prompt is not kept, as in Codex
 			}
@@ -78,7 +77,7 @@ func (m Model) runHistory(e state.Effect) (tea.Cmd, bool) {
 
 // searchCursor puts the terminal's cursor after the search's query in the
 // footer, below the composer's band row, as Codex does.
-func (m Model) searchCursor(c *tea.Cursor, composerRow int) {
+func (m Model) searchCursor(c *term.Cursor, composerRow int) {
 	if m.st.History.Search == nil {
 		return
 	}

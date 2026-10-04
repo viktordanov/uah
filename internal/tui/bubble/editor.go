@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "charm.land/bubbletea/v2"
 	"mvdan.cc/sh/v3/shell"
 
 	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 var (
@@ -24,12 +24,12 @@ var (
 )
 
 // editDraft runs the editor on the draft with the terminal released, as
-// ctrl+g in Claude Code and Codex does: Bubble Tea leaves the alt screen,
+// ctrl+g in Claude Code and Codex does: term leaves the alt screen,
 // the mouse, and bracketed paste while it runs, and restores them after.
-func (m Model) editDraft(text string) tea.Cmd {
+func (m Model) editDraft(text string) term.Cmd {
 	args, err := editorCommand(os.Getenv)
 	if err != nil {
-		return func() tea.Msg { return state.DraftEdited{Err: err} }
+		return func() term.Msg { return state.DraftEdited{Err: err} }
 	}
 	dir := filepath.Join(home.Dir(), "editor")
 	policy := sandbox.Policy{Mode: m.st.Settings.Mode.Sandbox(), Workspace: m.st.Settings.Workspace, WritableRoots: m.deps.WritableRoots}
@@ -37,15 +37,15 @@ func (m Model) editDraft(text string) tea.Cmd {
 		err := fmt.Errorf("sandboxed commands can write %s, so the draft is not written there; "+
 			"move uah's home ($%s) out of the workspace, /tmp, $TMPDIR, and the writable roots", dir, home.Env)
 
-		return func() tea.Msg { return state.DraftEdited{Err: err} }
+		return func() term.Msg { return state.DraftEdited{Err: err} }
 	}
 	run := &editorRun{ctx: m.ctx, dir: dir, args: args, text: text}
 	start := m.deps.Exec
 	if start == nil {
-		start = tea.Exec
+		start = term.Exec
 	}
 
-	return start(run, func(err error) tea.Msg {
+	return start(run, func(err error) term.Msg {
 		if err != nil {
 			return state.DraftEdited{Err: err}
 		}
@@ -104,11 +104,11 @@ func draftDirExposed(p sandbox.Policy, dir string) bool {
 	return false
 }
 
-// editorRun is one edit, a tea.ExecCommand: it writes the draft to a .md
+// editorRun is one edit, a term.ExecCommand: it writes the draft to a .md
 // file (0600) in dir, <uah home>/editor (0700), runs the editor on it, reads
 // it back into saved, and removes it.
 type editorRun struct {
-	ctx            context.Context // a tea.ExecCommand's Run takes none
+	ctx            context.Context // a term.ExecCommand's Run takes none
 	dir            string
 	args           []string
 	text           string

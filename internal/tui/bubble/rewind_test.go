@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
@@ -60,18 +60,18 @@ func TestTUI_RewindToAnEarlierMessage(t *testing.T) {
 	d := start(t, deps)
 	for i, text := range []string{"first", "second", "third"} {
 		d.typeText(text)
-		d.key(tea.KeyEnter, 0)
+		d.key(term.KeyEnter, 0)
 		d.waitFor("answer " + []string{"one", "two", "three"}[i])
 		d.waitIdle()
 	}
 
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("esc again to edit a previous message")
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("▶ third")
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("▶ second")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.until("the cut", func() bool { return !strings.Contains(d.view(), "answer two") })
 	view := d.view()
 	assert.Contains(t, view, "answer one")
@@ -79,7 +79,7 @@ func TestTUI_RewindToAnEarlierMessage(t *testing.T) {
 	assert.NotContains(t, view, "▶")
 
 	d.typeText(", edited")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("answer two, again")
 	reqs := llm.Requests()
 	require.Len(t, reqs, 4)
@@ -92,12 +92,12 @@ func TestTUI_AnyOtherKeyCancelsGoingBack(t *testing.T) {
 	deps, _ := rewindDeps(t, fakellm.Reply{Text: "answer one"})
 	d := start(t, deps)
 	d.typeText("first")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("answer one")
 	d.waitIdle()
 
-	d.key(tea.KeyEscape, 0)
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("▶ first")
 	d.typeText("x")
 	d.until("the selection to end", func() bool { return !strings.Contains(d.view(), "▶") })
@@ -114,17 +114,17 @@ func TestTUI_EscEscAfterIdling(t *testing.T) {
 	deps.Now = clock.now
 	d := start(t, deps)
 	d.typeText("first")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("answer one")
 	d.waitIdle()
 
 	clock.add(time.Minute)
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("esc again to edit a previous message")
 	clock.add(500 * time.Millisecond)
 	d.pump(300 * time.Millisecond) // the tick the hint starts
 	assert.Contains(t, d.view(), "esc again to edit a previous message", "still primed half a second later")
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("▶ first")
 }
 

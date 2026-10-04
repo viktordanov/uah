@@ -7,12 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/textarea"
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/images"
 	"github.com/viktordanov/uah/internal/images/clipboard"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // clipboardTimeout bounds one read of the clipboard.
@@ -21,14 +19,14 @@ const clipboardTimeout = 10 * time.Second
 var errNoImages = errors.New("images cannot be attached here")
 
 // runImage runs the image effects; ok is false for any other effect.
-func (m Model) runImage(e state.Effect) (tea.Cmd, bool) {
+func (m Model) runImage(e state.Effect) (term.Cmd, bool) {
 	switch e := e.(type) {
 	case state.EffPasteImage:
 		return m.pasteImage(), true
 	case state.EffAttachFile:
 		store := m.deps.Images
 
-		return func() tea.Msg {
+		return func() term.Msg {
 			if store == nil {
 				return state.ImageFailed{Err: errNoImages, Text: e.Text}
 			}
@@ -46,10 +44,10 @@ func (m Model) runImage(e state.Effect) (tea.Cmd, bool) {
 
 // pasteImage reads the clipboard's image, or the image file copied in a
 // file manager, off the update loop and stores it.
-func (m Model) pasteImage() tea.Cmd {
-	ctx, clip, store := m.ctx, m.deps.Clipboard, m.deps.Images
+func (m Model) pasteImage() term.Cmd {
+	ctx, clip, store, pasteText := m.ctx, m.deps.Clipboard, m.deps.Images, m.deps.PasteText
 
-	return func() tea.Msg {
+	return func() term.Msg {
 		if clip == nil || store == nil {
 			return state.ImageFailed{Err: errNoImages}
 		}
@@ -57,7 +55,16 @@ func (m Model) pasteImage() tea.Cmd {
 		defer cancel()
 		content, err := clip.ReadImage(ctx)
 		if errors.Is(err, clipboard.ErrNoImage) {
-			return textarea.Paste() // ctrl+v pastes text, as it did before images
+			// ctrl+v pastes text, as it did before images.
+			if pasteText == nil {
+				return nil
+			}
+			text, err := pasteText(ctx)
+			if err != nil || text == "" {
+				return nil
+			}
+
+			return term.PasteMsg{Content: text}
 		}
 		if err != nil {
 			return state.ImageFailed{Err: err}
@@ -78,7 +85,7 @@ func (m Model) pasteImage() tea.Cmd {
 
 // onPaste attaches a pasted or dropped image path; any other paste goes to
 // the composer as text.
-func (m Model) onPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
+func (m Model) onPaste(msg term.PasteMsg) (term.Model, term.Cmd) {
 	if m.st.History.Search != nil {
 		return m.dispatch(state.SearchType{Text: msg.Content}) // a paste goes into the query
 	}
@@ -88,8 +95,7 @@ func (m Model) onPaste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 			return m.dispatch(state.AttachFile{Path: path, Text: msg.Content})
 		}
 	}
-	var cmd tea.Cmd
-	m.composer, cmd = m.composer.Update(msg)
+	cmd := m.updateComposer(msg)
 
 	return m, cmd
 }
@@ -112,7 +118,7 @@ func (m *Model) eatPlaceholder() {
 	for _, img := range m.st.Attached {
 		if strings.HasSuffix(before, img.Label) {
 			for range len([]rune(img.Label)) - 1 {
-				m.composer, _ = m.composer.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+				m.updateComposer(term.KeyPressMsg{Code: term.KeyBackspace})
 			}
 
 			return

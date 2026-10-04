@@ -39,9 +39,10 @@ var bounds = []bound{
 	// The TUI's clock stops when the turn ends: no update while idle.
 	{"idle/tui", "updates_per_s", 1},
 	{"idle/tui", "cpu_ms_per_s", 200},
-	// The renderer checks the view 30 times a second, about 165 wakeups (60
-	// would be about 320).
-	{"idle/tui", "wakeups_per_s", 250},
+	// Idle, term's loop sleeps without a timer: the few wakeups left are
+	// the Go runtime's (2 to 4 a second). A renderer on a clock, as
+	// Bubble Tea's was, makes about 165.
+	{"idle/tui", "wakeups_per_s", 10},
 	// After three streamed turns, the open session keeps about 0.2 MB more
 	// live heap and the process about 0.3 MB more from the OS; a finished
 	// run kept in memory (about 1 MB here) or a heap never returned

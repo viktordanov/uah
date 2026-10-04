@@ -1,5 +1,5 @@
 // Package render draws TUI state as screen lines with lipgloss. It knows
-// nothing about Bubble Tea: the shell passes in the composer's view.
+// nothing about the terminal: the shell passes in the composer's view.
 package render
 
 import (

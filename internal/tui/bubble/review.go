@@ -1,25 +1,24 @@
 package bubble
 
 import (
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/gitdiff"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // runReview runs /diff's and /review's effects: git reads off the update
 // loop, and the review through the session, whose events report it.
-func (m Model) runReview(e state.Effect) (tea.Cmd, bool) {
+func (m Model) runReview(e state.Effect) (term.Cmd, bool) {
 	ctx, sess := m.ctx, m.sess
 	switch e := e.(type) {
 	case state.EffDiff:
-		return func() tea.Msg {
+		return func() term.Msg {
 			d, err := gitdiff.Collect(ctx, e.Dir)
 
 			return state.DiffShown{Diff: d, Err: err}
 		}, true
 	case state.EffLoadReviewTargets:
-		return func() tea.Msg {
+		return func() term.Msg {
 			branches, err := gitdiff.ListBranches(ctx, e.Dir)
 			if err != nil {
 				return state.ReviewTargetsLoaded{Err: err}
@@ -29,7 +28,7 @@ func (m Model) runReview(e state.Effect) (tea.Cmd, bool) {
 			return state.ReviewTargetsLoaded{Branches: branches, Commits: commits, Err: err}
 		}, true
 	case state.EffReview:
-		return func() tea.Msg {
+		return func() term.Msg {
 			if sess == nil {
 				return state.Failed{Err: errNoSession}
 			}

@@ -9,16 +9,15 @@ import (
 	"sync"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
-// The TUI runs as `uah` runs it, in a real Bubble Tea program with its
-// renderer, on a 120x40 true-color terminal whose output is counted and
+// The TUI runs as `uah` runs it, on term's loop and line renderer, on a 120x40 true-color terminal whose output is counted and
 // dropped and whose input never comes. A probe around the model times
 // every Update and View and watches the screen for text.
 
@@ -30,7 +29,7 @@ const (
 // probe wraps the TUI's model.
 type probe struct {
 	mu      sync.Mutex
-	inner   tea.Model
+	inner   term.Model
 	updates int
 	views   []time.Duration
 	// screen is the last view's text; changed is signaled after each view.
@@ -47,9 +46,9 @@ type probe struct {
 // TUI's own.
 const openedMsg = "bubble.openedMsg"
 
-func (p *probe) Init() tea.Cmd { return p.inner.Init() }
+func (p *probe) Init() term.Cmd { return p.inner.Init() }
 
-func (p *probe) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (p *probe) Update(msg term.Msg) (term.Model, term.Cmd) {
 	next, cmd := p.inner.Update(msg)
 	p.mu.Lock()
 	p.inner = next
@@ -62,7 +61,7 @@ func (p *probe) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return p, cmd
 }
 
-func (p *probe) View() tea.View {
+func (p *probe) View() term.View {
 	start := time.Now()
 	v := p.inner.View()
 	took := time.Since(start)
@@ -161,10 +160,11 @@ func (t *terminal) firstWriteAfter(at time.Time) (time.Time, bool) {
 
 // TUI is a running TUI.
 type TUI struct {
-	p     *tea.Program
-	probe *probe
-	term  *terminal
-	done  chan error
+	p      *term.Program
+	cancel context.CancelFunc
+	probe  *probe
+	term   *terminal
+	done   chan error
 	// input is the program's input; closing it ends its reader.
 	input *io.PipeWriter
 	// sess is the session the TUI opened.
@@ -203,13 +203,13 @@ func StartTUI(ctx context.Context, e *Env, id string) *TUI {
 	t.probe = &probe{inner: bubble.New(ctx, deps), changed: make(chan struct{}, 1)}
 	in, input := io.Pipe() // input that never comes
 	t.input = input
-	t.p = tea.NewProgram(t.probe, append(bubble.ProgramOptions(ctx),
-		tea.WithInput(in), tea.WithOutput(t.term),
-		tea.WithWindowSize(termWidth, termHeight), tea.WithColorProfile(colorprofile.TrueColor),
-		tea.WithEnvironment([]string{"TERM=xterm-256color"}), tea.WithoutSignalHandler(),
-	)...)
+	t.p = term.NewProgram(t.probe, term.Options{
+		In: in, Out: t.term, Width: termWidth, Height: termHeight,
+		Env: []string{"TERM=xterm-256color"}, Profile: colorprofile.TrueColor,
+	})
+	ctx, t.cancel = context.WithCancel(ctx)
 	go func() {
-		_, err := t.p.Run()
+		_, err := t.p.Run(ctx)
 		t.done <- err
 	}()
 
@@ -217,14 +217,14 @@ func StartTUI(ctx context.Context, e *Env, id string) *TUI {
 }
 
 // Send sends a message to the program.
-func (t *TUI) Send(msg tea.Msg) { t.p.Send(msg) }
+func (t *TUI) Send(msg term.Msg) { t.p.Send(msg) }
 
 // Type types text and presses enter.
 func (t *TUI) Type(text string) {
 	for _, r := range text {
-		t.p.Send(tea.KeyPressMsg{Code: r, Text: string(r)})
+		t.p.Send(term.KeyPressMsg{Code: r, Text: string(r)})
 	}
-	t.p.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+	t.p.Send(term.KeyPressMsg{Code: term.KeyEnter})
 }
 
 // Stop quits the program and closes its session.
@@ -234,7 +234,7 @@ func (t *TUI) Stop() error {
 	select {
 	case err = <-t.done:
 	case <-time.After(waitTimeout):
-		t.p.Kill()
+		t.cancel()
 		err = errors.New("the TUI did not quit")
 	}
 	_ = t.input.Close()
@@ -244,7 +244,7 @@ func (t *TUI) Stop() error {
 	if s != nil {
 		err = errors.Join(err, s.Close())
 	}
-	if errors.Is(err, tea.ErrProgramKilled) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) {
 		err = nil
 	}
 

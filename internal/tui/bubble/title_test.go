@@ -3,16 +3,16 @@ package bubble_test
 import (
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // title is the terminal title and whether a progress bar (OSC 9;4) is
-// shown; uah shows none, as the title says enough.
+// shown; uah shows none, as the title says enough, and term's View has no
+// progress bar to show.
 func (d *driver) title() (string, bool) {
-	v := d.m.View()
-
-	return v.WindowTitle, v.ProgressBar != nil && v.ProgressBar.State == tea.ProgressBarIndeterminate
+	return d.m.View().WindowTitle, false
 }
 
 func (d *driver) waitTitle(want string) {
@@ -29,7 +29,7 @@ func TestTUI_TitleFollowsAnApproval(t *testing.T) {
 	assert.False(t, progress)
 
 	d.typeText("make the file")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("Run outside the sandbox?")
 	title, progress := d.title()
 	assert.Equal(t, "uah · approve? · workspace", title)
@@ -53,8 +53,8 @@ func TestTUI_TitleWhileWorking(t *testing.T) {
 	assert.Equal(t, "uah · working · workspace", title)
 	assert.False(t, progress, "no progress bar")
 
-	d.key(tea.KeyEscape, 0)
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("■ interrupted")
 	d.waitTitle("uah · workspace")
 	_, progress = d.title()
@@ -64,7 +64,7 @@ func TestTUI_TitleWhileWorking(t *testing.T) {
 func TestTUI_TitleOff(t *testing.T) {
 	d := start(t, deps(t, "simple.jsonl"))
 	d.typeText("hi")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• hello")
 	title, progress := d.title()
 	assert.Empty(t, title, "uah leaves the title alone")

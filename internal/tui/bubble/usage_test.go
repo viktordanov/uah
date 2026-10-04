@@ -8,11 +8,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/internal/usage"
 	"github.com/viktordanov/uah/internal/usage/cachestats"
 	"github.com/viktordanov/uah/testing/harnesstest"
@@ -46,12 +46,12 @@ func TestTUI_Usage(t *testing.T) {
 	assert.Zero(t, calls.Load(), "no read before a run")
 
 	d.typeText("hi")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("weekly 78% left ·")
 	assert.Equal(t, int32(1), calls.Load(), "one read after the run")
 
 	d.typeText("/status")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("weekly [███████████████░░░░░] 78% left (resets ")
 	assert.Equal(t, int32(2), calls.Load(), "/status reads again")
 }
@@ -61,7 +61,7 @@ func TestTUI_NoUsage(t *testing.T) {
 	d := start(t, deps(t, "simple.jsonl"))
 	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 	d.typeText("/status")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("usage is not available for openai-codex")
 	assert.NotContains(t, d.view(), "% left")
 }
@@ -83,7 +83,7 @@ func TestTUI_Cache(t *testing.T) {
 	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 
 	d.typeText("/usage")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("prompt cache 34% · missed 8k: cold start 8k")
 	assert.Equal(t, d.m.(bubble.Model).Exit().SessionID, asked.Load())
 }

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,6 +16,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
 
@@ -57,8 +57,8 @@ func TestTUI_DiffAndReviewMenu(t *testing.T) {
 	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 
 	d.typeText("/diff")
-	d.key(tea.KeyEscape, 0) // close the menu, so enter runs the draft as typed
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEscape, 0) // close the menu, so enter runs the draft as typed
+	d.key(term.KeyEnter, 0)
 	d.waitFor("DIFF   2 files (+2 -1)")
 	assert.Contains(t, d.view(), "└ a.txt (+1 -1)")
 	assert.Contains(t, d.view(), "└ new.txt untracked (+1 -0)")
@@ -67,7 +67,7 @@ func TestTUI_DiffAndReviewMenu(t *testing.T) {
 	d.typeText("/review branch ")
 	d.waitFor("release")
 	assert.Contains(t, d.view(), "main")
-	d.key(tea.KeyDown, 0)
-	d.key(tea.KeyEnter, 0) // the second branch: review against release
+	d.key(term.KeyDown, 0)
+	d.key(term.KeyEnter, 0) // the second branch: review against release
 	d.waitFor("/review needs the embedded engine")
 }

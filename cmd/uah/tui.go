@@ -87,6 +87,7 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		SaveConfig:  tuiSaveConfig(ctx, cmd),
 		Images:      &images.Store{Dir: images.DirIn(st.StateDir)},
 		Clipboard:   clipboard.System(),
+		PasteText:   clipboard.SystemTextReader().ReadText,
 		CopyText:    clipboard.SystemWriter().WriteText,
 		// ctrl+g refuses a draft directory these roots expose.
 		WritableRoots: st.Sandbox.WritableRoots,

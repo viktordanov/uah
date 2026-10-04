@@ -3,9 +3,8 @@ package bubble_test
 import (
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/approval"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // TestTUI_ShiftTabCyclesTheMode drives shift+tab through the session: the
@@ -15,12 +14,12 @@ func TestTUI_ShiftTabCyclesTheMode(t *testing.T) {
 	d := start(t, deps(t, "simple.jsonl"))
 	d.waitFor("gpt-6-sol high ·")
 
-	d.key(tea.KeyTab, tea.ModShift)
+	d.key(term.KeyTab, term.ModShift)
 	d.waitFor("auto mode ·")
 	d.waitFor("Applies from the next run.")
-	d.key(tea.KeyTab, tea.ModShift)
+	d.key(term.KeyTab, term.ModShift)
 	d.waitFor("read only mode ·")
-	d.key(tea.KeyTab, tea.ModShift)
+	d.key(term.KeyTab, term.ModShift)
 	d.waitFor("workspace mode ·")
 }
 
@@ -32,7 +31,7 @@ func TestTUI_YoloIsPreselectedAndCycles(t *testing.T) {
 	d.waitFor("yolo mode ·")
 
 	for _, want := range []string{"read only mode ·", "workspace mode ·", "auto mode ·", "yolo mode ·"} {
-		d.key(tea.KeyTab, tea.ModShift)
+		d.key(term.KeyTab, term.ModShift)
 		d.waitFor(want)
 	}
 }
@@ -44,13 +43,13 @@ func TestTUI_AltECyclesAdaptiveEffort(t *testing.T) {
 	d := start(t, deps(t, "simple.jsonl"))
 	d.waitFor("gpt-6-sol high ·")
 
-	d.key('e', tea.ModAlt)
+	d.key('e', term.ModAlt)
 	d.waitFor("adaptive effort: 1 step (follow-ups at medium)")
 	d.waitFor("gpt-6-sol high↓ ·")
-	d.key('e', tea.ModAlt)
+	d.key('e', term.ModAlt)
 	d.waitFor("adaptive effort: 2 steps (follow-ups at low)")
 	d.waitFor("gpt-6-sol high⇊ ·")
-	d.key('e', tea.ModAlt)
+	d.key('e', term.ModAlt)
 	d.waitFor("adaptive effort: off")
 	d.waitFor("gpt-6-sol high ·")
 }
