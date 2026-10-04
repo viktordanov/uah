@@ -64,12 +64,16 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	never := w.e.cfg.Approver != nil && w.e.cfg.Approver.Policy() == approval.Never
 	gate := w.mcpGate(approvals, never)
 	gate.approved = scope.approvesTool
-	if policy.Restricted() {
-		gate.servers = policy.AllowsServer
-	}
 	resources := w.e.cfg.MCP != nil && w.e.cfg.MCP.HasServers()
-	mcpTools = scope.mcpTools(policyMCPTools(policy, mcpTools))
-	registry = withMCP(registry, mcpTools, resources, scope.disallowResources(req.DisallowedTools), gate)
+	var servers []string
+	if resources {
+		servers = w.e.cfg.MCP.Names()
+	}
+	mp := newMCPPolicy(policy, servers)
+	if policy.Restricted() {
+		gate.servers = mp.allowsServer
+	}
+	registry = withMCP(registry, scope.mcpTools(mp.tools(mcpTools)), resources, scope.disallowResources(req.DisallowedTools), gate)
 	registry = withPatch(registry, offersPatch(w.e.models, req), w.patchGate(approvals, req))
 	registry = w.withAgents(registry, req)
 	registry = withQuestions(registry, questionTranslator{offered: w.offersQuestions(req), root: !isSubagent(req.SessionID), ctx: approvals, ask: w.askUser})
@@ -77,7 +81,7 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 
 	registry = withPreToolUse(approvals, registry, w.e.cfg.Hooks, req, w.l.SessionsDir)
 
-	return withPolicy(registry, policy, mcpTools), nil
+	return withPolicy(registry, mp, mcpTools), nil
 }
 
 // withSandbox offers Bash with the escalation arguments and a note on the

@@ -136,7 +136,8 @@ func TestResolve_ToolPolicy(t *testing.T) {
 		in.Workspace, in.MaxDisk = "/ws", "5G"
 		r, err := app.Resolve(in, session.Info{Tools: c.resumed}, cfg)
 		require.NoError(t, err, c.name)
-		assert.Equal(t, c.want, r.Tools, c.name)
+		assert.Equal(t, c.want.Allow, r.Tools.Allow, c.name)
+		assert.Equal(t, c.want.Deny, r.Tools.Deny, c.name)
 	}
 
 	r, err := app.Resolve(app.Inputs{Workspace: "/ws", MaxDisk: "5G"}, session.Info{}, config.Config{})
@@ -193,4 +194,34 @@ func TestToolPolicy_KnowsEveryTool(t *testing.T) {
 		assert.Contains(t, toolpolicy.Builtins, n)
 	}
 	assert.Len(t, toolpolicy.Builtins, len(names), "and names nothing else")
+}
+
+// TestSetup_ToolPolicyUnreadableSidecar: a session whose sidecar cannot be
+// read does not resume, since resuming would drop its tool policy.
+func TestSetup_ToolPolicyUnreadableSidecar(t *testing.T) {
+	_, in := setupEnv(t)
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	llm := fakellm.New(t, fakellm.Reply{Text: "ok"})
+	in.Provider, in.Model, in.BaseURL, in.Tools = "openai", "gpt-test", llm.URL, []string{}
+	res, err := app.Setup(context.Background(), in, io.Discard)
+	require.NoError(t, err)
+	opts := res.Options
+	opts.Source = session.SourceRun
+	s, err := session.Open(context.Background(), res.Engine, opts)
+	require.NoError(t, err)
+	_, err = s.Submit("hi")
+	require.NoError(t, err)
+	waitFinished(t, s)
+	id := s.ID()
+	require.NoError(t, s.Close())
+	path := filepath.Join(in.StateDir, "sessions", id+".uah.json")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"tools"`)
+	require.NoError(t, os.WriteFile(path, data[:len(data)-2], 0o600))
+
+	in.Tools, in.SessionRef = nil, id
+	_, err = app.Setup(context.Background(), in, io.Discard)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "its sidecar, which keeps its tool policy, is unreadable")
 }

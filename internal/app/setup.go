@@ -26,6 +26,7 @@ import (
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/store"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 	planusage "github.com/viktordanov/uah/internal/usage"
 )
 
@@ -56,7 +57,7 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	var resumed session.Info
 	opts := session.Options{}
 	if in.SessionRef != "" {
-		info, err := FindSession(ctx, stateDir, in.SessionRef)
+		info, err := findResumed(ctx, stateDir, in.SessionRef)
 		if err != nil {
 			return Result{}, err
 		}
@@ -252,6 +253,31 @@ func absPolicy(p sandbox.Policy, workspace string) sandbox.Policy {
 	p.WritableRoots = roots
 
 	return p
+}
+
+// findResumed finds the session to resume, with the tool policy it ran
+// under.
+func findResumed(ctx context.Context, stateDir, ref string) (session.Info, error) {
+	info, err := FindSession(ctx, stateDir, ref)
+	if err != nil {
+		return session.Info{}, err
+	}
+	info.Tools, err = savedTools(stateDir, info.ID)
+
+	return info, err
+}
+
+// savedTools reads the tool policy a session ran under from its sidecar.
+// The session list skips a sidecar it cannot read, but a resume must not:
+// it would drop the policy and widen the session's tools. A session
+// without a sidecar ran under none.
+func savedTools(stateDir, id string) (*toolpolicy.Policy, error) {
+	sc, _, err := session.ReadSidecar(filepath.Join(stateDir, "sessions"), id)
+	if err != nil {
+		return nil, fmt.Errorf("cannot resume session %s: its sidecar, which keeps its tool policy, is unreadable: %w", id, err)
+	}
+
+	return sc.Tools, nil
 }
 
 // HookTrustFile records the project hook commands the user approved.

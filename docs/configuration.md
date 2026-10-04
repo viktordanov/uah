@@ -226,21 +226,21 @@ A name is one of these:
 
 1. A built-in tool: `Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `web_search`, `request_user_input`, the agent tools `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent`, the goal tools `get_goal`, `create_goal`, and `update_goal`, and the MCP resource tools `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource`.
 2. An MCP tool by the name the model sees, `mcp__<server>__<tool>`, as `/mcp` lists it.
-3. Every tool of one MCP server: `mcp__<server>__*`, or `mcp__<server>`. The pattern matches the tools of that server only, never of another server whose name starts the same way.
+3. Every tool of one MCP server: `mcp__<server>__*`, or `mcp__<server>`. The pattern matches the tools of that server only, never of another server whose name starts the same way. Two configured servers with the same exposed name (`a-b` and `a.b` are both `a_b`) cannot be told apart, so a pattern allows neither, and their tools need their exact names.
 
 Another name is an error, so a typo cannot deny nothing. Other tools' names are errors too, with a hint: `Edit` and `Write` are `apply_patch` in uah, and `Agent` is `spawn_agent`.
 
 Precedence. Every source can only narrow the policy; none widens it:
 
-1. The `allow` lists of the user file, each layer (`config.d/*.toml`, then `UAH_EXTRA_CONFIG`), and the trusted project file intersect. A file without `allow` changes nothing. The `deny` lists of all files add up.
-2. A resumed session keeps the policy it ran under: its sidecar records the policy, and resuming narrows the current policy with it. Resuming without the flags does not widen a session's tools.
+1. The `allow` lists of the user file, each layer (`config.d/*.toml`, then `UAH_EXTRA_CONFIG`), and the trusted project file intersect. A file without `allow` changes nothing. The `deny` lists of all files add up. uah also keeps each list and checks a tool against every one of them, so narrowing `mcp__a__*` with a tool name never allows that name from another server.
+2. A resumed session keeps the policy it ran under: its sidecar records the policy, and resuming narrows the current policy with it. Resuming without the flags does not widen a session's tools. A session whose sidecar cannot be read does not resume.
 3. `--tools` intersects with the result, and `--deny-tools` adds to the denylist.
 4. A subagent's role (`tools` in its definition) narrows the policy for that subagent. A subagent, a fork, and `/review`'s reviewer run on the same engine, so they get the policy too. With `spawn_agent` not allowed, the model cannot start subagents.
 5. A PreToolUse hook cannot widen it. The policy refuses a call before any hook runs, so a hook's `"allow"` only skips the approval of a call the policy allows, and `updatedInput` changes the arguments, never the tool.
 
 What the policy does:
 
-- The model's tool definitions hold only the allowed tools, hosted `web_search` included. A call to any other tool, forced or made up, is refused with "the tool policy does not allow it" before a hook, an approval, or a job sees it.
+- The model's tool definitions hold only the allowed tools, hosted `web_search` included. A call to any other tool, forced or made up, is refused with "the tool policy does not allow it" before a hook, an approval, or a job sees it, and no PostToolUse hook runs for it either. The call and its refusal still show in the transcript and in `--json`.
 - The MCP resource tools reach only a server the policy allows as a whole (`mcp__<server>__*`), and must name it: `list_mcp_resources` without a server is refused.
 - The auto-reviewer runs no commands unless the policy allows `Bash`.
 - Without `request_user_input`, the default prompt does not mention the question tool.

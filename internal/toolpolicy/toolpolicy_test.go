@@ -106,3 +106,22 @@ func TestParse(t *testing.T) {
 	assert.Equal(t, []string{}, toolpolicy.Parse(""), "an empty list allows nothing")
 	assert.Equal(t, []string{"Bash", "mcp__a__*"}, toolpolicy.Parse(" Bash, mcp__a__*,,Bash "))
 }
+
+// TestPolicy_NarrowKeepsServers: narrowing a server pattern with a name
+// that the pattern covers by prefix only keeps the pattern's server, so the
+// name stays refused for a server named a__b, as either list alone refuses
+// it.
+func TestPolicy_NarrowKeepsServers(t *testing.T) {
+	t.Parallel()
+	a := toolpolicy.Policy{Allow: []string{"mcp__a__*"}}
+	b := toolpolicy.Policy{Allow: []string{"mcp__a__b__delete"}}
+	for _, both := range []toolpolicy.Policy{a.Narrow(b), b.Narrow(a)} {
+		assert.False(t, both.AllowsTool("mcp__a__b__delete", "a__b"))
+		assert.True(t, both.AllowsTool("mcp__a__b__delete", "a"))
+		assert.False(t, both.AllowsTool("mcp__a__read", "a"))
+		assert.False(t, both.AllowsServer("a"), "b allows one tool, not the server")
+	}
+	assert.Nil(t, toolpolicy.Policy{}.Narrow(b).Within, "one list needs no Within")
+	assert.False(t, a.Narrow(b).AllowsExact("mcp__a__b__delete"), "an exact match needs the name in every list")
+	assert.True(t, b.AllowsExact("mcp__a__b__delete"))
+}

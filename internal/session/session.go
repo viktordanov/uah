@@ -132,6 +132,9 @@ type Session struct {
 	held        []core.UserInput
 	hooks       hookState
 	interactive bool
+	// policy is Options.Tools: a call it does not allow was refused before
+	// it ran, so no PostToolUse hook sees it.
+	policy toolpolicy.Policy
 	// stream is Options.Stream, for each run.
 	stream bool
 	// approvals are the pending approvals' reply channels by ID.
@@ -184,7 +187,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 		ctx: runCtx, stop: stop, done: make(chan struct{}),
 		settings: opts.Settings, state: StateIdle, sent: map[string]bool{}, afterTool: map[string]bool{},
 		hooks:       hookState{runner: opts.Hooks, resumed: opts.Resumed, tools: map[string]core.ToolCalled{}},
-		interactive: opts.Interactive, stream: opts.Stream, approvals: map[string]pending{}, questions: map[string]chan engine.Answers{}, askOverride: opts.Ask,
+		interactive: opts.Interactive, stream: opts.Stream, approvals: map[string]pending{}, questions: map[string]chan engine.Answers{}, askOverride: opts.Ask, policy: opts.Tools,
 		sessionsDir: opts.SessionsDir, shell: opts.Shell, shells: map[string]context.CancelFunc{},
 		// A resumed session that never ran has no first message yet.
 		firstPromptPending: !opts.Resumed || opts.FirstPrompt == "",

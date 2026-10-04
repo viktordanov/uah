@@ -158,8 +158,8 @@ func (s *Session) onStopChecked(m evStopChecked) {
 // postToolUse runs PostToolUse hooks for a finished tool; they only observe.
 func (s *Session) postToolUse(f core.ToolFinished) {
 	called, ok := s.hooks.tools[f.CallID]
-	if !ok || !s.hooks.runner.Has(hooks.PostToolUse, called.Name) {
-		return
+	if !ok || !s.hooks.runner.Has(hooks.PostToolUse, called.Name) || !s.policy.Allows(called.Name) {
+		return // a call the tool policy refused never ran, so no hook sees it
 	}
 	in := s.hookInput(hooks.PostToolUse)
 	in.ToolName, in.ToolUseID = called.Name, f.CallID

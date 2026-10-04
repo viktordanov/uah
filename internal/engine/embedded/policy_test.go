@@ -24,13 +24,15 @@ import (
 )
 
 // hookLog is a PreToolUse hook on every tool that appends each call's
-// payload to log and answers "allow".
+// payload to log and answers "allow", and a PostToolUse hook that appends
+// each finished call's payload to log too.
 func hookLog(t *testing.T, workspace, log string) *hooks.Runner {
 	t.Helper()
-	runner, err := hooks.New([]hooks.Hook{{
-		Event: hooks.PreToolUse, Source: hooks.SourceUser,
-		Command: `cat >> ` + log + `; echo >> ` + log + `; echo '{"hookSpecificOutput":{"permissionDecision":"allow"}}'`,
-	}}, nil, workspace)
+	record := `cat >> ` + log + `; echo >> ` + log
+	runner, err := hooks.New([]hooks.Hook{
+		{Event: hooks.PreToolUse, Source: hooks.SourceUser, Command: record + `; echo '{"hookSpecificOutput":{"permissionDecision":"allow"}}'`},
+		{Event: hooks.PostToolUse, Source: hooks.SourceUser, Command: record},
+	}, nil, workspace)
 	require.NoError(t, err)
 
 	return runner
@@ -60,12 +62,12 @@ func TestEmbedded_ToolPolicy(t *testing.T) {
 	)
 	log := filepath.Join(t.TempDir(), "hook.log")
 	runner := hookLog(t, e.Workspace, log)
+	policy := toolpolicy.Policy{Allow: []string{"Bash", "mcp__test__echo", "web_search", "ViewImage"}, Deny: []string{"ViewImage"}}
 	eng := embedded.New(embedded.Config{
 		StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, Hooks: runner, MCP: mcpManager(t, e, mcp.ServerConfig{}),
-		WebSearch: true, AskUser: true, Goals: true,
-		Tools: toolpolicy.Policy{Allow: []string{"Bash", "mcp__test__echo", "web_search", "ViewImage"}, Deny: []string{"ViewImage"}},
+		WebSearch: true, AskUser: true, Goals: true, Tools: policy,
 	})
-	s, err := session.Open(context.Background(), eng, session.Options{Settings: e.settings(), Hooks: runner})
+	s, err := session.Open(context.Background(), eng, session.Options{Settings: e.settings(), Hooks: runner, Tools: policy})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 	ev := &events{t: t, s: s}
@@ -93,8 +95,10 @@ func TestEmbedded_ToolPolicy(t *testing.T) {
 	data, err := os.ReadFile(log)
 	require.NoError(t, err)
 	assert.Equal(t, 2, strings.Count(string(data), `"hook_event_name":"PreToolUse"`), "the hooks ran for the two allowed calls only")
-	assert.NotContains(t, string(data), "mcp__test__env")
-	assert.NotContains(t, string(data), "apply_patch")
+	assert.Equal(t, 2, strings.Count(string(data), `"hook_event_name":"PostToolUse"`), "before and after them")
+	for _, name := range []string{"mcp__test__env", "apply_patch", "ViewImage", "read_mcp_resource", "request_user_input", "get_goal", "made_up"} {
+		assert.NotContains(t, string(data), `"tool_name":"`+name+`"`, "no hook saw the refused call")
+	}
 }
 
 // TestEmbedded_ToolPolicyNone: an empty allowlist offers no tools at all,

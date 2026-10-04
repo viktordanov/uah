@@ -119,7 +119,7 @@ func Inspect(ctx context.Context, in Inputs) (Report, error) {
 		if err != nil {
 			return Report{}, fmt.Errorf("failed to resolve state dir: %w", err)
 		}
-		if o.Resumed, err = FindSession(ctx, stateDir, in.SessionRef); err != nil {
+		if o.Resumed, err = findResumed(ctx, stateDir, in.SessionRef); err != nil {
 			return Report{}, err
 		}
 	}

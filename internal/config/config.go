@@ -153,11 +153,16 @@ type Tools struct {
 	Allow *[]string `toml:"allow"`
 	// Deny are tools the model may never use; every file's add up.
 	Deny []string `toml:"deny"`
+	// within are the files' allowlists Allow was narrowed from
+	// (toolpolicy.Policy.Within), set by merge.
+	within [][]string
 }
 
 // ToolPolicy is the [tools] allow and deny lists as a policy.
-func (c Config) ToolPolicy() toolpolicy.Policy {
-	return toolpolicy.Policy{Allow: listOf(c.Tools.Allow), Deny: c.Tools.Deny}
+func (c Config) ToolPolicy() toolpolicy.Policy { return c.Tools.policy() }
+
+func (t Tools) policy() toolpolicy.Policy {
+	return toolpolicy.Policy{Allow: listOf(t.Allow), Deny: t.Deny, Within: t.within}
 }
 
 // ToolToggle is Codex's { enabled = … } for one tool.

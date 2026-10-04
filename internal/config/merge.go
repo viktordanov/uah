@@ -5,7 +5,6 @@ import (
 	"slices"
 
 	"github.com/viktordanov/uah/internal/mcp"
-	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // merge returns base with every value set in over (a layer or a project
@@ -83,11 +82,11 @@ func merge(base, over Config) Config {
 // mergeToolPolicy narrows the tool policy with a layer's: the allowlists
 // intersect and the denylists add up, so a layer never widens it.
 func mergeToolPolicy(base *Tools, over Tools) {
-	if over.Allow != nil {
-		allow := toolpolicy.Intersect(listOf(base.Allow), nonNil(*over.Allow))
-		base.Allow = &allow
+	p := base.policy().Narrow(over.policy())
+	if p.Allow != nil {
+		base.Allow = &p.Allow
 	}
-	base.Deny = toolpolicy.Union(base.Deny, over.Deny)
+	base.Deny, base.within = p.Deny, p.Within
 }
 
 // listOf is an allowlist as set: nil when unset, never nil when set.
@@ -95,16 +94,11 @@ func listOf(allow *[]string) []string {
 	if allow == nil {
 		return nil
 	}
-
-	return nonNil(*allow)
-}
-
-func nonNil(s []string) []string {
-	if s == nil {
+	if *allow == nil {
 		return []string{}
 	}
 
-	return s
+	return *allow
 }
 
 func set(dst *string, v string) {

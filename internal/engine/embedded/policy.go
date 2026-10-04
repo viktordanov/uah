@@ -15,7 +15,7 @@ import (
 // subagents' and forks' included, on top of a session's scope: the
 // built-in tools it does not allow join the request's disallowed tools,
 // which every part of the registry honors, its MCP tools are filtered by
-// server, and policyRegistry, outside the PreToolUse hooks, refuses a call
+// server (mcpPolicy), and policyRegistry, outside the PreToolUse hooks, refuses a call
 // to any tool the run did not offer before a hook, an approval, or a job
 // sees it.
 
@@ -31,14 +31,49 @@ func policyDisallow(p toolpolicy.Policy, disallowed []string) []string {
 	return disallowed
 }
 
-// policyMCPTools are the MCP tools the policy allows, matched by their
-// server, so a pattern for one server never takes another's tool.
-func policyMCPTools(p toolpolicy.Policy, tools []mcp.Tool) []mcp.Tool {
-	if !p.Restricted() {
+// mcpPolicy applies the policy to MCP tools by their server. Servers whose
+// exposed names are the same (a-b and a.b are both a_b) cannot be told
+// apart by a pattern, so their tools are allowed by exact name only, and
+// the resource tools reach neither.
+type mcpPolicy struct {
+	policy toolpolicy.Policy
+	// shared are the exposed server names that more than one configured
+	// server has.
+	shared map[string]bool
+}
+
+func newMCPPolicy(p toolpolicy.Policy, servers []string) mcpPolicy {
+	seen, shared := map[string]bool{}, map[string]bool{}
+	for _, s := range servers {
+		name := mcp.Sanitize(s)
+		shared[name] = seen[name]
+		seen[name] = true
+	}
+
+	return mcpPolicy{policy: p, shared: shared}
+}
+
+// allows reports whether the policy allows an MCP tool.
+func (m mcpPolicy) allows(t mcp.Tool) bool {
+	if m.shared[mcp.Sanitize(t.Server)] {
+		return m.policy.AllowsExact(t.Name)
+	}
+
+	return m.policy.AllowsTool(t.Name, t.Server)
+}
+
+// allowsServer reports whether the resource tools may reach a server.
+func (m mcpPolicy) allowsServer(server string) bool {
+	return !m.shared[mcp.Sanitize(server)] && m.policy.AllowsServer(server)
+}
+
+// tools are the MCP tools the policy allows.
+func (m mcpPolicy) tools(tools []mcp.Tool) []mcp.Tool {
+	if !m.policy.Restricted() {
 		return tools
 	}
 
-	return slices.DeleteFunc(slices.Clone(tools), func(t mcp.Tool) bool { return !p.AllowsTool(t.Name, t.Server) })
+	return slices.DeleteFunc(slices.Clone(tools), func(t mcp.Tool) bool { return !m.allows(t) })
 }
 
 // policyRegistry offers only the tools the policy allows and refuses a call
@@ -49,26 +84,31 @@ type policyRegistry struct {
 	tool.Registry
 
 	policy toolpolicy.Policy
-	// servers are the MCP tools' servers by name, for the policy's server
-	// patterns.
-	servers map[string]string
+	// mcp are the run's MCP tools by name, each with whether the policy
+	// allows it (mcpPolicy).
+	mcp map[string]bool
 }
 
-// withPolicy wraps the registry when the policy restricts anything.
-func withPolicy(r tool.Registry, p toolpolicy.Policy, mcpTools []mcp.Tool) tool.Registry {
-	if !p.Restricted() {
+// withPolicy wraps the registry when the policy restricts anything; tools
+// are the run's MCP tools, all of them.
+func withPolicy(r tool.Registry, m mcpPolicy, tools []mcp.Tool) tool.Registry {
+	if !m.policy.Restricted() {
 		return r
 	}
-	servers := map[string]string{}
-	for _, t := range mcpTools {
-		servers[t.Name] = t.Server
+	allowed := map[string]bool{}
+	for _, t := range tools {
+		allowed[t.Name] = m.allows(t)
 	}
 
-	return policyRegistry{Registry: r, policy: p, servers: servers}
+	return policyRegistry{Registry: r, policy: m.policy, mcp: allowed}
 }
 
 func (r policyRegistry) allows(name string) bool {
-	return r.policy.AllowsTool(name, r.servers[name])
+	if allowed, ok := r.mcp[name]; ok {
+		return allowed
+	}
+
+	return r.policy.Allows(name)
 }
 
 func (r policyRegistry) StaticDefinitions() []tool.Definition {
@@ -80,7 +120,6 @@ func (r policyRegistry) Resolve(name string) (tool.Translator, bool) {
 	if !ok || r.offered(name) {
 		return t, ok
 	}
-
 	why := "the run does not offer it"
 	if !r.allows(name) {
 		why = "the tool policy does not allow it"

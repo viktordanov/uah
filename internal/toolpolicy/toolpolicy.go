@@ -49,6 +49,11 @@ type Policy struct {
 	Allow []string `json:"allow"`
 	// Deny are tools never allowed, even when Allow names them.
 	Deny []string `json:"deny,omitempty"`
+	// Within are the allowlists Allow was narrowed from (Narrow). A tool
+	// must match each of them too: Allow alone, an intersection by name,
+	// cannot keep a server pattern's server, so mcp__a__* narrowed with
+	// mcp__a__b__c must still refuse that name from a server named a__b.
+	Within [][]string `json:"within,omitempty"`
 }
 
 // Restricted reports whether the policy narrows anything: a session with
@@ -63,8 +68,20 @@ func (p Policy) Allows(name string) bool { return p.AllowsTool(name, "") }
 // MCP tool's server ("" for a built-in tool, or when it is not known), so a
 // server pattern matches that server's tools and no other's.
 func (p Policy) AllowsTool(name, server string) bool {
-	if p.Allow != nil && !Match(p.Allow, name, server) {
-		return false
+	return p.allows(name, server, true)
+}
+
+// AllowsExact reports whether the policy allows an MCP tool by its exposed
+// name alone, never through a server pattern: for a tool of a server whose
+// exposed name another configured server shares, which no pattern can tell
+// apart. A pattern in the denylist still refuses it.
+func (p Policy) AllowsExact(name string) bool { return p.allows(name, "", false) }
+
+func (p Policy) allows(name, server string, patterns bool) bool {
+	for _, list := range append([][]string{p.Allow}, p.Within...) {
+		if list != nil && !match(list, name, server, patterns) {
+			return false
+		}
 	}
 
 	return !Match(p.Deny, name, server)
@@ -78,14 +95,31 @@ func (p Policy) AllowsServer(server string) bool {
 		return true
 	}
 	pattern := mcp.Prefix + mcp.Sanitize(server) + "__*"
+	for _, list := range append([][]string{p.Allow}, p.Within...) {
+		if list != nil && !covers(list, pattern) {
+			return false
+		}
+	}
 
-	return (p.Allow == nil || covers(p.Allow, pattern)) && !covers(p.Deny, pattern)
+	return !covers(p.Deny, pattern)
 }
 
 // Narrow returns the policy that allows only what both p and q allow: the
 // allowlists intersected and the denylists joined. Neither is changed.
 func (p Policy) Narrow(q Policy) Policy {
-	return Policy{Allow: Intersect(p.Allow, q.Allow), Deny: Union(p.Deny, q.Deny)}
+	out := Policy{Allow: Intersect(p.Allow, q.Allow), Deny: Union(p.Deny, q.Deny)}
+	for _, x := range []Policy{p, q} {
+		for _, list := range append(slices.Clone(x.Within), x.Allow) {
+			if list != nil && !slices.ContainsFunc(out.Within, func(l []string) bool { return slices.Equal(l, list) }) {
+				out.Within = append(out.Within, list)
+			}
+		}
+	}
+	if len(out.Within) == 1 && slices.Equal(out.Within[0], out.Allow) {
+		out.Within = nil // one list: Allow says it all
+	}
+
+	return out
 }
 
 // String describes the policy for a notice: "Bash, mcp__docs__*; not
@@ -112,13 +146,16 @@ func (p Policy) String() string {
 // names that server as the tool's exposed name does (mcp.Sanitize), so
 // mcp__a__* never matches a server named a__b; without it, by the name's
 // prefix.
-func Match(list []string, name, server string) bool {
+func Match(list []string, name, server string) bool { return match(list, name, server, true) }
+
+// match is Match, with server patterns only when patterns is set.
+func match(list []string, name, server string, patterns bool) bool {
 	for _, n := range list {
 		if n == name {
 			return true
 		}
 		s, ok := serverPattern(n)
-		if !ok || !strings.HasPrefix(name, mcp.Prefix) {
+		if !ok || !patterns || !strings.HasPrefix(name, mcp.Prefix) {
 			continue
 		}
 		if server != "" {
