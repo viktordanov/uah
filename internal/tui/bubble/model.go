@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/textarea"
-
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/compaction"
@@ -19,6 +17,7 @@ import (
 	"github.com/viktordanov/uah/internal/images/clipboard"
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/tui/composer"
 	"github.com/viktordanov/uah/internal/tui/render"
 	"github.com/viktordanov/uah/internal/tui/state"
 	"github.com/viktordanov/uah/internal/tui/term"
@@ -110,7 +109,7 @@ type Model struct {
 	cache *render.Cache
 	// theme is the cache's theme, for what uah prints after the TUI.
 	theme    render.Theme
-	composer textarea.Model
+	composer composer.Composer
 	w, h     int
 
 	sess     *session.Session
@@ -277,9 +276,8 @@ func (m Model) Update(msg term.Msg) (term.Model, term.Cmd) {
 	case state.UsageLoaded, state.CacheLoaded, state.Copied, state.DiffShown, state.ReviewTargetsLoaded, state.PromptsLoaded:
 		return m.dispatch(msg)
 	}
-	cmd := m.updateComposer(msg)
 
-	return m, cmd
+	return m, nil
 }
 
 func (m Model) onOpened(msg openedMsg) (term.Model, term.Cmd) {

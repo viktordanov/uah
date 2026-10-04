@@ -52,7 +52,9 @@ uah is a pure core with well-organized infrastructure around it, not layered DDD
 | `internal/tui/state` | The pure TUI model: a reducer from events and intents to state and effects. No I/O. |
 | `internal/tui/render` | Pure drawing of state to lines, with a per-item cache. |
 | `internal/tui/render/markdown` | The model's Markdown as terminal lines; a growing message re-renders only its last block. Pure. |
-| `internal/tui/bubble` | The Bubble Tea shell: keys to intents, effects to commands, and frames. |
+| `internal/tui/composer` | The prompt input: a multi-line editor with textarea's key map, word wrap by cells and grapheme clusters, dynamic height then scroll, and the real cursor's place. Pure. |
+| `internal/tui/term` | uah's terminal layer: the message, command, and key types, the event loop that runs the TUI's model, the line renderer, and the terminal's modes (raw mode, the alt screen, queries, ctrl+g's release, restore on a panic or a signal). Only `term/uv.go` imports ultraviolet, for its input decoder. |
+| `internal/tui/bubble` | The TUI's shell on `term`: keys to intents, effects to commands, and frames. |
 | `internal/app` | Session setup: `Resolve` picks settings from flags, the resumed session, the configuration, and defaults with no I/O; `Explain` reports each effective value and its source; `Setup` loads files and builds the engine; `Doctor` runs the same steps as checks. |
 | `cmd/uah` | The CLI: flags, `exec` (also `run`), `resume`, `sessions`, `hooks`, `context`, `config`, `doctor`, `mcp`, `models`, `usage`, `prompts`, `completion`, and the TUI launcher. |
 | `testing` | Test support only: `harnesstest` (uagent's fake runner, the real `uah-core-runner`, `RunnerEngine`, a test-only engine that spawns either, isolated state, and `IsolatedMain` for a package's `TestMain`), `fakellm` (a scripted Responses API), `mcpserver` (a stdio MCP server), and `oauthserver` (an MCP server behind a small OAuth authorization server). |
@@ -70,13 +72,13 @@ uah-core (`github.com/viktordanov/uah-core`) is uah's own runtime: the coordinat
 
 These rules hold for the code that is not test code. `go list -f '{{.ImportPath}}: {{.Imports}}' ./...` shows the graph.
 
-1. **Leaves import no uah package:** `cmdparse`, `config/tomledit`, `engine/codexauth`, `goal`, `history`, `home`, `images`, `instructions`, `llmcall`, `patch`, `rules`, `sandbox`, `sessionfile`, `systemskills`, and `tui/render/markdown`.
+1. **Leaves import no uah package:** `cmdparse`, `config/tomledit`, `engine/codexauth`, `goal`, `history`, `home`, `images`, `instructions`, `llmcall`, `patch`, `rules`, `sandbox`, `sessionfile`, `systemskills`, `tui/composer`, and `tui/render/markdown`.
 2. **Domain packages import only leaves and each other:** `approval`, `hooks`, `mcp`, `compaction`, `contextprep`, `contextusage`, `gitdiff`, `codereview`, `review`, `models`, `usage`, `usershell`, `images/clipboard`, and `config`. None of them imports `engine`, `session`, `app`, or `tui`.
 3. **`internal/engine` is the seam:** it imports domain types, and never an engine implementation, `session`, or `app`.
 4. **`internal/session` imports the seam and domain packages,** never `engine/embedded`, `config`, `app`, or `tui`. It reaches the engine only through `engine.Engine`.
 5. **`internal/engine/embedded` implements the seam.** It imports the seam and domain packages. Only `app` and the development harnesses (`compaction/evalrun`, `tools/perf`) import it.
 6. **`internal/agents` and `internal/store` build on `session` and the seam.** `app` and `cmd/uah` use them, and `home/migrate` uses `store` to copy the index.
-7. **The TUI goes one way:** `tui/state` imports `session`, the seam's event types, and domain types; `tui/render` imports `tui/state` and those types; `tui/bubble` imports both and the packages that do I/O. `state` never imports `render` or `bubble`, and `render` never imports `bubble`.
+7. **The TUI goes one way:** `tui/state` imports `session`, the seam's event types, and domain types; `tui/render` imports `tui/state` and those types; `tui/bubble` imports both, `tui/composer`, `tui/term`, and the packages that do I/O. `state` never imports `render` or `bubble`, and `render` never imports `bubble`. `tui/term` imports no other uah package, and only its `uv.go` imports ultraviolet; nothing imports Bubble Tea.
 8. **Only `internal/app` and `cmd/uah` wire:** `app` may import any package under `internal` except `tui`, and `cmd/uah` may import any. Nothing under `internal` imports `app` or `cmd`.
 9. **`testing` and `tools` stay outside the product:** they may import `internal`, and no product package imports them.
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/images"
 	"github.com/viktordanov/uah/internal/images/clipboard"
+	"github.com/viktordanov/uah/internal/tui/composer"
 	"github.com/viktordanov/uah/internal/tui/state"
 	"github.com/viktordanov/uah/internal/tui/term"
 )
@@ -95,9 +96,9 @@ func (m Model) onPaste(msg term.PasteMsg) (term.Model, term.Cmd) {
 			return m.dispatch(state.AttachFile{Path: path, Text: msg.Content})
 		}
 	}
-	cmd := m.updateComposer(msg)
+	m.composer.Paste(msg.Content)
 
-	return m, cmd
+	return m, nil
 }
 
 // eatPlaceholder makes backspace at the end of an image's placeholder
@@ -118,7 +119,7 @@ func (m *Model) eatPlaceholder() {
 	for _, img := range m.st.Attached {
 		if strings.HasSuffix(before, img.Label) {
 			for range len([]rune(img.Label)) - 1 {
-				m.updateComposer(term.KeyPressMsg{Code: term.KeyBackspace})
+				m.composer.Press(composer.Key{Name: "backspace"})
 			}
 
 			return

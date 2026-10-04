@@ -2,6 +2,7 @@ package bubble
 
 import (
 	"github.com/viktordanov/uah/internal/approval"
+	"github.com/viktordanov/uah/internal/tui/composer"
 	"github.com/viktordanov/uah/internal/tui/state"
 	"github.com/viktordanov/uah/internal/tui/term"
 )
@@ -173,7 +174,7 @@ func (m Model) onKey(msg term.KeyPressMsg) (term.Model, term.Cmd) { //nolint:goc
 // typeKey gives the key to the composer.
 func (m Model) typeKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	draft := m.composer.Value()
-	cmd := m.updateComposer(msg)
+	cmd := m.composerAction(m.composer.Press(composer.Key{Name: msg.String(), Text: msg.Text}))
 	if next := m.composer.Value(); next != draft {
 		model, effects := m.dispatch(state.DraftChanged{Draft: next})
 
