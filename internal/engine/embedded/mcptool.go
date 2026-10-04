@@ -16,6 +16,7 @@ import (
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // The remote job plan an MCP call runs as (see docs/design/mcp.md).
@@ -73,6 +74,9 @@ type mcpGate struct {
 	approved func(name string) bool
 	// yolo, when set, reports yolo mode, where every tool runs unasked.
 	yolo func() bool
+	// servers, when set, reports the servers the resource tools may reach
+	// (the tool policy's, toolpolicy.Policy.AllowsServer); nil: every one.
+	servers func(server string) bool
 }
 
 // withMCP adds the tools the request does not disallow, and with
@@ -108,7 +112,7 @@ func (r mcpRegistry) Resolve(name string) (tool.Translator, bool) {
 		// Offered or not, it resolves, so stored results still read.
 		offered := slices.ContainsFunc(r.resources, func(d tool.Definition) bool { return d.Tool.Name == name })
 
-		return resourceTranslator{name: name, offered: offered}, true
+		return resourceTranslator{name: name, offered: offered, servers: r.gate.servers}, true
 	}
 	if !strings.HasPrefix(name, mcp.Prefix) {
 		return nil, false
@@ -211,6 +215,7 @@ func (g mcpGate) alwaysAllowed(name string) bool {
 type resourceTranslator struct {
 	name    string
 	offered bool
+	servers func(string) bool
 }
 
 func (t resourceTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.CallStatus {
@@ -220,6 +225,9 @@ func (t resourceTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.
 	plan, err := resourcePlan(t.name, call.Arguments)
 	if err != nil {
 		return tool.ErrorStatus(err.Error(), 0)
+	}
+	if t.servers != nil && (plan.Server == "" || !t.servers(plan.Server)) {
+		return tool.ErrorStatus("name an MCP server that the tool policy allows as a whole (mcp__<server>__*); for this server, "+toolpolicy.Refused, 0)
 	}
 
 	return submitMCP(plan)(ctx)

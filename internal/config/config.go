@@ -12,6 +12,7 @@ import (
 	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // Config holds defaults below flags, the environment, and a resumed session.
@@ -67,6 +68,9 @@ type Config struct {
 	Context Context `toml:"context"`
 	// Tools turns tools on or off, in Codex's [tools] table.
 	Tools Tools `toml:"tools"`
+	// Skills turns skills on or off: uah's enabled key in Codex's [skills]
+	// table.
+	Skills Skills `toml:"skills"`
 	// Features turns features on or off, in Codex's [features] table.
 	Features Features `toml:"features"`
 	// Goals configures /goal, in Codex's [goals] table.
@@ -143,6 +147,22 @@ type Tools struct {
 	// (request_user_input), as Codex's key: on by default, where a user can
 	// answer it.
 	ExperimentalRequestUserInput ToolToggle `toml:"experimental_request_user_input"`
+	// Allow are the only tools the model may use (internal/toolpolicy):
+	// unset allows every tool, and an empty list none. Each file's list
+	// narrows the others', so no layer widens another's.
+	Allow *[]string `toml:"allow"`
+	// Deny are tools the model may never use; every file's add up.
+	Deny []string `toml:"deny"`
+	// within are the files' allowlists Allow was narrowed from
+	// (toolpolicy.Policy.Within), set by merge.
+	within [][]string
+}
+
+// ToolPolicy is the [tools] allow and deny lists as a policy.
+func (c Config) ToolPolicy() toolpolicy.Policy { return c.Tools.policy() }
+
+func (t Tools) policy() toolpolicy.Policy {
+	return toolpolicy.Policy{Allow: listOf(t.Allow), Deny: t.Deny, Within: t.within}
 }
 
 // ToolToggle is Codex's { enabled = … } for one tool.
@@ -157,6 +177,16 @@ func (c Config) RequestUserInputEnabled() bool {
 
 	return e == nil || *e
 }
+
+// Skills is the [skills] table.
+type Skills struct {
+	// Enabled discovers skills and offers them through SkillUse (true by
+	// default); off, the prompt lists none.
+	Enabled *bool `toml:"enabled"`
+}
+
+// SkillsEnabled reports whether skills are on (true by default).
+func (c Config) SkillsEnabled() bool { return c.Skills.Enabled == nil || *c.Skills.Enabled }
 
 // Features is Codex's [features] table, with the one feature uah reads.
 type Features struct {

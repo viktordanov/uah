@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/viktordanov/uah-core/harness/tool"
+
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/review"
@@ -27,9 +29,10 @@ const maxReviewOutput = 1 << 20
 // reviewer's: in the read-only sandbox, without network, with the
 // environment policy, and with a temporary directory of the reviewer's own
 // (operations/<session>/review-tmp), the only place it can write. Without a
-// configured or available sandbox the reviewer gets no commands.
+// configured or available sandbox, or under a tool policy that does not
+// allow Bash, the reviewer gets no commands.
 func (w *wiring) reviewCommands(req core.Request) review.Runner {
-	if w.e.cfg.Sandbox == nil || req.Workspace == "" {
+	if w.e.cfg.Sandbox == nil || req.Workspace == "" || !w.e.cfg.Tools.Allows(tool.BashName) {
 		return nil
 	}
 	p := sandbox.Policy{

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -142,4 +143,39 @@ func TestShellResolvesItsDirectory(t *testing.T) {
 	resolved, err := filepath.EvalSymlinks(real)
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(resolved, "sandbox"), filepath.Dir(path))
+}
+
+// TestScriptMode reads the mode back from a script's header, also from the
+// script of a policy that has since changed, and nothing from any other
+// file.
+func TestScriptMode(t *testing.T) {
+	dir := t.TempDir()
+	full, err := sandbox.Shell(dir, sandbox.Policy{Mode: sandbox.FullAccess, TempDir: filepath.Join(t.TempDir(), "tmp")}, sandbox.EnvPolicy{}, "/bin/sh")
+	require.NoError(t, err)
+	mode, ok := sandbox.ScriptMode(full)
+	assert.True(t, ok)
+	assert.Equal(t, sandbox.FullAccess, mode)
+
+	other := filepath.Join(dir, "sh-other")
+	require.NoError(t, os.WriteFile(other, []byte("#!/bin/sh\nexec /bin/sh \"$@\"\n"), 0o700))
+	fifo := filepath.Join(dir, "sh-fifo")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+	for _, path := range []string{"/bin/sh", other, filepath.Join(dir, "sh-gone"), fifo} {
+		_, ok := sandbox.ScriptMode(path)
+		assert.False(t, ok, path)
+	}
+
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: t.TempDir()}
+	if _, err := p.Wrap([]string{"/bin/sh"}); err != nil {
+		t.Skipf("no sandbox here: %v", err)
+	}
+	old, err := sandbox.Shell(dir, p, sandbox.EnvPolicy{}, "/bin/sh")
+	require.NoError(t, err)
+	p.WritableRoots = []string{t.TempDir()}
+	current, err := sandbox.Shell(dir, p, sandbox.EnvPolicy{}, "/bin/sh")
+	require.NoError(t, err)
+	require.NotEqual(t, old, current, "a changed policy gets a new script")
+	mode, ok = sandbox.ScriptMode(old)
+	assert.True(t, ok)
+	assert.Equal(t, sandbox.WorkspaceWrite, mode)
 }

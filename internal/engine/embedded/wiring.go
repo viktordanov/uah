@@ -48,12 +48,17 @@ func (b backend) Start(ctx context.Context, l harness.Launch) (harness.Process, 
 		tier: start.opts.ServiceTier, adaptive: start.opts.AdaptiveEffort, settings: start.opts.Settings,
 		mode: newModeCell(start.opts, b.e.cfg),
 	}
+	b.e.runs.started()
 	a, err := w.start(ctx, start.opts)
 	if err != nil {
+		b.e.runs.ended()
 		err = errors.Join(err, w.cleanup())
 		_ = l.Stdout.Close()
 
 		return nil, err
+	}
+	if hook := onStart.Load(); hook != nil {
+		(*hook)(w, a)
 	}
 
 	return a, nil
@@ -91,6 +96,9 @@ type wiring struct {
 	// bashTools, when set, keeps Bash's definition in each model request
 	// in step with the mode.
 	bashTools func([]llm.Tool) []llm.Tool
+	// opAllowed, under a tool policy, reports whether an operation the
+	// coordinator adds may run (policyOperations).
+	opAllowed func(operation.Operation) bool
 	closers   []closer
 }
 
@@ -181,7 +189,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if err := w.effortUpdates(ctx, sw, s, req); err != nil {
 		return nil, err
 	}
-	operations := operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx))
+	operations := withPolicyOperations(operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx)), w.opAllowed)
 	first := compaction.Trigger("")
 	switch {
 	case opts.Clear:
@@ -365,6 +373,7 @@ func (w *wiring) launch(ctx context.Context, a *agent, coord coordinator.Coordin
 			err = oerr
 		}
 		w.finish(a, err, closers)
+		w.e.runs.ended()
 	}()
 }
 

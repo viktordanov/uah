@@ -12,6 +12,7 @@ import (
 	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/patch"
 	"github.com/viktordanov/uah/internal/rules"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 var _ engine.Scoper = (*Engine)(nil)
@@ -66,7 +67,7 @@ func newScope(s engine.Scope) *scope {
 
 // offers reports whether the scope offers the tool.
 func (s *scope) offers(name string) bool {
-	return s == nil || s.Tools == nil || matchTool(s.Tools, name)
+	return s == nil || s.Tools == nil || toolpolicy.Match(s.Tools, name, "")
 }
 
 // disallow adds the built-in tools the scope does not offer to the
@@ -99,13 +100,13 @@ func (s *scope) mcpTools(tools []mcp.Tool) []mcp.Tool {
 		return tools
 	}
 
-	return slices.DeleteFunc(slices.Clone(tools), func(t mcp.Tool) bool { return !s.offers(t.Name) })
+	return slices.DeleteFunc(slices.Clone(tools), func(t mcp.Tool) bool { return !toolpolicy.Match(s.Tools, t.Name, t.Server) })
 }
 
 // approvesTool reports whether the scope approved the MCP tool in advance;
 // the MCP gate then runs it as with approval_mode approve.
 func (s *scope) approvesTool(name string) bool {
-	return s != nil && matchTool(s.Approve, name)
+	return s != nil && toolpolicy.Match(s.Approve, name, "")
 }
 
 // approves reports whether a command or a patch is approved in advance:
@@ -147,20 +148,4 @@ func (s *scope) ask(next approval.Ask, mode func() approval.Mode) approval.Ask {
 // approve anything (engine.Scope.NeverAsk).
 func neverAsk(context.Context, approval.Prompt) approval.Answer {
 	return approval.DeclineBecause("this session never asks for approval; stay within the sandbox.")
-}
-
-// matchTool reports whether a tool name is in the list: by its name, or,
-// for an MCP tool, by its server's mcp__<server> or mcp__<server>__*.
-func matchTool(list []string, name string) bool {
-	for _, n := range list {
-		server := strings.TrimSuffix(strings.TrimSuffix(n, "*"), "__")
-		switch {
-		case n == name:
-			return true
-		case strings.HasPrefix(n, mcp.Prefix) && strings.Count(server, "__") == 1 && strings.HasPrefix(name, server+"__"):
-			return true
-		}
-	}
-
-	return false
 }

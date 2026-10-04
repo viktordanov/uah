@@ -1,6 +1,7 @@
 package compaction_test
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -157,4 +158,41 @@ func TestCoverableKeeping(t *testing.T) {
 	assert.Equal(t, 4, compaction.CoverableKeeping(input, 2))
 	assert.Equal(t, 1, compaction.CoverableKeeping(input, 3), "the user's message is the last covered item")
 	assert.Equal(t, 0, compaction.CoverableKeeping(input, 4), "fewer calls than asked: nothing to cover")
+}
+
+// TestApply_ToolOutputsRenderedAgain: a resumed run renders each tool output
+// again from its operation, with its own version and configuration, so an
+// output can change, as when a new sandbox policy drops a hint. A record
+// still applies by its shape; one from before Shape checks its hash, and
+// any change to the items themselves is a mismatch.
+func TestApply_ToolOutputsRenderedAgain(t *testing.T) {
+	history := []llm.Item{
+		msg(llm.RoleSystem, "sys"), msg(llm.RoleUser, "first"), call("a"),
+		result("a", "denied\nuah: the workspace-write sandbox likely blocked this."), msg(llm.RoleAssistant, "done"),
+	}
+	rec, err := compaction.NewRecord(history, "the summary", compaction.TriggerManual, "m", time.Now())
+	require.NoError(t, err)
+	require.NotEmpty(t, rec.Shape)
+	rendered := slices.Clone(history)
+	rendered[3] = result("a", "denied")
+
+	got, err := compaction.Apply(rendered, rec)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"system: sys", "user: first", "user: " + compaction.SummaryPrefix + "\nthe summary"}, texts(got))
+
+	legacy := rec
+	legacy.Shape = ""
+	_, err = compaction.Apply(history, legacy)
+	require.NoError(t, err, "a record from before Shape applies by its hash")
+	_, err = compaction.Apply(rendered, legacy)
+	require.ErrorIs(t, err, compaction.ErrMismatch)
+
+	edited := slices.Clone(history)
+	edited[1] = msg(llm.RoleUser, "edited")
+	for _, r := range []compaction.Record{rec, legacy} {
+		_, err = compaction.Apply(edited, r)
+		require.ErrorIs(t, err, compaction.ErrMismatch, "a changed message")
+		_, err = compaction.Apply(slices.Delete(slices.Clone(history), 2, 4), r)
+		require.ErrorIs(t, err, compaction.ErrMismatch, "a call left out")
+	}
 }

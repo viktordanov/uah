@@ -19,6 +19,9 @@ sandbox_mode                                      read-only                     
 approval_policy                                   on-request                    default
 model_context_window                              272000                        default
 instructions.enabled                              true                          default
+skills.enabled                                    true                          default
+tools.allow                                       every tool                    default
+tools.deny                                        []                            default
 approvals_reviewer                                user                          default
 review.model                                      codex-auto-review             default
 review.effort                                     low                           default

@@ -27,7 +27,7 @@ var webSearchTool = llm.Tool{Type: llm.ToolHosted, Name: "web_search"}
 // offers it (a scope without "web_search", such as /review's reviewer's,
 // leaves it out, as Codex turns search off for a review).
 func (w *wiring) hostedTools(provider, sessionID string) []llm.Tool {
-	if !w.e.cfg.WebSearch || !w.e.scope(sessionID).offers(webSearchTool.Name) {
+	if !w.e.cfg.WebSearch || !w.e.scope(sessionID).offers(webSearchTool.Name) || !w.e.cfg.Tools.Allows(webSearchTool.Name) {
 		return nil
 	}
 	if p, err := w.e.provider(provider); err != nil || !p.WebSearch {
@@ -41,7 +41,7 @@ func (w *wiring) hostedTools(provider, sessionID string) []llm.Tool {
 // web search, so its turn requests get them back; nil elsewhere, and for a
 // session whose scope leaves web search out.
 func (w *wiring) searchLog(provider, sessionID string) (*searchLog, error) {
-	if p, err := w.e.provider(provider); err != nil || !p.WebSearch || !w.e.scope(sessionID).offers(webSearchTool.Name) {
+	if p, err := w.e.provider(provider); err != nil || !p.WebSearch || !w.e.scope(sessionID).offers(webSearchTool.Name) || !w.e.cfg.Tools.Allows(webSearchTool.Name) {
 		return nil, nil //nolint:nilnil // no log: the provider has no web search
 	}
 	l, err := openSearchLog(w.l.SessionsDir, sessionID)

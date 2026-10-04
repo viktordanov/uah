@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/viktordanov/uah/internal/goal"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // Where a session was started. Codex hides scripted sessions from its resume
@@ -72,6 +73,10 @@ type Sidecar struct {
 	Queued []string `json:"queued,omitempty"`
 	// Goal is the session's goal (/goal), restored on resume.
 	Goal *goal.Goal `json:"goal,omitempty"`
+	// Tools is the tool policy the session last ran under, when it had
+	// one: a resume narrows its own policy with it, so resuming never
+	// widens a session's tools (internal/toolpolicy).
+	Tools *toolpolicy.Policy `json:"tools,omitempty"`
 }
 
 // RemoveSidecar deletes a session's sidecar, for a session that never ran.

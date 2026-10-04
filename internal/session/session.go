@@ -23,6 +23,7 @@ import (
 	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 	"github.com/viktordanov/uah/internal/usershell"
 )
 
@@ -84,6 +85,9 @@ type Options struct {
 	// Goals configures /goal ([goals]). A subagent's session (Parent set)
 	// never has a goal.
 	Goals goal.Settings
+	// Tools is the tool policy the engine applies, recorded in the
+	// sidecar when it restricts anything, so a resume keeps it.
+	Tools toolpolicy.Policy
 }
 
 // Session is safe to use from any goroutine. All state lives on one internal
@@ -128,6 +132,9 @@ type Session struct {
 	held        []core.UserInput
 	hooks       hookState
 	interactive bool
+	// policy is Options.Tools: a call it does not allow was refused before
+	// it ran, so no PostToolUse hook sees it.
+	policy toolpolicy.Policy
 	// stream is Options.Stream, for each run.
 	stream bool
 	// approvals are the pending approvals' reply channels by ID.
@@ -180,7 +187,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 		ctx: runCtx, stop: stop, done: make(chan struct{}),
 		settings: opts.Settings, state: StateIdle, sent: map[string]bool{}, afterTool: map[string]bool{},
 		hooks:       hookState{runner: opts.Hooks, resumed: opts.Resumed, tools: map[string]core.ToolCalled{}},
-		interactive: opts.Interactive, stream: opts.Stream, approvals: map[string]pending{}, questions: map[string]chan engine.Answers{}, askOverride: opts.Ask,
+		interactive: opts.Interactive, stream: opts.Stream, approvals: map[string]pending{}, questions: map[string]chan engine.Answers{}, askOverride: opts.Ask, policy: opts.Tools,
 		sessionsDir: opts.SessionsDir, shell: opts.Shell, shells: map[string]context.CancelFunc{},
 		// A resumed session that never ran has no first message yet.
 		firstPromptPending: !opts.Resumed || opts.FirstPrompt == "",
@@ -200,6 +207,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 			}
 		}
 		s.saveSettings(opts.Settings)
+		s.saveTools(opts.Tools)
 		s.noteOpened(opts.FirstPrompt)
 		s.restoreQueue(sc, scErr)
 	}

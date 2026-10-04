@@ -31,6 +31,7 @@ func (r *Runner) exec(ctx context.Context, h Hook, in Input) Result {
 
 		return res
 	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", h.Command)
@@ -44,10 +45,18 @@ func (r *Runner) exec(ctx context.Context, h Hook, in Input) Result {
 	cmd.WaitDelay = time.Second
 	started := time.Now()
 	err = cmd.Run()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		// The hook exited 0, but a process it left behind kept its output
+		// open past WaitDelay: what it wrote by then is its answer, so a
+		// deny it printed still blocks.
+		err = nil
+	}
 	res.Duration = time.Since(started)
 	res.Stdout = stdout.String()
 	res.ExitCode = cmd.ProcessState.ExitCode()
 	switch {
+	case parent.Err() != nil:
+		res.Outcome, res.Reason = OutcomeError, "stopped before it finished"
 	case ctx.Err() != nil:
 		res.Outcome, res.Reason = OutcomeError, fmt.Sprintf("timed out after %s", timeout)
 	case err == nil:

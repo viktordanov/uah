@@ -23,7 +23,7 @@ This package holds everything about compaction that does not depend on the engin
 <!-- memoria:section id="rewrite" files="compaction.go keep.go elide.go" -->
 ## The request rewrite
 
-The runner's context builder produces every model request: the system message, then the history in order. The builder is append-only after each turn, so the first items of a request stay the same on every later request and after a resume. A compaction `Record` covers the first `Covered` items after the system message. It covers everything except the user messages at the end of the request, because they are new input and follow the summary, as in Codex, and, for a summary, the last tool calls it keeps (`CoverableKeeping`, five by default).
+The runner's context builder produces every model request: the system message, then the history in order. The builder is append-only after each turn, so the first items of a request stay the same on every later request and after a resume, where only their tool outputs may be rendered differently (see [Persistence and resume](#persistence-and-resume)). A compaction `Record` covers the first `Covered` items after the system message. It covers everything except the user messages at the end of the request, because they are new input and follow the summary, as in Codex, and, for a summary, the last tool calls it keeps (`CoverableKeeping`, five by default).
 
 `Apply` rewrites a request with a record:
 
@@ -88,9 +88,9 @@ Codex `rust-v0.159.1` compacts on its OpenAI providers by sending the turn's req
 <!-- memoria:section id="persistence" files="log.go compaction.go rewind.go" -->
 ## Persistence and resume
 
-A compaction is one JSON line in `sessions/<id>.compaction.jsonl`, next to the runner's session file: the number of covered items, a SHA-256 hash of them, the summary, the ledger, the remote item, the elided calls, the trigger, the model, the time, and the stats. The last readable line applies. An elision pass writes a line too: the record before it with more elided calls. `Log.Append` syncs the file, and it ends a line that a crash cut short before it writes, so the new line stays readable.
+A compaction is one JSON line in `sessions/<id>.compaction.jsonl`, next to the runner's session file: the number of covered items, two SHA-256 fingerprints of them (`Shape` and `Hash`), the summary, the ledger, the remote item, the elided calls, the trigger, the model, the time, and the stats. The last readable line applies. An elision pass writes a line too: the record before it with more elided calls. `Log.Append` syncs the file, and it ends a line that a crash cut short before it writes, so the new line stays readable.
 
-A resumed run replays the session file into a fresh builder, which produces the same covered items, so the record applies again. Before each request, `Apply` checks the hash. When the history does not match (the session file was changed outside uah), the engine sends the full history and reports the mismatch once. A line that does not decode is skipped and logged, so one bad line does not stop a session from resuming.
+A resumed run replays the session file into a fresh builder, which produces the same covered items, so the record applies again. The runner renders each tool output again from its operation, though, with the tools of the version and configuration that resume: a new output format, or a sandbox hint, can change an output while the history stays the same. So `Apply` checks the record's `Shape`, a hash of the covered items with each tool result by its call alone. `Hash`, of the items with their outputs, is checked only for a record written before `Shape`, and still written for the versions before it. When the history does not match (the session file was changed outside uah), the engine reports the mismatch once and estimates the full history, since the last response measured the compacted one: over the automatic limit, it compacts again from scratch; under it, the full history goes out. A line that does not decode is skipped and logged, so one bad line does not stop a session from resuming.
 
 The log is also the source for a reloaded transcript: `session.Load` adds each record as an `engine.Compacted` event to the run it happened in. The runner's `events.jsonl` stays as the runner wrote it.
 
@@ -139,7 +139,7 @@ The TUI uses the last response's input plus output tokens as `used`. A compactio
 <!-- memoria:section id="failures" files="summary.go log.go" -->
 ## Failures
 
-A failed compaction never loses the request: it goes out uncompacted, and the engine reports the failure (`engine.Compacted` with `Err`).
+A failed compaction never loses the request: it goes out uncompacted, and the engine reports the failure (`engine.Compacted` with `Err`). The exception is a request estimated to be over the model's window, which the provider can only refuse: it stops the run with the failure instead.
 
 | Failure | What happens |
 | --- | --- |
@@ -147,12 +147,14 @@ A failed compaction never loses the request: it goes out uncompacted, and the en
 | The model answers without text | Reported as a failure (`llmcall.ErrNoText`); Codex would store "(no summary available)" and drop the history, which loses more. |
 | The summary input overflows the window | Trimmed and retried, as in [The summary call](#the-summary-call). |
 | The provider answers a remote compaction without an item, or fails | The local summary runs instead, as in Codex. |
+| The history of a remote compaction is estimated to be over the window | The local summary runs instead, with no remote call: the provider would refuse the history whole, and the summary trims it. |
 | Automatic compaction fails three times in a row | Automatic compaction stops for the rest of the run; `/compact` still works. |
 | An automatic compaction leaves the context above the limit | Reported as a warning (`engine.Compacted.Warning`); automatic compaction stops for the rest of the run. |
 | `experimental_compact_prompt_file` is missing or empty | The session does not start, as in Codex. |
 | The user interrupts during the summary | The call is canceled, reported as interrupted, and no request goes out. |
 | A `PreCompact` hook blocks it | Reported as stopped; the request goes out uncompacted. |
-| The history does not match the saved record | The full history goes out; the mismatch is reported once. |
+| The history does not match the saved record | Reported once; the full history is estimated, and compacted again when it is over the limit, else sent. |
+| A compaction failed, and the request is estimated to be over the window | The request does not go out; the run ends with the error, which names the estimate, the window, and the failure. |
 | The log has an unreadable line | The line is skipped and logged. |
 <!-- /memoria:section -->
 
@@ -180,6 +182,6 @@ A failed compaction never loses the request: it goes out uncompacted, and the en
 
 - **Another summary strategy.** A `Summarizer` takes the history as the model sees it and returns the summary and its usage. The engine's compactor uses `Summarize` with the configured model and prompt unless its `summarize` field is set, so another strategy plugs in there without touching the rewrite. Add it to `evalrun.Strategies` to measure it against the others.
 - **An opaque compaction.** A provider item that the runner cannot represent goes in `Record.Remote`, with a transport that swaps the placeholder for it, as the remote compaction does.
-- **Another rewrite.** `Record` and `Apply` are pure functions of the builder's items. A different rewrite keeps the same contract: a record covers a prefix of the history, and its hash guards it.
+- **Another rewrite.** `Record` and `Apply` are pure functions of the builder's items. A different rewrite keeps the same contract: a record covers a prefix of the history, and its shape guards it.
 - **Hooks.** The engine's `BeforeCompact` callback runs as each compaction starts; the `PreCompact` hook attaches there.
 <!-- /memoria:section -->

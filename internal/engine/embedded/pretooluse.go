@@ -96,6 +96,11 @@ func (t hookedTranslator) decide(ctx context.Context, call llm.ToolCall) submit 
 	if d.Block {
 		return refuse(tool.CallStatus{Error: "blocked by a PreToolUse hook: " + d.Reason})
 	}
+	if ctx.Err() != nil {
+		// An interrupt stopped the hooks before they decided: the call
+		// never runs unchecked.
+		return refuse(tool.CallStatus{Error: "the run stopped before the PreToolUse hooks finished; the call did not run"})
+	}
 	if d.Allow {
 		ctx = context.WithValue(ctx, hookAllowKey{}, true)
 	}

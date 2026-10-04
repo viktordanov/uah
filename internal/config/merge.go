@@ -37,6 +37,10 @@ func merge(base, over Config) Config {
 	if over.Tools.ExperimentalRequestUserInput.Enabled != nil {
 		base.Tools.ExperimentalRequestUserInput.Enabled = over.Tools.ExperimentalRequestUserInput.Enabled
 	}
+	mergeToolPolicy(&base.Tools, over.Tools)
+	if over.Skills.Enabled != nil {
+		base.Skills.Enabled = over.Skills.Enabled
+	}
 	if over.Features.Goals != nil {
 		base.Features.Goals = over.Features.Goals
 	}
@@ -73,6 +77,28 @@ func merge(base, over Config) Config {
 	base.Projects = mergeMap(base.Projects, over.Projects, func(_, b Project) Project { return b })
 
 	return base
+}
+
+// mergeToolPolicy narrows the tool policy with a layer's: the allowlists
+// intersect and the denylists add up, so a layer never widens it.
+func mergeToolPolicy(base *Tools, over Tools) {
+	p := base.policy().Narrow(over.policy())
+	if p.Allow != nil {
+		base.Allow = &p.Allow
+	}
+	base.Deny, base.within = p.Deny, p.Within
+}
+
+// listOf is an allowlist as set: nil when unset, never nil when set.
+func listOf(allow *[]string) []string {
+	if allow == nil {
+		return nil
+	}
+	if *allow == nil {
+		return []string{}
+	}
+
+	return *allow
 }
 
 func set(dst *string, v string) {

@@ -113,3 +113,41 @@ func TestConfigLayers(t *testing.T) {
 		require.ErrorContains(t, err, `unknown key "efort"`)
 	})
 }
+
+// TestConfigLayers_ToolPolicy: every file's [tools] allow narrows the
+// others', whatever its place in the merge order, and the deny lists add
+// up; a file without the key keeps the list, and an empty list allows none.
+func TestConfigLayers_ToolPolicy(t *testing.T) {
+	user, ws := layerHome(t)
+	write(t, user, "[tools]\nallow = [\"Bash\", \"mcp__docs__*\", \"apply_patch\"]\ndeny = [\"mcp__docs__write\"]\n[projects.\""+ws+"\"]\ntrusted = true\n")
+	write(t, filepath.Join(config.LayerDir(), "10-a.toml"), "[tools]\nallow = [\"Bash\", \"mcp__docs__read\", \"apply_patch\", \"ViewImage\"]\n")
+	write(t, filepath.Join(config.LayerDir(), "20-b.toml"), "model = \"b\"\n")
+	extra := filepath.Join(t.TempDir(), "extra.toml")
+	write(t, extra, "[tools]\nallow = [\"Bash\", \"mcp__docs__read\", \"web_search\"]\ndeny = [\"Bash\"]\n")
+	t.Setenv("UAH_EXTRA_CONFIG", extra)
+	write(t, config.ProjectFile(ws), "[tools]\nallow = [\"Bash\", \"mcp__docs__*\", \"spawn_agent\"]\n")
+
+	cfg, _, err := config.Load(user, ws)
+	require.NoError(t, err)
+	p := cfg.ToolPolicy()
+	assert.Equal(t, []string{"Bash", "mcp__docs__read"}, p.Allow, "no file added a tool another left out")
+	assert.Equal(t, []string{"mcp__docs__write", "Bash"}, p.Deny)
+
+	write(t, config.ProjectFile(ws), "[tools]\nallow = []\n")
+	cfg, _, err = config.Load(user, ws)
+	require.NoError(t, err)
+	assert.Equal(t, []string{}, cfg.ToolPolicy().Allow, "an empty list allows none")
+
+	write(t, config.ProjectFile(ws), "[tools]\ndeny = [\"Edit\"]\n")
+	_, _, err = config.Load(user, ws)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), config.ProjectFile(ws)+`: [tools]: unknown tool "Edit" (uah calls it apply_patch)`)
+
+	t.Setenv("UAH_EXTRA_CONFIG", "")
+	write(t, config.ProjectFile(ws), "")
+	write(t, filepath.Join(config.LayerDir(), "10-a.toml"), "")
+	write(t, user, "model = \"x\"\n")
+	cfg, _, err = config.Load(user, ws)
+	require.NoError(t, err)
+	assert.False(t, cfg.ToolPolicy().Restricted(), "unset everywhere: every tool")
+}
