@@ -225,3 +225,45 @@ func TestSetup_ToolPolicyUnreadableSidecar(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "its sidecar, which keeps its tool policy, is unreadable")
 }
+
+// TestSetup_ToolPolicyResumeWithPastCalls: a session with past Bash calls
+// resumes under a policy that denies Bash: the recorded calls still load,
+// and the model is no longer offered the tool.
+func TestSetup_ToolPolicyResumeWithPastCalls(t *testing.T) {
+	_, in := setupEnv(t)
+	t.Setenv("OPENAI_API_KEY", "test-key")
+	llm := fakellm.New(t, fakellm.Reply{Commands: []string{"echo before"}}, fakellm.Reply{Text: "ran"}, fakellm.Reply{Text: "resumed"})
+	in.Provider, in.Model, in.BaseURL = "openai", "gpt-test", llm.URL
+	open := func(in app.Inputs) *session.Session {
+		res, err := app.Setup(context.Background(), in, io.Discard)
+		require.NoError(t, err)
+		opts := res.Options
+		opts.Source = session.SourceRun
+		s, err := session.Open(context.Background(), res.Engine, opts)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = s.Close() })
+
+		return s
+	}
+	s := open(in)
+	_, err := s.Submit("run something")
+	require.NoError(t, err)
+	waitFinished(t, s)
+	id := s.ID()
+	require.NoError(t, s.Close())
+
+	in.SessionRef, in.DenyTools = id, []string{"Bash", "ViewImage", "SkillUse"}
+	s = open(in)
+	_, err = s.Submit("again")
+	require.NoError(t, err)
+	waitFinished(t, s)
+	last := lastRequestOf(llm)
+	assert.NotContains(t, last.ToolNames, "Bash")
+	assert.Contains(t, strings.Join(last.ToolOutputs, "\n"), "before", "the past call's result is still in the history")
+}
+
+func lastRequestOf(llm *fakellm.Server) fakellm.Request {
+	reqs := llm.Requests()
+
+	return reqs[len(reqs)-1]
+}

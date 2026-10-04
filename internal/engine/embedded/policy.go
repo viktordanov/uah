@@ -25,9 +25,15 @@ import (
 // sees it.
 
 // policyDisallow adds the built-in tools the policy does not allow to the
-// request's disallowed tools.
+// request's disallowed tools, but for the runner's own (Bash, ViewImage,
+// SkillUse): the runner registers no translator for a disallowed tool,
+// and a resumed session's recorded calls need theirs to load, so those
+// stay registered and policyRegistry hides and refuses them.
 func policyDisallow(p toolpolicy.Policy, disallowed []string) []string {
 	for _, name := range toolpolicy.Builtins {
+		if slices.Contains(runnerTools, name) {
+			continue
+		}
 		if !p.Allows(name) && !slices.Contains(disallowed, name) {
 			disallowed = append(disallowed, name)
 		}
@@ -110,6 +116,9 @@ func exposed(t mcp.Tool) string {
 	return mcp.Prefix + mcp.Sanitize(t.Server) + "__" + mcp.Sanitize(t.Tool)
 }
 
+// runnerTools are the tools the runner's registry defines itself.
+var runnerTools = []string{tool.BashName, tool.ViewImageName, tool.SkillUseName}
+
 // policyRegistry offers only the tools the policy allows and refuses a call
 // to any other name before it reaches the hooks, the approvals, or a job:
 // a call the model was not offered, forced or made up. A name the registry
@@ -148,6 +157,16 @@ func (r policyRegistry) allows(name string) bool {
 	}
 
 	return r.policy.Allows(name)
+}
+
+// Skills are none when the policy does not allow SkillUse, so the prompt
+// lists none.
+func (r policyRegistry) Skills() []tool.Skill {
+	if !r.policy.Allows(tool.SkillUseName) {
+		return nil
+	}
+
+	return r.Registry.Skills()
 }
 
 func (r policyRegistry) StaticDefinitions() []tool.Definition {
