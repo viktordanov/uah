@@ -25,6 +25,7 @@ import (
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/shellenv"
 	"github.com/viktordanov/uah/internal/store"
 	"github.com/viktordanov/uah/internal/toolpolicy"
 	planusage "github.com/viktordanov/uah/internal/usage"
@@ -225,14 +226,9 @@ func instructionFiles(loaded *session.InstructionsLoaded) []string {
 	return loaded.Files
 }
 
-// RealShell is the user's shell for commands: $SHELL, or /bin/sh.
-func RealShell() string {
-	if s := strings.TrimSpace(os.Getenv("SHELL")); s != "" {
-		return s
-	}
-
-	return "/bin/sh"
-}
+// RealShell is the user's shell for commands: $SHELL, else the login
+// shell, else /bin/sh (shellenv.Resolve).
+func RealShell() string { return shellenv.Current(os.Getenv).Path }
 
 // absPolicy makes the policy's paths absolute: the workspace, and writable
 // roots with ~ for the home directory and others relative to the workspace.

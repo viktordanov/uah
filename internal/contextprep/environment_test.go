@@ -146,3 +146,55 @@ func TestShellClaims(t *testing.T) {
 		}
 	}
 }
+
+// TestEnvironmentStripped pins the lines about an environment a service
+// started without the user's: each only in its abnormal case.
+func TestEnvironmentStripped(t *testing.T) {
+	t.Parallel()
+	normal := contextprep.Facts{Shell: "/bin/bash", ShellSource: "env", Locale: "LANG=en_US.UTF-8", GOOS: "linux"}
+	base := contextprep.Environment{}.Prepare(t.Context(), normal)
+	assert.Equal(t, "Commands run in bash (/bin/bash -c) on Linux.", base, "nothing when all is normal")
+	for _, tc := range []struct {
+		name string
+		edit func(*contextprep.Facts)
+		want string
+	}{
+		{"login shell", func(f *contextprep.Facts) { f.ShellSource = "login" }, "$SHELL was unset or not an executable file when uah started, so uah picked your login shell from the user database."},
+		{"default shell", func(f *contextprep.Facts) { f.Shell, f.ShellSource = "/bin/sh", "default" }, "$SHELL was unset or not an executable file when uah started, and the login shell could not be read, so uah fell back to /bin/sh."},
+		{"C locale", func(f *contextprep.Facts) { f.Locale, f.NotUTF8 = "LANG=C", true }, "The locale is not UTF-8 (LANG=C): tools may"},
+		{"no locale", func(f *contextprep.Facts) { f.Locale, f.NotUTF8 = "", true }, "The locale is not UTF-8 (LC_ALL, LC_CTYPE, and LANG unset)"},
+		{"minimal PATH", func(f *contextprep.Facts) { f.MissingPathDirs = []string{"/opt/homebrew/bin", "/home/u/go/bin"} }, "PATH has none of the user's tool directories; these exist: /opt/homebrew/bin, /home/u/go/bin. A tool installed there is not found by name; call it by its full path."},
+	} {
+		f := normal
+		tc.edit(&f)
+		got := contextprep.Environment{}.Prepare(t.Context(), f)
+		assert.Contains(t, got, tc.want, tc.name)
+		plain := f
+		plain.ShellSource, plain.Locale, plain.NotUTF8, plain.MissingPathDirs = "env", "LANG=en_US.UTF-8", false, nil
+		assert.Equal(t, strings.Count(contextprep.Environment{}.Prepare(t.Context(), plain), "\n")+1, strings.Count(got, "\n"), "%s adds one line", tc.name)
+	}
+
+	f := normal
+	f.ShellSource = "login"
+	lines := strings.Split(contextprep.Environment{}.Prepare(t.Context(), f), "\n")
+	assert.True(t, strings.HasPrefix(lines[1], "$SHELL was unset"), "the shell's source follows the first line")
+}
+
+// TestWithEnvironment fills the environment's facts from getenv.
+func TestWithEnvironment(t *testing.T) {
+	t.Parallel()
+	env := map[string]string{"SHELL": "/bin/sh", "LANG": "C", "PATH": "/usr/bin:/bin", "HOME": t.TempDir()}
+	f := contextprep.Facts{Workspace: "/w"}.WithEnvironment(func(k string) string { return env[k] })
+	assert.Equal(t, "/bin/sh", f.Shell)
+	assert.Equal(t, "env", f.ShellSource)
+	assert.Equal(t, "LANG=C", f.Locale)
+	assert.True(t, f.NotUTF8)
+	assert.Equal(t, "/w", f.Workspace)
+
+	env["LANG"] = "en_US.UTF-8"
+	env["SHELL"] = "/nonexistent/shell"
+	f = contextprep.Facts{}.WithEnvironment(func(k string) string { return env[k] })
+	assert.False(t, f.NotUTF8)
+	assert.NotEqual(t, "env", f.ShellSource, "a missing $SHELL is not used")
+	assert.NotEqual(t, "/nonexistent/shell", f.Shell)
+}

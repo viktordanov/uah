@@ -555,12 +555,14 @@ uah finds instruction files the way Codex does: the user's AGENTS.md, then one f
 `--no-instructions` turns this off, and `--no-skills` (or `[skills] enabled = false`) turns the skills off. uah also ships skills of its own (`internal/systemskills`), embedded in the binary and listed after every other skill folder: `uah-customization` explains context preparation and the customization points, and a test holds its description of the module format to the code. Read more: [instructions](internal/instructions/README.md#skills).
 <!-- /memoria:section -->
 
-<!-- memoria:section id="contextprep" files="internal/app/resolve.go internal/config/config.go internal/app/context.go cmd/uah/context.go" -->
+<!-- memoria:section id="contextprep" files="internal/app/resolve.go internal/config/config.go internal/app/context.go cmd/uah/context.go internal/shellenv/shell.go internal/shellenv/env.go internal/app/setup.go" -->
 ### Context preparation
 
 <!-- memoria:import src="internal/contextprep/README.md#summary" -->
 Every new session starts with one developer message of prepared context, before the first user message. This includes a subagent's session. The message has the git branch, the status, and the tracked files. It names the loaded instruction files, so the model does not search for more. It also gives the shell's and the OS's traps, the sandbox's limits and the session's private `$TMPDIR`, and how to size the Bash tool's output. The text comes from Markdown modules: a file under `~/.uah/prompts/context/` replaces the built-in of its path, `~/.uah/prompts/context.d/` and a project's `.uah/context.d/` add modules, and `uah context` shows which apply and why. The system prompt does not change, and the message stays in the session's history, so the prompt cache holds. Resumed and forked sessions get no new message; a fork's first run gets one sentence naming its own `$TMPDIR`, since the copied message names its parent's. Turn it off with `context_preparation = false`, `--no-context-preparation`, or `UAH_CONTEXT_PREPARATION=off`.
 <!-- /memoria:import -->
+
+Commands run in `$SHELL` when it names an executable file, else in the user's login shell from the user database (as Codex reads it, `internal/shellenv`), else in `/bin/sh`. A service that starts uah without the user's environment can leave out `SHELL`, the locale, and the user's tool directories on `PATH`; the environment block then says which shell uah picked, that the locale is not UTF-8, and which tool directories exist but are not on `PATH`. uah changes neither `PATH` nor the locale.
 
 Read more: [context preparation](internal/contextprep/README.md).
 <!-- /memoria:section -->

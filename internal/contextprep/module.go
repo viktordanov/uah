@@ -100,6 +100,15 @@ type When struct {
 	// InstructionsOff is whether loading instruction files is turned off
 	// (--no-instructions, or instructions.enabled = false).
 	InstructionsOff *bool `yaml:"instructions_off"`
+	// ShellSource is where the shell came from: env ($SHELL), login (the
+	// login shell, as $SHELL was unset or not an executable file), or
+	// default (/bin/sh, as neither was usable).
+	ShellSource []string `yaml:"shell_source"`
+	// UTF8 is whether the locale names UTF-8.
+	UTF8 *bool `yaml:"utf8"`
+	// PathMinimal is whether PATH has none of the user's tool directories
+	// that exist.
+	PathMinimal *bool `yaml:"path_minimal"`
 }
 
 // Keys of When and placeholders that share a name.
@@ -113,11 +122,17 @@ const (
 // Shells are the shell families When.Shell names.
 var Shells = []string{famBash, "zsh", "sh", "fish", "nu", "xonsh", "elvish", keyPwsh, famCmd, famCsh, "other"}
 
+// ShellSources are the values When.ShellSource names.
+var ShellSources = []string{shellFromEnv, "login", "default"}
+
+// shellFromEnv is the shell source of $SHELL.
+const shellFromEnv = "env"
+
 // Placeholders are the names a module's text may use as {{name}}, each
 // replaced with the session's value as plain text.
 var Placeholders = []string{
 	keyShell, "shell_name", "os", "goos", "mode", "tmpdir", keyWorkspace, keyAgent,
-	"instruction_files", "omitted_instruction_files", "max_output_length",
+	"instruction_files", "omitted_instruction_files", "max_output_length", "locale", "missing_path_dirs",
 }
 
 var (
@@ -196,6 +211,7 @@ func (w When) validate() error {
 		{"os", w.OS, osPattern.MatchString},
 		{keySandbox, w.Sandbox, func(v string) bool { return slices.Contains([]string{"read-only", "workspace-write", "none"}, v) }},
 		{keyAgent, w.Agent, func(v string) bool { return v == "main" || v == "subagent" }},
+		{"shell_source", w.ShellSource, func(v string) bool { return slices.Contains(ShellSources, v) }},
 	} {
 		if len(l.values) > maxListItems {
 			return fmt.Errorf("when.%s has more than %d values", l.key, maxListItems)

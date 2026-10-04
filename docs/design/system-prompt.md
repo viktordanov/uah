@@ -84,7 +84,7 @@ A login whose model list does not have gpt-6.1-sol yet runs gpt-6-sol with gpt-6
 ```
 
 - **cwd**: the session's workspace, absolute.
-- **shell**: the base name of the shell `Bash` runs, `$SHELL` or `/bin/sh` (`app.RealShell`). Codex names its shell type (`zsh`, `bash`, `sh`, `powershell`); the base name is the same for those.
+- **shell**: the base name of the shell `Bash` runs, `$SHELL` when it names an executable file, else the login shell from the user database, else `/bin/sh` (`app.RealShell`, `internal/shellenv`). Codex names its shell type (`zsh`, `bash`, `sh`, `powershell`); the base name is the same for those.
 - **current_date** and **timezone**: Codex's `local_time_context` (`core/src/session/turn_context.rs`) takes the local date as `%Y-%m-%d` and the IANA zone from `iana_time_zone`, else the UTC date and `Etc/UTC`. uah reads the zone from `$TZ` (a name, or a path under `zoneinfo/`, with an optional leading `:`), else from the `/etc/localtime` link, and falls back the same way.
 - Values are XML-escaped as Codex's `push_xml_escaped_text` does, and an empty value is left out.
 

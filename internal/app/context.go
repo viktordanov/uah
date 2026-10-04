@@ -72,9 +72,9 @@ func PreviewContext(ctx context.Context, in Inputs, getenv func(string) string) 
 		return ContextPreview{}, err
 	}
 	main := contextprep.Facts{
-		Workspace: workspace, Shell: RealShell(), GOOS: runtime.GOOS, MaxOutputLength: operation.DefaultMaxOutputLength,
+		Workspace: workspace, GOOS: runtime.GOOS, MaxOutputLength: operation.DefaultMaxOutputLength,
 		InstructionsOff: !r.Instructions, // as newEngine sets it
-	}
+	}.WithEnvironment(getenv)
 	if r.Instructions {
 		loaded, _, err := loadInstructions(workspace, cfg)
 		if err != nil {

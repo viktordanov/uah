@@ -41,6 +41,7 @@ uah is a pure core with well-organized infrastructure around it, not layered DDD
 | `internal/compaction/eval` | Measures what a compaction strategy does to one model request. Pure. |
 | `internal/compaction/evalrun` | Runs that evaluation on recorded sessions, for the hidden `uah compaction eval`. |
 | `internal/contextprep` | Context preparation: the Markdown modules whose front matter says when they apply (built in with `go:embed`, a library, and the user's and the project's), the blocks that join them (the environment, the sandbox, the workspace, the agent files, the harness), and the one message that joins the blocks. Module checks run through a `Checker` the caller gives it, in a sandbox. |
+| `internal/shellenv` | The shell commands run in (`$SHELL`, else the login shell from the user database, else `/bin/sh`) and what a stripped environment lacks: a UTF-8 locale and the user's tool directories on `PATH`. |
 | `internal/contextusage` | What fills the context window, for `/context`: the system prompt, instructions, skills, tools, and the conversation. Pure. |
 | `internal/llmcall` | One model call outside the agent loop over any `llm.Adapter`, for summaries and reviews. |
 | `internal/review` | The auto-reviewer: one model call over `internal/llmcall` judges an action that needs approval, with Codex's prompt, a fail-closed verdict, and a circuit breaker. No engine wiring. |
@@ -72,7 +73,7 @@ uah-core (`github.com/viktordanov/uah-core`) is uah's own runtime: the coordinat
 
 These rules hold for the code that is not test code. `go list -f '{{.ImportPath}}: {{.Imports}}' ./...` shows the graph.
 
-1. **Leaves import no uah package:** `cmdparse`, `config/tomledit`, `engine/codexauth`, `goal`, `history`, `home`, `images`, `instructions`, `llmcall`, `patch`, `rules`, `sandbox`, `sessionfile`, `systemskills`, `tui/composer`, and `tui/render/markdown`.
+1. **Leaves import no uah package:** `cmdparse`, `config/tomledit`, `engine/codexauth`, `goal`, `history`, `home`, `images`, `instructions`, `llmcall`, `patch`, `rules`, `sandbox`, `sessionfile`, `shellenv`, `systemskills`, `tui/composer`, and `tui/render/markdown`.
 2. **Domain packages import only leaves and each other:** `approval`, `hooks`, `mcp`, `compaction`, `contextprep`, `contextusage`, `gitdiff`, `codereview`, `review`, `models`, `usage`, `usershell`, `images/clipboard`, and `config`. None of them imports `engine`, `session`, `app`, or `tui`.
 3. **`internal/engine` is the seam:** it imports domain types, and never an engine implementation, `session`, or `app`.
 4. **`internal/session` imports the seam and domain packages,** never `engine/embedded`, `config`, `app`, or `tui`. It reaches the engine only through `engine.Engine`.

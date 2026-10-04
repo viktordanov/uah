@@ -54,7 +54,7 @@ The blocks come in this order:
 
 | Block | What it says | From |
 | --- | --- | --- |
-| `environment` | The shell and the OS, and the constructs that break in a shell that is not POSIX, zsh's gotchas, macOS's bash 3.2, and BSD flags | Modules `environment/*`, `os/*` |
+| `environment` | The shell and the OS, and the constructs that break in a shell that is not POSIX, zsh's gotchas, macOS's bash 3.2, and BSD flags. When uah was started without the user's environment, also which shell uah picked as `$SHELL` was unset, that the locale is not UTF-8, and which of the user's tool directories `PATH` lacks | Modules `environment/*`, `os/*` |
 | `sandbox` | What sandboxed commands may write, the session's private `$TMPDIR`, and what macOS's sandbox blocks | Modules `sandbox/*` |
 | `workspace` | The git branch, `git status --short`, and the tracked files by top directory | Code (git's output), not modules |
 | `agent files` | The instruction files in the system prompt, said to be all of them; or, for a session whose system prompt replaces uah's without them (`/review`'s reviewer), the files it leaves out; or, with `--no-instructions` or `instructions.enabled = false`, that loading them is off (not that there are none) | Modules `agent-files`, `agent-files-omitted`, `agent-files-off`, `agent-files-none` |
@@ -111,6 +111,9 @@ The keys of `when`:
 | `instructions` | bool | Whether any instruction files (AGENTS.md and so on) were loaded into the system prompt |
 | `instructions_omitted` | bool | Whether the system prompt leaves the workspace's instruction files out on purpose, as the system prompt of `/review`'s reviewer does, which replaces uah's |
 | `instructions_off` | bool | Whether loading instruction files is turned off (`--no-instructions`, or `instructions.enabled = false`); then none is looked for, so `instructions` and `instructions_omitted` are false whether or not the workspace has any |
+| `shell_source` | list | Where the shell came from: `env` (`$SHELL`), `login` (the login shell from the user database, as `$SHELL` was unset or not an executable file), or `default` (`/bin/sh`, as neither was usable) |
+| `utf8` | bool | Whether the locale names UTF-8: `LC_ALL`, else `LC_CTYPE`, else `LANG`, the first that is set |
+| `path_minimal` | bool | Whether `PATH` has none of the user's tool directories that exist: `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/go/bin`, `~/.cargo/bin` |
 
 The text after the front matter may be Markdown. It is data: uah inserts the [placeholders](#placeholders) and sends it, and never runs it.
 
@@ -153,6 +156,8 @@ The text may use these placeholders. Each is replaced with the session's value a
 | `{{instruction_files}}` | The loaded instruction files as a `- ` list; none when none were loaded |
 | `{{omitted_instruction_files}}` | The instruction files the system prompt leaves out on purpose, as a `- ` list; none when it leaves none out |
 | `{{max_output_length}}` | The Bash tool's default output cap |
+| `{{locale}}` | The variable that sets the character set and its value, such as `LANG=C`, or `LC_ALL, LC_CTYPE, and LANG unset` when none is set |
+| `{{missing_path_dirs}}` | The user's tool directories that exist but `PATH` lacks, comma-separated; none when `PATH` has one of them |
 
 A module whose placeholder has no value in the session does not apply. For example, a module that uses `{{tmpdir}}` does not apply in yolo mode. Every `{{` in the text must start one of these placeholders.
 

@@ -2,6 +2,7 @@ package main_test
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,7 +20,9 @@ func TestContextCommand(t *testing.T) {
 	_, env := mcpEnv(t)
 	ws := t.TempDir()
 	writeFile(t, filepath.Join(ws, ".uah", "context.d", "repo.md"), "---\nid: repo\ndescription: The repo's notes\n---\nRepo note.\n")
-	env = append(env, "SHELL=/usr/bin/fish")
+	fish := filepath.Join(t.TempDir(), "fish") // $SHELL must be an executable file
+	require.NoError(t, os.WriteFile(fish, []byte("#!/bin/sh\n"), 0o755))
+	env = append(env, "SHELL="+fish)
 
 	res := uahWith(t, env, "", "context", "-C", ws)
 	require.Equal(t, 0, res.code, res.stderr)
@@ -45,7 +48,8 @@ func TestContextCommand(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(res.stdout), &out), res.stdout)
 	assert.NotEmpty(t, out.Modules)
 	assert.Contains(t, out.Main, "<context_preparation>\n")
-	assert.Contains(t, out.Main, "Commands run in fish (/usr/bin/fish -c)")
+	assert.Contains(t, out.Main, "Commands run in fish ("+fish+" -c)")
+	assert.NotContains(t, out.Main, "$SHELL was unset", "$SHELL is used")
 	assert.NotContains(t, out.Main, "Repo note.")
 	assert.Contains(t, out.Subagent, "<context_preparation>\n")
 
@@ -57,4 +61,28 @@ func TestContextCommand(t *testing.T) {
 	assert.Contains(t, res.stdout, "── a new main session ──\n<context_preparation>")
 	assert.Contains(t, res.stdout, "\n## repo\nRepo note.\n")
 	assert.Contains(t, res.stdout, "── a read-only subagent ──\n")
+}
+
+// TestContextStrippedEnvironment runs `uah context --show` as a service
+// that starts uah without the user's environment would: no SHELL, no
+// locale, and a minimal PATH. The context says so, and names the tool
+// directory that exists but PATH lacks.
+func TestContextStrippedEnvironment(t *testing.T) {
+	t.Parallel()
+	_, env := mcpEnv(t)
+	home := t.TempDir()
+	gobin := filepath.Join(home, "go", "bin")
+	require.NoError(t, os.MkdirAll(gobin, 0o755))
+	env = append(env, "SHELL=", "LANG=", "LC_ALL=", "LC_CTYPE=", "PATH=/usr/bin:/bin", "HOME="+home)
+
+	res := uahWith(t, env, "", "context", "-C", t.TempDir(), "--json", "--show")
+	require.Equal(t, 0, res.code, res.stderr)
+	var out struct {
+		Main string `json:"main"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(res.stdout), &out), res.stdout)
+	assert.Regexp(t, `\$SHELL was unset or not an executable file when uah started, (so uah picked your login shell|and the login shell could not be read)`, out.Main)
+	assert.Contains(t, out.Main, "The locale is not UTF-8 (LC_ALL, LC_CTYPE, and LANG unset)")
+	assert.Contains(t, out.Main, "PATH has none of the user's tool directories; these exist: ")
+	assert.Contains(t, out.Main, gobin)
 }

@@ -45,6 +45,7 @@ func TestParseModule(t *testing.T) {
 		{"no description", "id: go\n", "", "description must be"},
 		{"unknown shell", "id: go\ndescription: x\nwhen: {shell: [bash5]}\n", "", `when.shell: "bash5"`},
 		{"unknown sandbox", "id: go\ndescription: x\nwhen: {sandbox: [yolo]}\n", "", `when.sandbox: "yolo"`},
+		{"unknown shell source", "id: go\ndescription: x\nwhen: {shell_source: [path]}\n", "", `when.shell_source: "path"`},
 		{"relative check path", "id: go\ndescription: x\ncheck: [./run.sh]\n", "", "a name on PATH or an absolute path"},
 		{"empty check", "id: go\ndescription: x\ncheck: []\n", "", "check must have"},
 		{"files outside", "id: go\ndescription: x\nfiles: [../secret]\n", "", "inside the workspace"},

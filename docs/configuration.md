@@ -308,7 +308,7 @@ uah ends the system prompt with Codex's `<environment_context>` block, in the fo
 </environment_context>
 ```
 
-- `cwd` is the session's workspace, and `shell` is the base name of the shell that `Bash` runs (`$SHELL`, else `/bin/sh`).
+- `cwd` is the session's workspace, and `shell` is the base name of the shell that `Bash` runs (`$SHELL` when it names an executable file, else the login shell from the user database, else `/bin/sh`).
 - `current_date` is the local date, and `timezone` is the IANA name from `$TZ` or the `/etc/localtime` link. As in Codex, an unknown zone gives `Etc/UTC` and the UTC date.
 - The block follows `model_instructions_file` too, and it does not depend on `[instructions] enabled`.
 
