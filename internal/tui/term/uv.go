@@ -6,6 +6,7 @@ package term
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	uv "github.com/charmbracelet/ultraviolet"
@@ -120,6 +121,22 @@ const (
 	KeySpace       = uv.KeySpace
 )
 
+// cancelReader is the terminal's input, whose blocked read Cancel ends.
+type cancelReader interface {
+	io.ReadCloser
+	// Cancel ends a read in progress; false when the reader cannot.
+	Cancel() bool
+}
+
+func newCancelReader(r io.Reader) (cancelReader, error) {
+	cr, err := uv.NewCancelReader(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the input: %w", err)
+	}
+
+	return cr, nil
+}
+
 // modeReportMsg is the terminal's answer to a DECRQM query.
 type modeReportMsg struct {
 	mode  ansi.Mode
@@ -151,7 +168,7 @@ func readInput(ctx context.Context, r io.Reader, termType string, out chan<- Msg
 
 // translate turns a decoded event into term's message, or nil for an event
 // uah does not read.
-func translate(e uv.Event) Msg { //nolint:gocyclo // a type switch over the decoder's events
+func translate(e uv.Event) Msg {
 	switch e := e.(type) {
 	case uv.KeyPressEvent:
 		return KeyPressMsg(fromUV(uv.Key(e)))

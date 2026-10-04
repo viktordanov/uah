@@ -30,8 +30,9 @@ type Model interface {
 // View is one frame.
 type View struct {
 	// Content is the screen's lines, joined by "\n"; lines past the
-	// screen's height are dropped from the top, and a line past its width
-	// is cut at the edge.
+	// screen's height are dropped from the top. Each line must fit the
+	// width: with autowrap off, the cells past it overwrite the last
+	// column.
 	Content string
 	// Cursor is where the terminal's cursor shows; nil hides it.
 	Cursor *Cursor
@@ -49,11 +50,40 @@ func NewView(content string) View { return View{Content: content} }
 // Position is a cell on the screen, from the top left (0, 0).
 type Position struct{ X, Y int }
 
-// Cursor is the terminal's cursor.
-type Cursor struct{ Position }
+// Cursor is the terminal's cursor: where it is, its shape, whether it
+// blinks, and its colour (nil: the terminal's own).
+type Cursor struct {
+	Position
 
-// NewCursor returns a cursor at (x, y).
-func NewCursor(x, y int) *Cursor { return &Cursor{Position{X: x, Y: y}} }
+	Shape CursorShape
+	Blink bool
+	Color color.Color
+}
+
+// NewCursor returns a steady block cursor at (x, y) in the terminal's
+// colour.
+func NewCursor(x, y int) *Cursor { return &Cursor{X: x, Y: y} }
+
+// CursorShape is the cursor's shape.
+type CursorShape int
+
+// Cursor shapes.
+const (
+	CursorBlock CursorShape = iota
+	CursorUnderline
+	CursorBar
+)
+
+// style is the cursor's DECSCUSR number: 1 and 2 a blinking and a steady
+// block, 3 and 4 an underline, 5 and 6 a bar.
+func (c *Cursor) style() int {
+	n := 2 + 2*int(c.Shape)
+	if c.Blink {
+		n--
+	}
+
+	return n
+}
 
 // BatchMsg runs each of its commands in a goroutine of its own, in no order.
 type BatchMsg []Cmd
