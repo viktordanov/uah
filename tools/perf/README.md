@@ -40,7 +40,7 @@ A comparison lists each metric that moved by more than `-threshold` (default 0.2
 Numbers vary with the machine and its load. Compare runs from one machine, with `-count 3` when the change is small.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="scenarios" files="perf/scenarios.go perf/tui.go perf/workload.go" -->
+<!-- memoria:section id="scenarios" files="perf/scenarios.go perf/memory.go perf/tui.go perf/workload.go" -->
 ## Scenarios
 
 Each scenario builds its session in a fresh scratch home, measures one block, and cleans up. Scenarios marked "per size" run on each size of `-sizes` and on each copied real session; the others run on the small fixture.
@@ -52,6 +52,7 @@ Each scenario builds its session in a fresh scratch home, measures one block, an
 | `turn` | yes | Resume the session and run the workload turn headless; the session closes before goroutines and connections are counted | `turn_ms`, `first_request_ms`, `events`, `events_per_s`, `records_appended` (records the turn added to the session file), `session_syncs` (the syncs of session files), `requests`, `request_mb` |
 | `spawn` | yes | Resume the session; the model spawns one child, waits, and finishes | `child_first_request_ms` (the parent's reply to the child's first request, once the fake model has read it; see `server_ms`) |
 | `fork` | yes | The same with `fork_context`: the child copies the whole history | `child_first_request_ms` |
+| `memory` | yes | Resume the session as the TUI does, run three turns that stream a 400-piece answer, and wait 2 seconds as an idle TUI would | `live_mb` (the live heap the open session kept, after a collection), `retained_mb` (the heap the process kept from the OS, before one), `os_mb` (the memory the system charges the process: its footprint on macOS, its resident set on Linux), each against the session just opened |
 | `tui-turn` | no | The workload turn typed into the TUI, until the answer shows and the footer is idle | `turn_ms`, `views`, `view_*_ms`, `term_kb`, `term_writes` |
 | `idle/tui` | no | The same TUI for 3 seconds after that turn | `updates_per_s` (0: the TUI's clock stopped), `views_per_s`, `cpu_ms_per_s`, `wakeups_per_s`, `term_bytes_per_s` |
 | `agents` | no | One turn that spawns two children and forks one, waits for all, and finishes | `spawn_a_ms`, `spawn_b_ms`, `fork_ms`, `peak_goroutines`, `peak_conns` |
@@ -154,5 +155,5 @@ Against 1eafd1f, the baseline before 1eaf6a4 (with the fork rows after ledger it
 <!-- memoria:section id="test" files="perf/perf_test.go perf/race_test.go perf/norace_test.go perf/fork_internal_test.go" -->
 ## The test
 
-`go test ./tools/perf/...` runs every scenario on the small fixture once, about 13 seconds, and checks generous ceilings: about ten times the baseline. Under the race detector it skips, since the detector would only blur the ceilings; CI runs it in a step without it. The one tight ceiling is `idle/tui` `wakeups_per_s` below 250 (about 165 on macOS), which fails if the TUI goes back to 60 frames a second (about 320). It catches a large regression, such as the TUI's clock running while idle, a turn that allocates ten times as much, or goroutines left by every session, without failing on a slow machine. `go test -short` skips it. `TestForkRerun` forks a session whose parent appended to a file with a command and checks that the file still has one line: a fork's first run must not start the parent's work again.
+`go test ./tools/perf/...` runs every scenario on the small fixture once, about 16 seconds, and checks generous ceilings: about ten times the baseline. Under the race detector it skips, since the detector would only blur the ceilings; CI runs it in a step without it. The tight ceilings are `idle/tui` `wakeups_per_s` below 250 (about 165 on macOS), which fails if the TUI goes back to 60 frames a second (about 320); `memory/small` `live_mb` below 0.6 (about 0.2), which fails if the open session keeps its last run in memory (about 1 MB); and `memory/small` `retained_mb` below 4 (about 0.3), which fails if the engine stops returning the free heap after its runs (about 8 MB). It catches a large regression, such as the TUI's clock running while idle, a turn that allocates ten times as much, or goroutines left by every session, without failing on a slow machine. `go test -short` skips it. `TestForkRerun` forks a session whose parent appended to a file with a command and checks that the file still has one line: a fork's first run must not start the parent's work again.
 <!-- /memoria:section -->

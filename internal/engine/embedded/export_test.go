@@ -2,10 +2,12 @@ package embedded
 
 import (
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sync"
 	"testing"
 	"time"
+	"weak"
 )
 
 // SlowCanceledCalls delays the end of each canceled model request by d, as a
@@ -47,5 +49,39 @@ func WatchSyncs(t *testing.T) func(name string) []int64 {
 		defer mu.Unlock()
 
 		return slices.Clone(sizes[name])
+	}
+}
+
+// WatchRuns watches the runs that start in workspace until the test ends,
+// and returns how many of them a collection leaves reachable: their
+// wiring, agent, or model client.
+func WatchRuns(t *testing.T, workspace string) func() int {
+	t.Helper()
+	var mu sync.Mutex
+	var held []func() bool
+	hook := func(w *wiring, a *agent) {
+		if w.l.Request.Workspace != workspace {
+			return
+		}
+		wp, ap, sp := weak.Make(w), weak.Make(a), weak.Make(a.llm)
+		mu.Lock()
+		held = append(held, func() bool { return wp.Value() != nil || ap.Value() != nil || sp.Value() != nil })
+		mu.Unlock()
+	}
+	onStart.Store(&hook)
+	t.Cleanup(func() { onStart.Store(nil) })
+
+	return func() int {
+		runtime.GC()
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, reachable := range held {
+			if reachable() {
+				n++
+			}
+		}
+
+		return n
 	}
 }

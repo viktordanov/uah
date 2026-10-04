@@ -39,8 +39,11 @@ type transcript struct {
 	first   *review.Entry
 	firstAt int
 	// open are the calls recorded and not yet finished, by call ID.
-	open   map[string]bool
-	onUser func() // a new user turn closes the reviewer's circuit breaker
+	open map[string]bool
+	// onUser closes the run's reviewer's circuit breaker at a new user turn;
+	// onUserRun is which run set it (setOnUser).
+	onUser    func()
+	onUserRun uint64
 
 	conv review.Conversation
 }
@@ -75,6 +78,27 @@ func (t *transcript) observe(e core.Event) {
 	case core.ToolFinished:
 		delete(t.open, v.CallID)
 		t.addLocked(review.Entry{Kind: review.EntryResult, Tool: v.Name, Text: cmp.Or(v.Detail, "done")})
+	}
+}
+
+// setOnUser makes reset the session's breaker reset until the returned
+// func, which the run calls as it ends, unsets it. The transcript lives as
+// long as the session; the reviewer holds the run's model client, and
+// through it the run's whole history, which would otherwise stay in memory
+// between runs. A later run's reset stays.
+func (t *transcript) setOnUser(reset func()) (unset func()) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.onUserRun++
+	run := t.onUserRun
+	t.onUser = reset
+
+	return func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		if t.onUserRun == run {
+			t.onUser = nil
+		}
 	}
 }
 
@@ -158,9 +182,8 @@ func answeredText(e engine.QuestionsAnswered) string {
 func (w *wiring) reviewedAsk(sw *switcher, req core.Request) approval.Ask {
 	rv := review.New(sw.direct(), w.e.cfg.Review)
 	t := w.e.transcript(req.SessionID)
-	t.mu.Lock()
-	t.onUser = rv.Reset
-	t.mu.Unlock()
+	unset := t.setOnUser(rv.Reset)
+	w.closers = append(w.closers, closer{close: func() error { unset(); return nil }})
 	next, emit, mode, always := w.ask, w.emit, w.mode, w.e.cfg.AutoReview
 	// The reviewer's commands are set up at its first review.
 	run := sync.OnceValue(func() review.Runner { return w.reviewCommands(req) })

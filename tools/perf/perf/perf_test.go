@@ -42,6 +42,12 @@ var bounds = []bound{
 	// The renderer checks the view 30 times a second, about 165 wakeups (60
 	// would be about 320).
 	{"idle/tui", "wakeups_per_s", 250},
+	// After three streamed turns, the open session keeps about 0.2 MB more
+	// live heap and the process about 0.3 MB more from the OS; a finished
+	// run kept in memory (about 1 MB here) or a heap never returned
+	// (about 8 MB) fails.
+	{"memory/small", "live_mb", 0.6},
+	{"memory/small", "retained_mb", 4},
 	{"agents/small", "peak_goroutines", 1_000},
 	{"leak/5-runs", "goroutines_left", 50},
 	{"leak/5-runs", "conns_after", 20},

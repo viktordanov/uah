@@ -47,3 +47,16 @@ func diskAndWakeups(syscall.Rusage) (disk, wakeups uint64) {
 
 	return ri.DiskioByteswritten, ri.PkgIdleWkups + ri.InterruptWkups
 }
+
+// osMemory is the memory the system charges the process: its physical
+// footprint, which Activity Monitor shows. Pages the Go runtime returned
+// stay resident until the system needs them, but leave the footprint.
+func osMemory() uint64 {
+	var ri rusageInfoV2
+	_, _, errno := syscall.Syscall6(sysProcInfo, procInfoPIDRusage, uintptr(os.Getpid()), rusageInfoVersion2, 0, uintptr(unsafe.Pointer(&ri)), 0)
+	if errno != 0 {
+		return 0
+	}
+
+	return ri.PhysFootprint
+}

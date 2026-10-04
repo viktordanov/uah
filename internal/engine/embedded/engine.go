@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"sync"
 
 	"github.com/viktordanov/uagent/core"
@@ -115,6 +116,10 @@ type Config struct {
 	// to the main agent (and, refused, to its forks). A run applies them
 	// through Options.Goal.
 	Goals bool
+	// ReturnMemory returns the free heap to the OS when the engine's last
+	// run ends (runs), so an idle process's footprint is its live heap
+	// rather than its last run's peak.
+	ReturnMemory bool
 	// Subagents, when set, offers its tools to the runs it attaches and
 	// hears when the user interrupts a run; the engine closes it when it is
 	// an io.Closer.
@@ -137,6 +142,8 @@ type Engine struct {
 	cacheKeys, scopes sync.Map
 	// transports are the model clients' connections, shared by every run.
 	transports transports
+	// runs counts the runs in progress (Config.ReturnMemory).
+	runs runs
 }
 
 // Forget drops what the engine kept for a session that closed: the
@@ -164,6 +171,9 @@ func New(cfg Config) *Engine {
 		cfg.Approver = approval.New(approval.Config{})
 	}
 	e := &Engine{cfg: cfg, models: catalog}
+	if cfg.ReturnMemory {
+		e.runs.free, e.runs.delay = debug.FreeOSMemory, releaseDelay
+	}
 	e.h = harness.New(harness.Config{
 		Backend: backend{e}, StateDir: cfg.StateDir, MaxDisk: cfg.MaxDisk, Logger: cfg.Logger, Getenv: cfg.Getenv,
 	})

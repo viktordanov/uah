@@ -54,6 +54,7 @@ var scenarios = []scenario{
 	{name: "turn", sized: true, run: (*run).turn},
 	{name: "spawn", sized: true, run: func(r *run, t target) ([]Named, error) { return r.spawn(t, false) }},
 	{name: "fork", sized: true, run: func(r *run, t target) ([]Named, error) { return r.spawn(t, true) }},
+	{name: "memory", sized: true, run: (*run).memory},
 	{name: "tui-turn", run: (*run).tuiTurn},
 	{name: "agents", run: (*run).agents},
 	{name: "leak", run: (*run).leak},
