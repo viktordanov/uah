@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -176,13 +177,23 @@ func GrantFor(paths []string) string {
 }
 
 // Grantable reports whether a directory may be granted at all: an absolute
-// path that is not the file system's root and neither is nor holds the
-// user's home directory, so no grant opens the whole home. Names are
-// compared without case, and a directory that is the home directory or
-// one above it under another name counts too.
+// path that is not the file system's root, neither is nor holds the user's
+// home directory, so no grant opens the whole home, is not itself one of
+// ProtectedNames, such as ~/.uah or ~/.codex, and is not inside a .git,
+// .uah, or .uagent directory, whose hooks and configuration run outside
+// the sandbox. A directory deeper inside .codex or .agents, such as a
+// worktree Codex keeps under ~/.codex/worktrees, can be granted: the
+// protected directory itself stays out of the grant. Names are compared
+// without case, and a directory that is the home directory or one above it
+// under another name counts too.
 func Grantable(dir string) bool {
-	if !filepath.IsAbs(dir) || filepath.Dir(dir) == dir {
+	if !filepath.IsAbs(dir) || filepath.Dir(dir) == dir || isProtectedName(filepath.Base(dir), ProtectedNames) {
 		return false
+	}
+	for _, name := range strings.Split(filepath.Dir(dir), string(filepath.Separator)) {
+		if isProtectedName(name, hookNames) {
+			return false
+		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
@@ -204,4 +215,13 @@ func Grantable(dir string) bool {
 	}
 
 	return true
+}
+
+// hookNames are the protected directories whose whole tree holds code that
+// runs outside the sandbox: a repository's hooks and configuration, and
+// uah's own.
+var hookNames = []string{".git", ".uah", ".uagent"}
+
+func isProtectedName(name string, names []string) bool {
+	return slices.ContainsFunc(names, func(p string) bool { return strings.EqualFold(p, name) })
 }

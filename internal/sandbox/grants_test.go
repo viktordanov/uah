@@ -14,8 +14,9 @@ import (
 )
 
 // TestGrantable pins that no grant opens the file system's root or the
-// home directory, or a directory that holds it, also in another case,
-// and that a directory inside the home can be granted.
+// home directory, or a directory that holds it, also in another case, or a
+// protected directory such as .uah or .git, and that a directory inside
+// the home can be granted.
 func TestGrantable(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -28,6 +29,11 @@ func TestGrantable(t *testing.T) {
 	assert.False(t, sandbox.Grantable(strings.ToUpper(filepath.Dir(home))), "another case")
 	assert.False(t, sandbox.Grantable(realPath(t, home)), "the home's real path")
 	assert.False(t, sandbox.Grantable("relative/dir"))
+	assert.False(t, sandbox.Grantable(filepath.Join(home, ".uah")), "uah's home, with its hooks")
+	assert.False(t, sandbox.Grantable(filepath.Join(home, ".codex")), "Codex's home")
+	assert.False(t, sandbox.Grantable(filepath.Join(inside, ".GIT", "hooks")), "inside a repository's .git, in any case")
+	assert.False(t, sandbox.Grantable(filepath.Join(home, ".uah", "sessions")), "inside uah's home")
+	assert.True(t, sandbox.Grantable(filepath.Join(home, ".codex", "worktrees", "a1", "repo")), "a worktree Codex keeps")
 	assert.True(t, sandbox.Grantable(inside))
 }
 
