@@ -10,6 +10,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -99,6 +100,9 @@ type Session struct {
 	ctx  context.Context
 	stop context.CancelFunc
 	done chan struct{}
+	// current is settings as the loop last set them, for the engine to
+	// read from a run's goroutines (liveSettings).
+	current atomic.Pointer[Settings]
 
 	// Owned by the loop goroutine.
 	settings Settings
@@ -181,6 +185,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 		// A resumed session that never ran has no first message yet.
 		firstPromptPending: !opts.Resumed || opts.FirstPrompt == "",
 	}
+	s.current.Store(&opts.Settings)
 	s.out <- SessionOpened{At: time.Now(), ID: id, Resumed: opts.Resumed, Engine: eng.Name(), Settings: opts.Settings}
 	if opts.Instructions != nil {
 		loaded := *opts.Instructions

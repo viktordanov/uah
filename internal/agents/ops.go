@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -28,7 +29,7 @@ func (m *Manager) spawn(ctx context.Context, call engine.AgentCall, a spawnArgs)
 	if err := m.checkDepth(parentID); err != nil {
 		return spawnResult{}, err
 	}
-	if err := m.checkModel(ctx, a.Model); err != nil {
+	if err := m.checkModel(ctx, a.Model, a.ForkContext); err != nil {
 		return spawnResult{}, err
 	}
 	role, rec, err := m.spawnRole(parentID, a)
@@ -36,7 +37,7 @@ func (m *Manager) spawn(ctx context.Context, call engine.AgentCall, a spawnArgs)
 		return spawnResult{}, err
 	}
 	rec.CallID, rec.Task = call.CallID, a.Message
-	c, err := m.start(parentID, session.NewSubagentID(), role, rec, false) //nolint:contextcheck // children outlive the call that started them
+	c, err := m.start(parentID, session.NewSubagentID(), role, rec, nil) //nolint:contextcheck // children outlive the call that started them
 	if err != nil {
 		return spawnResult{}, err
 	}
@@ -177,8 +178,9 @@ func (m *Manager) fork(ctx context.Context, c *child, call engine.AgentCall) err
 }
 
 // start registers a child within the limit, opens its session, and
-// watches it. A resumed child opens its earlier session.
-func (m *Manager) start(parentID, id string, role Role, rec record, resumed bool) (*child, error) {
+// watches it. A resumed child (resumed, its sidecar) opens its earlier
+// session, with the settings it saved.
+func (m *Manager) start(parentID, id string, role Role, rec record, resumed *session.Sidecar) (*child, error) {
 	m.mu.Lock()
 	parent, ok := m.parents[parentID]
 	if !ok || m.eng == nil {
@@ -198,11 +200,13 @@ func (m *Manager) start(parentID, id string, role Role, rec record, resumed bool
 	}
 	c := newChild(id, parentID, role.Name, m.nickname(parentID, role, rec.Nickname))
 	c.forked, c.callID, c.task = rec.Fork, rec.CallID, rec.Task
-	if resumed {
+	var saved *session.Saved
+	if resumed != nil {
 		c.status = Status{State: engine.AgentPendingInit}
+		saved = cmp.Or(resumed.Settings, &session.Saved{})
 	}
 	m.children[id] = c
-	eng, opts, key := m.eng, m.childOptions(parent, c, role, rec, resumed), m.treeRoot(parentID)
+	eng, opts, key := m.eng, m.childOptions(parent, c, role, rec, saved), m.treeRoot(parentID)
 	c.model, c.effort = opts.Settings.Model, opts.Settings.Effort
 	m.mu.Unlock()
 	if f, ok := m.forker(); ok {
@@ -422,7 +426,7 @@ func (m *Manager) resume(_ context.Context, parentID, id string) (Status, error)
 		role = Role{} // the role file is gone: the default agent with the child's model
 	}
 	due := !rec.Fork && !hasNote(dir, id)
-	c, err = m.start(parentID, id, role, rec, true) //nolint:contextcheck // children outlive the call that started them
+	c, err = m.start(parentID, id, role, rec, &sc) //nolint:contextcheck // children outlive the call that started them
 	if err != nil {
 		return Status{State: engine.AgentNotFound}, err
 	}

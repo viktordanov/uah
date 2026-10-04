@@ -17,7 +17,7 @@ var ErrNoSession = errors.New("no such session")
 
 // sessionFiles are the files next to the runner's session file that belong
 // to a session, by suffix after its ID.
-var sessionFiles = []string{".session.jsonl", ".uah.json", ".compaction.jsonl", ".rewind.jsonl", ".websearch.jsonl", ".effortupdates.json", ".agent.json"}
+var sessionFiles = []string{".session.jsonl", ".uah.json", ".compaction.jsonl", ".rewind.jsonl", ".websearch.jsonl", ".effortupdates.json", ".agent.json", ".forktmp"}
 
 // Removal is what deleting a session removes: the session and its
 // subagents (IDs, the session first), and their files and run records

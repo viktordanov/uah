@@ -118,6 +118,16 @@ type Options struct {
 	// with the session's goal: the result for the model, or an error the
 	// model reads (nil: the session has no goals, as a subagent's).
 	Goal GoalTool
+	// Settings are the session's settings now, with the changes made while
+	// the run is live, all from one change (nil: the run's, as it started).
+	// The subagents a run spawns start with them.
+	Settings func() LiveSettings
+}
+
+// LiveSettings are the settings a session can change while a run is live.
+type LiveSettings struct {
+	Model, Effort, ServiceTier, AdaptiveEffort string
+	Mode                                       approval.Mode
 }
 
 // GoalTool runs one goal tool call against the session's goal.

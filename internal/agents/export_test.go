@@ -22,7 +22,7 @@ func (m *Manager) ChildOptions(parentID string) session.Options {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	return m.childOptions(m.parents[parentID], newChild("child-id", parentID, "", "Ada"), Role{}, record{}, false)
+	return m.childOptions(m.parents[parentID], newChild("child-id", parentID, "", "Ada"), Role{}, record{}, nil)
 }
 
 // ContextUsage is /context for a child of this process.

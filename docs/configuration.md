@@ -331,10 +331,12 @@ Codex keys uah does not support are errors: `bearer_token`, `http_headers_helper
 | `max_concurrent_threads_per_session` | int | 4 | override | Open subagents per session tree; Codex's `max_threads` is an alias |
 | `max_threads` | int | none | override | Codex's older name for `max_concurrent_threads_per_session` |
 | `max_depth` | int | 1 | override | 1 offers subagents, 0 turns them off. Subagents never start subagents: a value above 1 is used as 1, with a notice |
-| `default_subagent_model` | string | the parent's model | override | Model for subagents a role or call does not set; on openai-codex it must be in Codex's model catalog, as `spawn_agent`'s `model` must |
-| `default_subagent_reasoning_effort` | string | the parent's effort | override | Effort for subagents a role or call does not set |
+| `default_subagent_model` | string | the parent's model | override | Model for subagents a role or call does not set; on openai-codex it must be in Codex's model catalog, as `spawn_agent`'s `model` must. A fork (`fork_context`) does not take it: it keeps the parent's model unless its call sets one, so it shares the parent's prompt cache, where Codex v0.156.1 applies the default to forks too |
+| `default_subagent_reasoning_effort` | string | the parent's effort | override | Effort for subagents a role or call does not set; a fork keeps the parent's effort, as above |
 
 There is no `default_subagent_service_tier`: Codex has no such key. Fast mode for subagents comes from a role's `service_tier`, or from the parent's `/fast`, which its children inherit.
+
+A subagent starts with its parent's settings as they are when it spawns: a `/model`, `/effort`, `/fast`, `/adaptive`, or permission mode change made while the parent's run is live reaches the children it spawns after the change. A resumed subagent (`resume_agent`) gets back the model, effort, fast mode, and adaptive effort its sidecar saved, as a resumed session does, and its parent's permission mode now.
 
 Kinds of subagents (roles) are files in `~/.uah/agents/` and, for a trusted workspace, `<workspace>/.uah/agents/`, searched recursively: Markdown files with YAML front matter (`*.md`, as Claude Code's `.claude/agents/*.md`) and Codex role files (`*.toml`). A project file replaces a user file of the same name; in one directory, a Markdown file replaces a TOML file of the same name, with a notice. uah reads these keys and warns about the others:
 

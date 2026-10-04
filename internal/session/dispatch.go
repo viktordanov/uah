@@ -140,6 +140,7 @@ func (s *Session) sendAfterTool() {
 func (s *Session) onSettings(next Settings) Applied {
 	prev := s.settings
 	s.settings = next
+	s.current.Store(&next) // before the live run hears of it: a child it spawns from now on starts with next
 	applied := AppliedNextRun
 	if s.state == StateRunning && s.run != nil {
 		onlyLiveFields := next.Provider == prev.Provider && next.Workspace == prev.Workspace && next.BaseURL == prev.BaseURL

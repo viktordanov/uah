@@ -23,13 +23,21 @@ func (s *Session) startRun(inputs []core.UserInput) {
 	opts := engine.Options{
 		ServiceTier: s.settings.ServiceTier, AdaptiveEffort: s.settings.AdaptiveEffort, Mode: s.settings.Mode, Compact: s.compactPending, CompactFocus: s.compactFocus, Clear: s.clearPending,
 		Ask: s.askFunc(false), AskAnytime: s.askFunc(true), AskUser: s.askUserFunc(), Notify: s.notify, Inject: s.Inject, Stream: s.stream,
-		Goal: s.goalToolFunc(),
+		Goal: s.goalToolFunc(), Settings: s.liveSettings,
 	}
 	sink := func(e core.Event) { s.in <- evRun{event: e} }
 	go func() {
 		run, err := s.eng.Start(s.ctx, req, opts, sink)
 		s.in <- evStarted{run: run, err: err, inputs: inputs}
 	}()
+}
+
+// liveSettings are the session's settings now, which a run's subagents
+// start with; any goroutine may call it.
+func (s *Session) liveSettings() engine.LiveSettings {
+	c := s.current.Load()
+
+	return engine.LiveSettings{Model: c.Model, Effort: c.Effort, ServiceTier: c.ServiceTier, AdaptiveEffort: c.AdaptiveEffort, Mode: c.Mode}
 }
 
 // markSent records messages that went to the runner until it echoes them.
