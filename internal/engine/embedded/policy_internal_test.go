@@ -32,7 +32,7 @@ func TestMCPPolicy_SharedServerNames(t *testing.T) {
 	}
 
 	assert.Equal(t, []string{"mcp__docs__search"}, names(toolpolicy.Policy{Allow: []string{"mcp__a_b__*", "mcp__docs__*"}}))
-	assert.Equal(t, []string{"mcp__a_b__read"}, names(toolpolicy.Policy{Allow: []string{"mcp__a_b__read"}}))
+	assert.Empty(t, names(toolpolicy.Policy{Allow: []string{"mcp__a_b__read"}}), "nor does an exact name: it can pass to the other server")
 	assert.Len(t, names(toolpolicy.Policy{}), 4, "no policy: every tool")
 	m := newMCPPolicy(toolpolicy.Policy{Allow: []string{"mcp__a_b__*", "mcp__docs__*"}}, servers)
 	assert.False(t, m.allowsServer("a-b"))

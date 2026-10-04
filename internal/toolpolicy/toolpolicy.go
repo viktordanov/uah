@@ -41,6 +41,10 @@ var aliases = map[string]string{
 	"Skill": tool.SkillUseName, "Agent": spawnAgent, "Task": spawnAgent, "WebSearch": webSearch,
 }
 
+// Refused ends the error of a call the policy refused: the engine writes
+// it, and the session knows by it that the call never ran.
+const Refused = "the tool policy does not allow it"
+
 // Policy is the tools a session may use. The zero Policy allows every
 // tool, as uah does without one.
 type Policy struct {
@@ -71,15 +75,23 @@ func (p Policy) AllowsTool(name, server string) bool {
 	return p.allows(name, server, true)
 }
 
-// AllowsExact reports whether the policy allows an MCP tool by its exposed
-// name alone, never through a server pattern: for a tool of a server whose
-// exposed name another configured server shares, which no pattern can tell
-// apart. A pattern in the denylist still refuses it.
-func (p Policy) AllowsExact(name string) bool { return p.allows(name, "", false) }
+// AllowsMCP reports whether the policy allows an MCP tool, named name and
+// tool by its server. A server pattern matches by the server. An exact name
+// allows the tool only when the name is unambiguous: the tool's own,
+// unhashed mcp__<server>__<tool>, with no "__" in the server's part. A
+// hashed or ambiguous name can pass to another tool when the tool lists
+// change (mcp's namer hands it out again), so such a tool needs its
+// server's pattern.
+func (p Policy) AllowsMCP(name, server, tool string) bool {
+	s := mcp.Sanitize(server)
+	exact := name == mcp.Prefix+s+"__"+mcp.Sanitize(tool) && !strings.Contains(s, "__")
 
-func (p Policy) allows(name, server string, patterns bool) bool {
+	return p.allows(name, server, exact)
+}
+
+func (p Policy) allows(name, server string, exact bool) bool {
 	for _, list := range append([][]string{p.Allow}, p.Within...) {
-		if list != nil && !match(list, name, server, patterns) {
+		if list != nil && !match(list, name, server, exact) {
 			return false
 		}
 	}
@@ -148,14 +160,14 @@ func (p Policy) String() string {
 // prefix.
 func Match(list []string, name, server string) bool { return match(list, name, server, true) }
 
-// match is Match, with server patterns only when patterns is set.
-func match(list []string, name, server string, patterns bool) bool {
+// match is Match, where an exact name counts only when exact is set.
+func match(list []string, name, server string, exact bool) bool {
 	for _, n := range list {
-		if n == name {
+		if n == name && (exact || !strings.HasPrefix(name, mcp.Prefix)) {
 			return true
 		}
 		s, ok := serverPattern(n)
-		if !ok || !patterns || !strings.HasPrefix(name, mcp.Prefix) {
+		if !ok || !strings.HasPrefix(name, mcp.Prefix) {
 			continue
 		}
 		if server != "" {

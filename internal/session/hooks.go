@@ -14,6 +14,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/patch"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // maxStopContinuations stops Stop hooks from keeping the agent going forever.
@@ -158,8 +159,8 @@ func (s *Session) onStopChecked(m evStopChecked) {
 // postToolUse runs PostToolUse hooks for a finished tool; they only observe.
 func (s *Session) postToolUse(f core.ToolFinished) {
 	called, ok := s.hooks.tools[f.CallID]
-	if !ok || !s.hooks.runner.Has(hooks.PostToolUse, called.Name) || !s.policy.Allows(called.Name) {
-		return // a call the tool policy refused never ran, so no hook sees it
+	if !ok || !s.hooks.runner.Has(hooks.PostToolUse, called.Name) || refused(s.policy, called.Name, f) {
+		return
 	}
 	in := s.hookInput(hooks.PostToolUse)
 	in.ToolName, in.ToolUseID = called.Name, f.CallID
@@ -171,6 +172,13 @@ func (s *Session) postToolUse(f core.ToolFinished) {
 	}
 	in.ToolResponse = &hooks.ToolResponse{Success: f.OK, Detail: f.Detail, Stdout: f.OutPath, Stderr: f.ErrPath}
 	s.hooks.jobs <- func() { s.hooks.runner.Run(s.ctx, in) }
+}
+
+// refused reports whether the tool policy refused the call, so it never
+// ran and no hook sees it: the policy does not allow its name, or the
+// engine's refusal says so (an MCP tool the policy refused by its server).
+func refused(p toolpolicy.Policy, name string, f core.ToolFinished) bool {
+	return !p.Allows(name) || !f.OK && strings.HasSuffix(f.Detail, toolpolicy.Refused)
 }
 
 // sessionEnd runs SessionEnd hooks; each gets at most a second.

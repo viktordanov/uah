@@ -122,6 +122,24 @@ func TestPolicy_NarrowKeepsServers(t *testing.T) {
 		assert.False(t, both.AllowsServer("a"), "b allows one tool, not the server")
 	}
 	assert.Nil(t, toolpolicy.Policy{}.Narrow(b).Within, "one list needs no Within")
-	assert.False(t, a.Narrow(b).AllowsExact("mcp__a__b__delete"), "an exact match needs the name in every list")
-	assert.True(t, b.AllowsExact("mcp__a__b__delete"))
+}
+
+// TestPolicy_AllowsMCP: an exact name allows an MCP tool only when it is
+// the tool's own, unambiguous name, since mcp's namer can hand a hashed or
+// ambiguous name to another tool when the tool lists change; a server
+// pattern always matches by the server.
+func TestPolicy_AllowsMCP(t *testing.T) {
+	t.Parallel()
+	exact := toolpolicy.Policy{Allow: []string{"mcp__docs__search", "mcp__a__b__c", "mcp__docs__long_0123456789ab"}}
+	assert.True(t, exact.AllowsMCP("mcp__docs__search", "docs", "search"))
+	assert.False(t, exact.AllowsMCP("mcp__docs__search", "docs", "search!"), "another tool holds the name only when hashed")
+	assert.False(t, exact.AllowsMCP("mcp__a__b__c", "a__b", "c"), "the name may be server a's tool b__c, and only that one can hold it")
+	assert.True(t, exact.AllowsMCP("mcp__a__b__c", "a", "b__c"), "the server is the name's first part, so no other server's tool gets it")
+	assert.False(t, exact.AllowsMCP("mcp__docs__long_0123456789ab", "docs", "long"), "a hashed name")
+	assert.True(t, exact.Allows("mcp__a__b__c"), "by name alone it is in the list")
+
+	pattern := toolpolicy.Policy{Allow: []string{"mcp__a__b__*"}}
+	assert.True(t, pattern.AllowsMCP("mcp__a__b__c", "a__b", "c"))
+	assert.False(t, pattern.AllowsMCP("mcp__a__b__c", "a", "b__c"))
+	assert.True(t, toolpolicy.Policy{Allow: []string{"mcp__docs__*"}}.AllowsMCP("mcp__docs__long_0123456789ab", "docs", "long"))
 }

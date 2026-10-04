@@ -31,10 +31,12 @@ func policyDisallow(p toolpolicy.Policy, disallowed []string) []string {
 	return disallowed
 }
 
-// mcpPolicy applies the policy to MCP tools by their server. Servers whose
-// exposed names are the same (a-b and a.b are both a_b) cannot be told
-// apart by a pattern, so their tools are allowed by exact name only, and
-// the resource tools reach neither.
+// mcpPolicy applies the policy to MCP tools by their server and tool
+// (toolpolicy.Policy.AllowsMCP). Servers whose exposed names are the same
+// (a-b and a.b are both a_b) cannot be told apart by any name, and the
+// names of their tools can pass from one to the other as the tool lists
+// change, so a policy allows none of their tools, and the resource tools
+// reach neither.
 type mcpPolicy struct {
 	policy toolpolicy.Policy
 	// shared are the exposed server names that more than one configured
@@ -55,11 +57,7 @@ func newMCPPolicy(p toolpolicy.Policy, servers []string) mcpPolicy {
 
 // allows reports whether the policy allows an MCP tool.
 func (m mcpPolicy) allows(t mcp.Tool) bool {
-	if m.shared[mcp.Sanitize(t.Server)] {
-		return m.policy.AllowsExact(t.Name)
-	}
-
-	return m.policy.AllowsTool(t.Name, t.Server)
+	return !m.shared[mcp.Sanitize(t.Server)] && m.policy.AllowsMCP(t.Name, t.Server, t.Tool)
 }
 
 // allowsServer reports whether the resource tools may reach a server.
@@ -122,7 +120,7 @@ func (r policyRegistry) Resolve(name string) (tool.Translator, bool) {
 	}
 	why := "the run does not offer it"
 	if !r.allows(name) {
-		why = "the tool policy does not allow it"
+		why = toolpolicy.Refused
 	}
 
 	return policyRefusal{Translator: t, name: name, why: why}, true

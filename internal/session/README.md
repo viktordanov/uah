@@ -109,7 +109,7 @@ The session runs the hooks of its events; `internal/hooks` runs the commands. A 
 | --- | --- |
 | `SessionStart` | In `Open`, with `source` startup or resume. Its context is added to the first message |
 | `UserPromptSubmit` | Before each message is dispatched. While hooks run, the message waits in `checking`; later messages wait behind it, so order is kept. A block reports `InputFailed` |
-| `PostToolUse` | After each `ToolFinished`; it only observes. A call the session's tool policy (`Options.Tools`) does not allow was refused before it ran, so it fires none |
+| `PostToolUse` | After each `ToolFinished`; it only observes. A call the tool policy refused never ran, so it fires none: one whose name the session's policy (`Options.Tools`) does not allow, or whose error ends with the engine's `toolpolicy.Refused` (an MCP tool refused by its server) |
 | `Stop` | When a run ends with nothing queued. A block with a reason sends the reason as the next message, at most 5 times in a row. A new message cancels a pending Stop decision. An active [goal](#goals) continues only after the Stop hooks let the run end |
 | `SessionEnd` | In `Close`, with at most a second per hook |
 | `PermissionRequest` | In the approval ask, above |
