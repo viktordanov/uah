@@ -27,6 +27,8 @@ func TestResolve(t *testing.T) {
 	notExec := script(t, "plain", 0o644)
 	missing := filepath.Join(t.TempDir(), "missing")
 	dir := t.TempDir()
+	nologin := script(t, "nologin", 0o755) // a service account's
+	falseSh := script(t, "false", 0o755)
 	env := func(shell string) func(string) string {
 		return func(k string) string {
 			switch k {
@@ -60,6 +62,8 @@ func TestResolve(t *testing.T) {
 		{"no login shell", "", "", shellenv.Shell{Path: shellenv.Default, Source: shellenv.FromDefault}},
 		{"login shell missing", "", missing, shellenv.Shell{Path: shellenv.Default, Source: shellenv.FromDefault}},
 		{"login shell not executable", "", notExec, shellenv.Shell{Path: shellenv.Default, Source: shellenv.FromDefault}},
+		{"login shell nologin", "", nologin, shellenv.Shell{Path: shellenv.Default, Source: shellenv.FromDefault}},
+		{"login shell false", "", falseSh, shellenv.Shell{Path: shellenv.Default, Source: shellenv.FromDefault}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			assert.Equal(t, c.want, shellenv.Resolve(env(c.shell), login(c.login)))

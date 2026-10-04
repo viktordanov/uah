@@ -57,6 +57,10 @@ func TestMissingToolDirs(t *testing.T) {
 	assert.Equal(t, append(system, local, gobin), missing(""), "no PATH")
 	assert.Nil(t, missing("/usr/bin:"+gobin+"/:/bin"), "one of them on PATH, spelled with a slash")
 	assert.Nil(t, missing(local), "one of them on PATH")
+	linked := filepath.Join(t.TempDir(), "tools")
+	require.NoError(t, os.Symlink(local, linked))
+	assert.Nil(t, missing("/usr/bin:"+linked), "one of them on PATH through a symlink")
+	assert.Equal(t, append(system, local, gobin), missing("relative/bin:/usr/bin"), "a relative entry is no tool directory")
 	if len(system) > 0 {
 		assert.Nil(t, missing(system[0]+":/usr/bin"), "a system one on PATH")
 	}

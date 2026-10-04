@@ -53,14 +53,14 @@ type Shell struct {
 
 // Resolve picks the shell: $SHELL when it names an executable file (a
 // bare name, such as fish, found on getenv's PATH), else the login shell
-// that login returns when it is one, else /bin/sh. login is Login outside
-// tests.
+// that login returns when it is one and not an account's refusal, such as
+// nologin, else /bin/sh. login is Login outside tests.
 func Resolve(getenv func(string) string, login func() string) Shell {
 	env := strings.TrimSpace(getenv("SHELL"))
 	if p := onPath(env, getenv("PATH")); p != "" {
 		return Shell{Path: p, Source: FromEnv}
 	}
-	if s := login(); s != "" && Executable(s) {
+	if s := login(); s != "" && !refuses(s) && Executable(s) {
 		return Shell{Path: s, Source: FromLogin, Env: env}
 	}
 
@@ -69,6 +69,18 @@ func Resolve(getenv func(string) string, login func() string) Shell {
 
 // Current is Resolve with the user database's login shell.
 func Current(getenv func(string) string) Shell { return Resolve(getenv, Login) }
+
+// refuses reports whether a login shell only refuses a login, as a
+// service account's /usr/sbin/nologin or /bin/false does: it runs no
+// command.
+func refuses(shell string) bool {
+	switch filepath.Base(shell) {
+	case "nologin", "false", "true":
+		return true
+	}
+
+	return false
+}
 
 // onPath is name when it is an executable file's absolute path, the first
 // executable file of that name in path's directories when it is a bare

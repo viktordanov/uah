@@ -54,11 +54,25 @@ func MissingToolDirs(getenv func(string) string) []string {
 			exist = append(exist, d)
 		}
 	}
+	var resolved []string
+	for _, d := range exist {
+		resolved = append(resolved, evalSymlinks(d))
+	}
 	for _, p := range filepath.SplitList(getenv("PATH")) {
-		if p != "" && slices.Contains(exist, filepath.Clean(p)) {
+		if filepath.IsAbs(p) && slices.Contains(resolved, evalSymlinks(p)) {
 			return nil
 		}
 	}
 
 	return exist
+}
+
+// evalSymlinks is p with its symbolic links resolved, so two spellings of
+// one directory compare equal, or p cleaned when that fails.
+func evalSymlinks(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+
+	return filepath.Clean(p)
 }
