@@ -75,11 +75,13 @@ type Policy struct {
 }
 
 // Writable returns the directories a command may write under the policy,
-// absolute and with symlinks resolved where they exist: the TempDir in
-// ReadOnly; the workspace, the writable roots, /tmp, uah's own $TMPDIR, and
-// the TempDir in WorkspaceWrite; none in FullAccess, which has no sandbox.
-// A root inside one of the ReadOnly paths is left out, so it cannot open
-// up part of that path again.
+// spelled by Canonical: the TempDir in ReadOnly; the workspace, the
+// writable roots, /tmp, uah's own $TMPDIR, and the TempDir in
+// WorkspaceWrite; none in FullAccess, which has no sandbox. A root inside
+// one of the ReadOnly paths is left out, so it cannot open up part of that
+// path again, and so is a root that it or one of its protected paths
+// cannot spell: its spelling, and so what the sandbox compares it with,
+// is unknown.
 func (p Policy) Writable() []string {
 	var roots []string
 	switch p.Mode {
@@ -100,11 +102,11 @@ func (p Policy) Writable() []string {
 		if r == "" {
 			continue
 		}
-		if resolved, err := filepath.EvalSymlinks(r); err == nil {
-			r = resolved
+		r, ok := Canonical(r)
+		if !ok || slices.Contains(out, r) || p.insideReadOnly(r) {
+			continue
 		}
-		r = filepath.Clean(r)
-		if !slices.Contains(out, r) && !p.insideReadOnly(r) {
+		if _, ok := p.spelledIn(r); ok {
 			out = append(out, r)
 		}
 	}
@@ -113,10 +115,14 @@ func (p Policy) Writable() []string {
 }
 
 // insideReadOnly reports whether path is one of the ReadOnly paths or
-// inside one, also under another name for it (protects).
+// inside one, also under another name for it (protects). A ReadOnly path
+// that does not spell might hold any path, so it holds every one.
 func (p Policy) insideReadOnly(path string) bool {
 	for _, ro := range p.ReadOnly {
-		if ro != "" && protects(ResolvePath(ro), path) {
+		if ro == "" {
+			continue
+		}
+		if spelled, ok := Canonical(ro); !ok || protects(spelled, path) {
 			return true
 		}
 	}
@@ -140,16 +146,41 @@ func Protected(root string) []string {
 }
 
 // protectedIn returns the paths inside root that stay read-only: Protected
-// and the policy's ReadOnly paths at or under root, resolved.
+// and the policy's ReadOnly paths at or under root, spelled by Canonical.
+// Writable leaves out a root whose protected paths do not all spell, so
+// none is missing here.
 func (p Policy) protectedIn(root string) []string {
-	out := Protected(root)
-	for _, path := range p.readOnlyIn(root) {
-		if !slices.Contains(out, path) {
-			out = append(out, path)
+	out, _ := p.spelledIn(root)
+
+	return out
+}
+
+// spelledIn is protectedIn, and whether each of its paths spelled.
+func (p Policy) spelledIn(root string) ([]string, bool) {
+	var out []string
+	add := func(spelled string, ok bool) bool {
+		if ok && !slices.Contains(out, spelled) {
+			out = append(out, spelled)
+		}
+
+		return ok
+	}
+	for _, name := range ProtectedNames {
+		if !add(spellUnder(root, name)) {
+			return nil, false
+		}
+	}
+	paths := p.readOnlyIn(root)
+	if target := gitdirTarget(filepath.Join(root, ".git")); target != "" {
+		paths = append(paths, target)
+	}
+	for _, path := range paths {
+		if !add(Canonical(path)) {
+			return nil, false
 		}
 	}
 
-	return out
+	return out, true
 }
 
 // readOnlyIn returns the policy's ReadOnly paths at or under root,
@@ -163,7 +194,11 @@ func (p Policy) readOnlyIn(root string) []string {
 		if path == "" {
 			continue
 		}
-		path, ok := underRoot(ResolvePath(path), root)
+		spelled, ok := Canonical(path)
+		if !ok {
+			continue // Writable then leaves out every root (insideReadOnly)
+		}
+		path, ok := underRoot(spelled, root)
 		if ok && !slices.Contains(out, path) {
 			out = append(out, path)
 		}

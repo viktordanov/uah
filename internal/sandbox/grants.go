@@ -259,8 +259,12 @@ func GrantFor(paths []string) string {
 	if resolveDir(dir) != dir || !Grantable(dir) {
 		return ""
 	}
+	spelled, ok := Canonical(dir)
+	if !ok || !Grantable(spelled) {
+		return ""
+	}
 
-	return dir
+	return spelled
 }
 
 // Grantable reports whether a directory may be granted at all: an absolute
@@ -311,50 +315,4 @@ var hookNames = []string{".git", ".uah", ".uagent"}
 
 func isProtectedName(name string, names []string) bool {
 	return slices.ContainsFunc(names, func(p string) bool { return strings.EqualFold(p, name) })
-}
-
-// Canonical returns an existing path as the file system spells it: each
-// name as its directory lists it, so a case alias or another Unicode
-// normalization on macOS becomes the stored name. ok is false when a
-// directory on the way cannot be listed or does not list the name under
-// any spelling: the stored spelling is then unknown.
-func Canonical(path string) (string, bool) {
-	out := string(filepath.Separator)
-	for name := range strings.SplitSeq(path, string(filepath.Separator)) {
-		if name == "" {
-			continue
-		}
-		stored, ok := storedName(out, name)
-		if !ok {
-			return path, false
-		}
-		out = filepath.Join(out, stored)
-	}
-
-	return out, true
-}
-
-// storedName is the name dir lists for name: name itself, else the entry
-// that is the same file.
-func storedName(dir, name string) (string, bool) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", false
-	}
-	for _, e := range entries {
-		if e.Name() == name {
-			return name, true
-		}
-	}
-	want, err := os.Lstat(filepath.Join(dir, name))
-	if err != nil {
-		return "", false
-	}
-	for _, e := range entries {
-		if info, err := os.Lstat(filepath.Join(dir, e.Name())); err == nil && os.SameFile(info, want) {
-			return e.Name(), true
-		}
-	}
-
-	return "", false
 }

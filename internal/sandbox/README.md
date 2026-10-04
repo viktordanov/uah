@@ -17,7 +17,7 @@ The profile and the bubblewrap layout are adapted from Codex rust-v0.156.1 (Apac
 6. [Tests](#tests)
 <!-- /memoria:section -->
 
-<!-- memoria:section id="modes" files="sandbox.go gitdir.go canwrite.go" -->
+<!-- memoria:section id="modes" files="sandbox.go gitdir.go canwrite.go spell.go" -->
 ## Modes
 
 The mode comes from `--sandbox`, `UAH_SANDBOX`, or `sandbox_mode`. The names are Codex's.
@@ -28,11 +28,15 @@ The mode comes from `--sandbox`, `UAH_SANDBOX`, or `sandbox_mode`. The names are
 | `read-only` | Read any file; write only the session's temporary directory; no network |
 | `danger-full-access` | Anything the user can: no sandbox. Only yolo mode (`--yolo`) runs in it; `sandbox_mode` and `--sandbox` refuse the name |
 
-`Policy.Writable` returns the writable roots with symlinks resolved. `Protected` returns the paths that stay read-only inside each root: `.git`, `.uah`, `.agents`, and `.codex` (and `.uagent`, the old project directory, until it is moved), and the directory a worktree's `.git` file points to. They are protected because a sandboxed command could otherwise plant code that runs later outside the sandbox, such as a git hook. So `git commit` needs an escalation.
+`Policy.Writable` returns the writable roots spelled by `Canonical` (below). `Protected` returns the paths that stay read-only inside each root: `.git`, `.uah`, `.agents`, and `.codex` (and `.uagent`, the old project directory, until it is moved), and the directory a worktree's `.git` file points to. They are protected because a sandboxed command could otherwise plant code that runs later outside the sandbox, such as a git hook. So `git commit` needs an escalation.
 
 `Policy.ReadOnly` adds absolute paths that stay read-only in the same way inside any root that holds them, and whose directories between the root and the path cannot be renamed, so a command cannot move one aside and put its own in its place. A writable root inside a ReadOnly path is dropped from `Writable`, so it cannot open part of the path again. Both checks also see other names: Seatbelt compares names without case, so a root spelled `STATE` holds `state/sandbox` (the path is protected under the root's spelling) and a root spelled `SANDBOX` is dropped; a directory that is the same file under another name counts too. The directory of the sandboxing scripts is one (see [below](#how-a-command-is-sandboxed)): app setup and the embedded engine add it, and `Shell` adds its own directory to every policy it wraps.
 
 `CanWrite(path)` is the check `apply_patch` uses: `ResolvePath` resolves the path's symlinks (a dangling one is followed), then `CanWriteResolved` checks the resolved path against the roots and the protected and ReadOnly paths. A protected path also covers its other names: names are compared without case (macOS's default file system and Linux's casefold directories ignore it, so `.GIT` is `.git`), and a path whose existing directories include the protected directory itself under another name, such as another Unicode normalization, is refused by the directory's identity. Seatbelt and bubblewrap see the real file, so this matters only for writes uah makes itself. A caller that writes the resolved path itself, without following symlinks, checks with `CanWriteResolved`, so the path it checked is the path it writes.
+
+### One spelling for each path
+
+Every path that reaches a policy's decisions goes through one function, `Canonical` (`spell.go`): a writable root, a protected path, a `ReadOnly` path, a grant, and a path that `CanWrite`, `Protects`, `Holds`, or `InRoot` checks. It makes the path absolute, resolves its symlinks (`ResolvePath`), and spells each existing name as its directory lists it. A case alias or another Unicode normalization on macOS, or a path through a symlink, then becomes one string, so the string comparisons uah makes (the exclusions it puts under each root in the Seatbelt profile, the binds it orders for bubblewrap, `CanWrite`) never treat two spellings of one directory differently. Names past the deepest existing directory are kept as given. It fails closed: when a directory on the way cannot be listed, the spelling is unknown. A root that does not spell, or whose protected paths do not, is left out of `Writable`, and a `ReadOnly` path that does not spell leaves out every root. A checked path that does not spell is neither writable nor grantable. Each listing is cached for as long as its directory keeps its identity and modification time, which a rename or a new entry changes. `TestSpelling_OneDirectoryOneString` feeds random case and symlink spellings of every root, `ReadOnly` path, grant, and checked path to a policy, and requires the same roots, Seatbelt profile, bubblewrap arguments, and decisions as for the stored spellings.
 
 ### The session's temporary directory
 
@@ -97,7 +101,7 @@ On Linux, a protected name that does not exist yet, such as `.git` in a workspac
 Commands get the whole environment, as in Codex. `EnvPolicy` is Codex's `[shell_environment_policy]`: `inherit` (`all`, `core`, `none`), `ignore_default_excludes = false` to drop `*KEY*`, `*SECRET*`, and `*TOKEN*`, then `exclude`, `set`, and `include_only`, in Codex's order. When the policy is not the default, the script starts with `env -i` and copies each kept variable as `NAME="$NAME"` when the command runs, so no inherited value is written to disk. With a `TempDir`, the script then sets `TMPDIR`, `TMP`, `TEMP`, and `TMPPREFIX` into it, whatever the policy says about them.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="seatbelt_test.go bwrap_test.go shell_test.go denied_test.go env_test.go wrap_darwin_test.go wrap_linux_test.go canwrite_test.go worktree_test.go grants_test.go" -->
+<!-- memoria:section id="tests" files="seatbelt_test.go bwrap_test.go shell_test.go denied_test.go env_test.go wrap_darwin_test.go wrap_linux_test.go canwrite_test.go worktree_test.go grants_test.go spell_test.go" -->
 ## Tests
 
 | Test | Pins |
@@ -105,6 +109,7 @@ Commands get the whole environment, as in Codex. `EnvPolicy` is Codex's `[shell_
 | `seatbelt_test.go`, `bwrap_test.go` | The profile and the bubblewrap arguments for each mode, against golden files in `testdata` |
 | `wrap_darwin_test.go`, `wrap_linux_test.go` | Real sandboxed commands: writes inside and outside the roots, protected paths, network, exit codes, and inherited file descriptors, and a read-only command that writes only its `$TMPDIR`: zsh heredocs, fish's `psub`, `mktemp`, and `go build` work. macOS's `/bin/bash` 3.2 still makes heredoc files outside `$TMPDIR`, so its heredocs fail in read-only mode. Each runs only on its platform |
 | `shell_test.go`, `env_test.go`, `denied_test.go` | The script, a changed, symlinked, or open script and an open directory replaced, a script's mode read back from its header after the policy changed (never from a FIFO or another file), the environment policy, the temporary directory's variables over it, and the denial heuristic |
+| `spell_test.go` | One spelling for each path: random case and symlink spellings give the same policy, and a path under a directory that cannot be listed fails closed |
 | `worktree_test.go`, `grants_test.go` | Real repositories made with `git init` and `git worktree add`: a linked worktree from the main checkout and from a subdirectory, the main checkout from a linked worktree, a path through a symlink, a bare repository's worktrees, `--relative-paths` links; not an unrelated repository, a plain directory, a nested repository, a submodule, or crafted `.git` files and symlinks; a worktree that holds the common directory, a forged workspace; `Grantable` and the home directory, `Add`, a removed or replaced grant, `Valid` for an approved grant and after a worktree is removed, `GrantFor`, and `Policy.Protects` |
 | `TestSeatbeltShellScriptsStayReadOnly`, `TestLinuxShellScriptsStayReadOnly`, `canwrite_test.go` | A sandboxed command cannot replace, remove, or add a script, or rename the scripts' directory or a directory above it, when it is under `$TMPDIR`; `CanWrite` refuses a `ReadOnly` path |
 

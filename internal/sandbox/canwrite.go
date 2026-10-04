@@ -17,19 +17,24 @@ func (p Policy) CanWrite(path string) bool {
 
 // CanWriteResolved is CanWrite for a path ResolvePath returned: it takes
 // path as it is, without following its symlinks again, for a caller that
-// then writes that exact path without following symlinks.
+// then writes that exact path without following symlinks. The path is
+// spelled as the roots are (spell), and one that does not spell is not
+// writable.
 func (p Policy) CanWriteResolved(path string) bool {
 	if p.Mode == FullAccess {
 		return true
 	}
-	roots := p.Writable()
+	path, ok := spell(path)
+	if !ok {
+		return false
+	}
 	inside := false
-	for _, r := range roots {
+	for _, r := range p.Writable() {
 		if within(path, r) {
 			inside = true
 		}
 		for _, protected := range p.protectedIn(r) {
-			if protects(ResolvePath(protected), path) {
+			if protects(protected, path) {
 				return false
 			}
 		}
@@ -44,12 +49,13 @@ func (p Policy) CanWriteResolved(path string) bool {
 // open part of it again, as Seatbelt's rule for the inner root and
 // bubblewrap's later bind would, so the engine grants no such directory.
 func (p Policy) Protects(path string) bool {
-	if p.insideReadOnly(path) {
-		return true
+	path, ok := Canonical(path)
+	if !ok || p.insideReadOnly(path) {
+		return true // a path that does not spell is not granted
 	}
 	for _, r := range p.Writable() {
 		for _, protected := range p.protectedIn(r) {
-			if protects(ResolvePath(protected), path) {
+			if protects(protected, path) {
 				return true
 			}
 		}
@@ -63,6 +69,10 @@ func (p Policy) Protects(path string) bool {
 // that root's protected paths under a name the sandbox may not compare
 // them by, so the engine grants no such directory.
 func (p Policy) Holds(dir string) bool {
+	dir, ok := Canonical(dir)
+	if !ok {
+		return true // a directory that does not spell is not granted
+	}
 	for _, r := range p.Writable() {
 		if holds(dir, r) {
 			return true
@@ -78,6 +88,10 @@ func (p Policy) Holds(dir string) bool {
 // could keep its protected paths out of the root's rule in Seatbelt, which
 // compares names as strings, so the engine leaves it out.
 func (p Policy) InRoot(path string) bool {
+	path, ok := Canonical(path)
+	if !ok {
+		return true // a path that does not spell is not granted
+	}
 	for _, r := range p.Writable() {
 		if holds(r, path) {
 			return true
