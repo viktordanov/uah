@@ -184,7 +184,7 @@ func TestEnvironmentStripped(t *testing.T) {
 func TestWithEnvironment(t *testing.T) {
 	t.Parallel()
 	env := map[string]string{"SHELL": "/bin/sh", "LANG": "C", "PATH": "/usr/bin:/bin", "HOME": t.TempDir()}
-	f := contextprep.Facts{Workspace: "/w"}.WithEnvironment(func(k string) string { return env[k] })
+	f := contextprep.Facts{Workspace: "/w"}.WithEnvironment(func(k string) string { return env[k] }, nil)
 	assert.Equal(t, "/bin/sh", f.Shell)
 	assert.Equal(t, "env", f.ShellSource)
 	assert.Equal(t, "LANG=C", f.Locale)
@@ -193,8 +193,13 @@ func TestWithEnvironment(t *testing.T) {
 
 	env["LANG"] = "en_US.UTF-8"
 	env["SHELL"] = "/nonexistent/shell"
-	f = contextprep.Facts{}.WithEnvironment(func(k string) string { return env[k] })
+	f = contextprep.Facts{}.WithEnvironment(func(k string) string { return env[k] }, nil)
 	assert.False(t, f.NotUTF8)
 	assert.NotEqual(t, "env", f.ShellSource, "a missing $SHELL is not used")
 	assert.NotEqual(t, "/nonexistent/shell", f.Shell)
+
+	commands := map[string]string{"LC_ALL": "C", "HOME": env["HOME"]}
+	f = contextprep.Facts{}.WithEnvironment(func(k string) string { return env[k] }, func(k string) string { return commands[k] })
+	assert.Equal(t, "LC_ALL=C", f.Locale, "the locale commands get")
+	assert.True(t, f.NotUTF8)
 }

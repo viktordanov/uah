@@ -35,7 +35,7 @@ The engine calls `Prepare` in `internal/engine/embedded/prepare.go`; the [engine
 | `Subagent` | True in a subagent's session |
 | `MaxOutputLength` | The Bash tool's default `max_output_length`, which the engine passes from uah-core (40,000), or 0 when it is not known |
 
-The zero value of each environment field is the normal case, so facts that leave them out get no line about them. `Facts.WithEnvironment(getenv)` fills `Shell` and the four fields after it from the process environment through `internal/shellenv`, a leaf; the engine and `uah context` both call it.
+The zero value of each environment field is the normal case, so facts that leave them out get no line about them. `Facts.WithEnvironment(getenv, commands)` fills `Shell` and the four fields after it through `internal/shellenv`, a leaf: the shell from uah's environment, and the locale and `PATH` from the environment commands get, which the caller reads through the environment policy (`sandbox.EnvPolicy.Getenv`), so a `[shell_environment_policy]` that sets `LC_ALL` or `PATH` is what the notes describe. The engine and `uah context` both call it.
 
 The text must be stable for the session: an adapter reads only the facts and the files, never the clock.
 

@@ -68,3 +68,23 @@ func TestEnvPolicyApply(t *testing.T) {
 		})
 	}
 }
+
+func TestEnvPolicyGetenv(t *testing.T) {
+	env := map[string]string{"LANG": "en_US.UTF-8", "PATH": "/usr/bin:/opt/homebrew/bin", "HOME": "/home/u"}
+	getenv := func(k string) string { return env[k] }
+
+	same := sandbox.EnvPolicy{}.Getenv(getenv, "LANG", "PATH")
+	assert.Equal(t, "en_US.UTF-8", same("LANG"))
+	assert.Equal(t, "/usr/bin:/opt/homebrew/bin", same("PATH"))
+	assert.Empty(t, same("HOME"), "a key not asked for")
+
+	p := sandbox.EnvPolicy{Inherit: sandbox.InheritNone, Set: map[string]string{"LC_ALL": "C", "PATH": "/bin"}}
+	get := p.Getenv(getenv, "LANG", "LC_ALL", "PATH")
+	assert.Empty(t, get("LANG"), "not inherited")
+	assert.Equal(t, "C", get("LC_ALL"), "set by the policy")
+	assert.Equal(t, "/bin", get("PATH"))
+
+	only := sandbox.EnvPolicy{IncludeOnly: []string{"PATH"}}.Getenv(getenv, "LANG", "PATH")
+	assert.Empty(t, only("LANG"))
+	assert.Equal(t, "/usr/bin:/opt/homebrew/bin", only("PATH"))
+}

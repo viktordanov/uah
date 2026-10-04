@@ -89,7 +89,7 @@ func (w *wiring) facts(req core.Request) contextprep.Facts {
 		MaxOutputLength: operation.DefaultMaxOutputLength,
 		Subagent:        strings.HasPrefix(req.SessionID, session.SubagentIDPrefix),
 		InstructionsOff: w.e.cfg.InstructionsOff,
-	}.WithEnvironment(w.getenv)
+	}.WithEnvironment(w.getenv, w.commandEnv())
 	if instructions.HasProject(req.SystemPrompt) {
 		f.InstructionFiles = w.e.cfg.InstructionFiles
 	} else {
@@ -123,6 +123,17 @@ func (w *wiring) modules(req core.Request) *contextprep.Modules {
 	}
 
 	return contextprep.Load(w.e.cfg.ContextModules.Sources(req.Workspace, check))
+}
+
+// commandEnv reads the variables context preparation reports as commands
+// see them: through the environment policy where the sandboxing shell
+// applies it, else as they are.
+func (w *wiring) commandEnv() func(string) string {
+	if w.e.cfg.Sandbox == nil {
+		return w.getenv
+	}
+
+	return w.e.cfg.Env.Getenv(w.getenv, shellenv.Keys...)
 }
 
 // shell is the user's shell, which commands run in: $SHELL, else the

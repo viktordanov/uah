@@ -2,7 +2,6 @@ package shellenv_test
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -30,8 +29,11 @@ func TestResolve(t *testing.T) {
 	dir := t.TempDir()
 	env := func(shell string) func(string) string {
 		return func(k string) string {
-			if k == "SHELL" {
+			switch k {
+			case "SHELL":
 				return shell
+			case "PATH":
+				return "relative:" + filepath.Dir(envShell)
 			}
 
 			return ""
@@ -51,7 +53,9 @@ func TestResolve(t *testing.T) {
 		{"SHELL blank", "  ", loginShell, shellenv.Shell{Path: loginShell, Source: shellenv.FromLogin}},
 		{"SHELL missing", missing, loginShell, shellenv.Shell{Path: loginShell, Source: shellenv.FromLogin, Env: missing}},
 		{"SHELL not executable", notExec, loginShell, shellenv.Shell{Path: loginShell, Source: shellenv.FromLogin, Env: notExec}},
-		{"SHELL relative", "zsh", loginShell, shellenv.Shell{Path: loginShell, Source: shellenv.FromLogin, Env: "zsh"}},
+		{"SHELL a name on PATH", "envsh", loginShell, shellenv.Shell{Path: envShell, Source: shellenv.FromEnv}},
+		{"SHELL a name not on PATH", "nosuchsh", loginShell, shellenv.Shell{Path: loginShell, Source: shellenv.FromLogin, Env: "nosuchsh"}},
+		{"SHELL relative", "./envsh", loginShell, shellenv.Shell{Path: loginShell, Source: shellenv.FromLogin, Env: "./envsh"}},
 		{"SHELL a directory", dir, "", shellenv.Shell{Path: shellenv.Default, Source: shellenv.FromDefault, Env: dir}},
 		{"no login shell", "", "", shellenv.Shell{Path: shellenv.Default, Source: shellenv.FromDefault}},
 		{"login shell missing", "", missing, shellenv.Shell{Path: shellenv.Default, Source: shellenv.FromDefault}},
@@ -100,21 +104,16 @@ bob:x:1001:1001::/home/bob:
 	require.Error(t, err)
 }
 
-// TestLogin reads the real user database: the login shell exists where the
-// system keeps one for the user, and is "" on Windows.
+// TestLogin reads the real user database: the login shell is an absolute
+// path where the system gives one for the user, and "" on Windows.
 func TestLogin(t *testing.T) {
 	s := shellenv.Login()
 	switch runtime.GOOS {
 	case "windows":
 		assert.Empty(t, s)
-	case "darwin":
-		if _, err := exec.LookPath("/usr/bin/dscl"); err != nil {
-			t.Skip("no dscl")
-		}
-		assert.True(t, filepath.IsAbs(s), "dscl gives the login shell: %q", s)
 	default:
 		if s == "" {
-			t.Skip("the user has no entry in the user database")
+			t.Skip("the user database is not reachable here (a sandbox) or has no entry for the user")
 		}
 		assert.True(t, filepath.IsAbs(s), "the login shell: %q", s)
 	}

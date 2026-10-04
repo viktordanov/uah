@@ -72,16 +72,21 @@ type Adapter interface {
 	Prepare(ctx context.Context, f Facts) string
 }
 
-// WithEnvironment fills the facts the process environment gives: the shell
-// ($SHELL, else the login shell, else /bin/sh) and where it came from, the
-// locale, and the user's tool directories that PATH lacks.
-func (f Facts) WithEnvironment(getenv func(string) string) Facts {
+// WithEnvironment fills the facts the environment gives: the shell ($SHELL,
+// else the login shell, else /bin/sh) and where it came from, from uah's
+// environment; the locale and the user's tool directories that PATH lacks,
+// from the environment commands get (commands, which reads shellenv.Keys;
+// nil for uah's).
+func (f Facts) WithEnvironment(getenv, commands func(string) string) Facts {
 	sh := shellenv.Current(getenv)
 	f.Shell, f.ShellSource = sh.Path, string(sh.Source)
+	if commands == nil {
+		commands = getenv
+	}
 	var utf8 bool
-	f.Locale, utf8 = shellenv.Locale(getenv)
+	f.Locale, utf8 = shellenv.Locale(commands)
 	f.NotUTF8 = !utf8
-	f.MissingPathDirs = shellenv.MissingToolDirs(getenv)
+	f.MissingPathDirs = shellenv.MissingToolDirs(commands)
 
 	return f
 }

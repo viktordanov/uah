@@ -111,9 +111,9 @@ The keys of `when`:
 | `instructions` | bool | Whether any instruction files (AGENTS.md and so on) were loaded into the system prompt |
 | `instructions_omitted` | bool | Whether the system prompt leaves the workspace's instruction files out on purpose, as the system prompt of `/review`'s reviewer does, which replaces uah's |
 | `instructions_off` | bool | Whether loading instruction files is turned off (`--no-instructions`, or `instructions.enabled = false`); then none is looked for, so `instructions` and `instructions_omitted` are false whether or not the workspace has any |
-| `shell_source` | list | Where the shell came from: `env` (`$SHELL`), `login` (the login shell from the user database, as `$SHELL` was unset or not an executable file), or `default` (`/bin/sh`, as neither was usable) |
-| `utf8` | bool | Whether the locale names UTF-8: `LC_ALL`, else `LC_CTYPE`, else `LANG`, the first that is set |
-| `path_minimal` | bool | Whether `PATH` has none of the user's tool directories that exist: `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/go/bin`, `~/.cargo/bin` |
+| `shell_source` | list | Where the shell came from: `env` (`$SHELL`, a bare name looked up on `PATH`), `login` (the login shell from the user database, as `$SHELL` was unset or not an executable file), or `default` (`/bin/sh`, as neither was usable) |
+| `utf8` | bool | Whether the locale commands get names UTF-8: `LC_ALL`, else `LC_CTYPE`, else `LANG`, the first that is set, after `[shell_environment_policy]` |
+| `path_minimal` | bool | Whether the `PATH` commands get has none of the user's tool directories that exist: `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/go/bin`, `~/.cargo/bin` |
 
 The text after the front matter may be Markdown. It is data: uah inserts the [placeholders](#placeholders) and sends it, and never runs it.
 

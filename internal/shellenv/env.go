@@ -8,6 +8,9 @@ import (
 	"strings"
 )
 
+// Keys are the variables Locale and MissingToolDirs read.
+var Keys = []string{"LC_ALL", "LC_CTYPE", "LANG", "PATH", "HOME"}
+
 // Locale is the variable that decides the character set and its value,
 // such as "LANG=C": LC_ALL, else LC_CTYPE, else LANG, the first that is
 // set, as the C library reads them. utf8 reports whether it names UTF-8;

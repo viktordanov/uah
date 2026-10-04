@@ -51,13 +51,14 @@ type Shell struct {
 	Env string
 }
 
-// Resolve picks the shell: $SHELL when it names an executable file, else
-// the login shell that login returns when it is one, else /bin/sh. login
-// is Login outside tests.
+// Resolve picks the shell: $SHELL when it names an executable file (a
+// bare name, such as fish, found on getenv's PATH), else the login shell
+// that login returns when it is one, else /bin/sh. login is Login outside
+// tests.
 func Resolve(getenv func(string) string, login func() string) Shell {
 	env := strings.TrimSpace(getenv("SHELL"))
-	if env != "" && Executable(env) {
-		return Shell{Path: env, Source: FromEnv}
+	if p := onPath(env, getenv("PATH")); p != "" {
+		return Shell{Path: p, Source: FromEnv}
 	}
 	if s := login(); s != "" && Executable(s) {
 		return Shell{Path: s, Source: FromLogin, Env: env}
@@ -68,6 +69,32 @@ func Resolve(getenv func(string) string, login func() string) Shell {
 
 // Current is Resolve with the user database's login shell.
 func Current(getenv func(string) string) Shell { return Resolve(getenv, Login) }
+
+// onPath is name when it is an executable file's absolute path, the first
+// executable file of that name in path's directories when it is a bare
+// name, and "" otherwise: a relative path with a separator names no
+// fixed file.
+func onPath(name, path string) string {
+	switch {
+	case name == "":
+		return ""
+	case filepath.IsAbs(name):
+		if Executable(name) {
+			return name
+		}
+
+		return ""
+	case strings.ContainsRune(name, '/') || strings.ContainsRune(name, filepath.Separator):
+		return ""
+	}
+	for _, dir := range filepath.SplitList(path) {
+		if p := filepath.Join(dir, name); filepath.IsAbs(dir) && Executable(p) {
+			return p
+		}
+	}
+
+	return ""
+}
 
 // Executable reports whether path is an absolute path to a regular file
 // that someone may execute, following symbolic links.
