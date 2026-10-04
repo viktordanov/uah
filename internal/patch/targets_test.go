@@ -29,9 +29,9 @@ func TestTargets_SwappedForSymlink(t *testing.T) {
 		// their content ("" means absent).
 		untouched map[string]string
 	}{{
-		name: "a directory to an absolute symlink",
-		body: "*** Add File: sub/x.txt\n+evil",
-		swap: func(t *testing.T, ws, outside string) { swapDir(t, filepath.Join(ws, "sub"), outside) },
+		name:      "a directory to an absolute symlink",
+		body:      "*** Add File: sub/x.txt\n+evil",
+		swap:      func(t *testing.T, ws, outside string) { swapDir(t, filepath.Join(ws, "sub"), outside) },
 		untouched: map[string]string{"x.txt": ""},
 	}, {
 		name: "a directory to a relative symlink",
@@ -69,9 +69,9 @@ func TestTargets_SwappedForSymlink(t *testing.T) {
 		},
 		untouched: map[string]string{"secret.txt": "secret\n"},
 	}, {
-		name: "a deleted file's directory",
-		body: "*** Delete File: sub/a.txt",
-		swap: func(t *testing.T, ws, outside string) { swapDir(t, filepath.Join(ws, "sub"), outside) },
+		name:      "a deleted file's directory",
+		body:      "*** Delete File: sub/a.txt",
+		swap:      func(t *testing.T, ws, outside string) { swapDir(t, filepath.Join(ws, "sub"), outside) },
 		untouched: map[string]string{"a.txt": "outside\n"},
 	}, {
 		name: "a move's destination directory, after an earlier write",
