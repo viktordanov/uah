@@ -116,14 +116,18 @@ func (t patchTranslator) decide(ctx context.Context, call llm.ToolCall) submit {
 	}
 	// Checked before asking, as Codex verifies a patch before its approval,
 	// so the user never approves a patch that cannot apply.
+	// It reads the files at the targets the job writes, so two spellings
+	// of one file are one file here too.
 	hunks, err := patch.Parse(text)
+	var targets patch.Targets
 	if err == nil {
-		_, err = patch.Compute(t.gate.cwd, hunks)
+		targets = patchTargets(t.gate.cwd, hunks)
+		_, err = targets.Compute(t.gate.cwd, hunks)
 	}
 	if err != nil {
 		return refuse(tool.ErrorStatus("apply_patch verification failed: "+err.Error(), 0))
 	}
-	targets, granted, approved, reason := t.gate.check(ctx, hunks, call.Arguments)
+	granted, approved, reason := t.gate.check(ctx, hunks, targets, call.Arguments)
 	if reason != "" {
 		return refuse(tool.ErrorStatus(reason, 0))
 	}
@@ -207,33 +211,24 @@ type patchGate struct {
 	grants *sandbox.Grants
 }
 
-// check returns the patch's targets and the directories it made writable
-// for the session, or why the patch may not apply. The targets are its
-// paths with their symlinks resolved, as the sandbox checks them; the job
+// check returns the directories the patch made writable for the session
+// and the paths the user approved, or why the patch may not apply. The
+// targets (patchTargets) are checked as the sandbox checks them; the job
 // writes there without following symlinks, so a directory a command swaps
 // for a symlink after the check fails the patch instead of leading it out
 // of the checked directories. check blocks while the user decides, at most
 // until ctx ends.
-func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments string) (targets patch.Targets, granted, approved []string, reason string) {
+func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, targets patch.Targets, arguments string) (granted, approved []string, reason string) {
 	paths := patch.Paths(g.cwd, hunks)
-	targets = patch.Targets{}
-	for _, p := range paths {
-		// Spelled once, so two spellings of one file are one target.
-		if target, ok := sandbox.Canonical(p); ok {
-			targets[p] = target
-		} else {
-			targets[p] = sandbox.ResolvePath(p) // the policy refuses what does not spell
-		}
-	}
 	if reason := g.forbidden(hunks, paths, targets); reason != "" {
-		return nil, nil, nil, reason
+		return nil, nil, reason
 	}
 	if g.policy == nil {
-		return targets, nil, nil, ""
+		return nil, nil, ""
 	}
 	policy := g.policy()
 	if policy.Mode == sandbox.FullAccess {
-		return targets, nil, nil, ""
+		return nil, nil, ""
 	}
 	outside := outsidePaths(policy, paths, targets)
 	if len(outside) > 0 && g.grants != nil && policy.Mode == sandbox.WorkspaceWrite {
@@ -243,7 +238,7 @@ func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments stri
 		}
 	}
 	if len(outside) == 0 {
-		return targets, granted, nil, ""
+		return granted, nil, ""
 	}
 	why := "the patch writes outside the writable roots"
 	if policy.Mode == sandbox.ReadOnly {
@@ -255,17 +250,17 @@ func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments stri
 		GrantRoot: g.offer(policy, resolvedPaths(outside, targets)),
 	}
 	if g.approver == nil {
-		return nil, nil, nil, "apply_patch rejected: " + why + ", and no one can approve it."
+		return nil, nil, "apply_patch rejected: " + why + ", and no one can approve it."
 	}
 	d := g.approver.Decide(ctx, req, g.ask)
 	if d.Run == approval.Deny {
-		return nil, nil, nil, d.Reason
+		return nil, nil, d.Reason
 	}
 	if d.Grant != "" && g.grants.Add(d.Grant, sandbox.GrantApproved) {
 		granted = append(granted, d.Grant)
 	}
 
-	return targets, granted, outside, ""
+	return granted, outside, ""
 }
 
 // recheck returns why the patch may no longer apply when it starts: a path
@@ -284,6 +279,24 @@ func (g patchGate) recheck(targets patch.Targets, approved []string) string {
 	}
 
 	return ""
+}
+
+// patchTargets are the paths a patch writes and where it writes each, the
+// targets the policy checks and the job writes: each path spelled once
+// (sandbox.Canonical), so two spellings of one file are one target, or
+// with its symlinks resolved when it does not spell, which the policy then
+// refuses.
+func patchTargets(cwd string, hunks []patch.Hunk) patch.Targets {
+	targets := patch.Targets{}
+	for _, p := range patch.Paths(cwd, hunks) {
+		if target, ok := sandbox.Canonical(p); ok {
+			targets[p] = target
+		} else {
+			targets[p] = sandbox.ResolvePath(p)
+		}
+	}
+
+	return targets
 }
 
 // outsidePaths are the paths whose targets the policy does not let the

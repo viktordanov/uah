@@ -4,9 +4,9 @@
 --dev /dev
 --bind $SYSTMP $SYSTMP
 --bind $BASE/ws $BASE/ws
---ro-bind $BASE/ws/.git $BASE/ws/.git
 --bind $BASE/tmpdir $BASE/tmpdir
 --bind $BASE/session-tmp $BASE/session-tmp
+--ro-bind $BASE/ws/.git $BASE/ws/.git
 --unshare-user
 --unshare-pid
 --unshare-ipc

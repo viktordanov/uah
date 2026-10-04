@@ -145,18 +145,32 @@ func (p Policy) layout() layout {
 		}
 		l.readOnly = append(l.readOnly, spelled)
 	}
+	// failed are the roots left out because they or their protected
+	// paths do not spell: a root that holds one would otherwise open
+	// what they protect, so it is left out too.
+	var failed []string
 	for _, r := range p.candidates() {
 		if r == "" {
 			continue
 		}
 		root, ok := l.sp.canonical(r)
-		if !ok || slices.ContainsFunc(l.roots, func(have rootLayout) bool { return have.root == root }) || l.insideReadOnly(root) {
+		if !ok {
+			failed = append(failed, ResolvePath(r))
+
+			continue
+		}
+		if slices.ContainsFunc(l.roots, func(have rootLayout) bool { return have.root == root }) || l.insideReadOnly(root) {
 			continue
 		}
 		if rl, ok := l.rootLayout(root); ok {
 			l.roots = append(l.roots, rl)
+		} else {
+			failed = append(failed, root)
 		}
 	}
+	l.roots = slices.DeleteFunc(l.roots, func(r rootLayout) bool {
+		return slices.ContainsFunc(failed, func(f string) bool { return holds(r.root, f) })
+	})
 
 	return l
 }

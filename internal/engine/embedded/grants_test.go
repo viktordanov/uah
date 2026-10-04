@@ -297,3 +297,21 @@ func TestPatch_ForbidRuleInAnotherSpelling(t *testing.T) {
 	assert.Contains(t, e.lastOutput(), "not run: a rule forbids this command.")
 	assert.Equal(t, "s\n", readFile(t, filepath.Join(e.Workspace, "Real", "secret.txt")))
 }
+
+// TestPatch_TwoSpellingsOfOneFile: a patch that updates a file and then
+// the same file through a symlinked directory verifies and applies both,
+// as the job reads and writes them: at one target.
+func TestPatch_TwoSpellingsOfOneFile(t *testing.T) {
+	skipWithoutSandbox(t)
+	e := newPatchEnv(t, patchOpts{mode: sandbox.WorkspaceWrite}, func(ws, _ string) []fakellm.Reply {
+		require.NoError(t, os.MkdirAll(filepath.Join(ws, "Real"), 0o755))
+		require.NoError(t, os.Symlink(filepath.Join(ws, "Real"), filepath.Join(ws, "link")))
+		require.NoError(t, os.WriteFile(filepath.Join(ws, "Real", "a.txt"), []byte("one\n"), 0o644))
+
+		return applyPatch("*** Update File: Real/a.txt\n@@\n-one\n+two\n*** Update File: link/a.txt\n@@\n-two\n+three")
+	})
+	assert.Equal(t, core.StatusOK, e.ev.finished().Status)
+
+	assert.NotContains(t, e.lastOutput(), "verification failed")
+	assert.Equal(t, "three\n", readFile(t, filepath.Join(e.Workspace, "Real", "a.txt")))
+}

@@ -3,9 +3,11 @@ package sandbox
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // Every path that reaches a policy's decisions, as a writable root, a
@@ -63,8 +65,12 @@ func (s *speller) under(dir, rel string) (string, bool) {
 			continue
 		}
 		if _, err := os.Lstat(filepath.Join(out, name)); err != nil {
-			// The rest does not exist yet: nothing lists it.
-			return filepath.Join(append([]string{out}, names[i:]...)...), true
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+				// The rest does not exist yet: nothing lists it.
+				return filepath.Join(append([]string{out}, names[i:]...)...), true
+			}
+
+			return filepath.Join(dir, rel), false // it may exist, under a spelling unknown
 		}
 		stored, ok := s.storedName(out, name)
 		if !ok {

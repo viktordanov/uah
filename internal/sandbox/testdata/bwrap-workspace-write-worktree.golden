@@ -4,10 +4,10 @@
 --dev /dev
 --bind $SYSTMP $SYSTMP
 --bind $BASE/ws $BASE/ws
---ro-bind $BASE/ws/.git $BASE/ws/.git
 --bind $BASE/main $BASE/main
---ro-bind $BASE/main/.git $BASE/main/.git
 --bind $BASE/tmpdir $BASE/tmpdir
+--ro-bind $BASE/ws/.git $BASE/ws/.git
+--ro-bind $BASE/main/.git $BASE/main/.git
 --ro-bind $BASE/main/.git/worktrees/ws $BASE/main/.git/worktrees/ws
 --unshare-user
 --unshare-pid

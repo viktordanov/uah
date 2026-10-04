@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/sandbox"
+	"github.com/viktordanov/uah/testing/harnesstest"
 )
 
 // spellings makes other spellings of one existing path: each letter in
@@ -66,8 +67,12 @@ func (s spellings) of(path string) string {
 // decisions as for the paths as the file system spells them.
 func TestSpelling_OneDirectoryOneString(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	base, err := filepath.EvalSymlinks(t.TempDir())
+	// Outside the shared temporary directory, which holds thousands of
+	// entries that each decision would list again, and with $TMPDIR, a
+	// root of every policy, pointed at a small directory of its own.
+	base, err := filepath.EvalSymlinks(harnesstest.OutsideDir(t, "uah-spelling-"))
 	require.NoError(t, err)
+	t.Setenv("TMPDIR", base)
 	base = filepath.Join(base, "Base")
 	ws := filepath.Join(base, "Work", "Space")
 	extra := filepath.Join(base, "Extra", "Root")
@@ -96,7 +101,7 @@ func TestSpelling_OneDirectoryOneString(t *testing.T) {
 		filepath.Join(extra, "new", "dir", "f"), filepath.Join(grant, ".git"), filepath.Join(grant, "src", "f"),
 		filepath.Join(scripts, "sh-1"), filepath.Join(base, "outside"),
 	}
-	for i := range 10 {
+	for i := range 20 {
 		got := policy(gen.of)
 		assert.Equal(t, want.Writable(), got.Writable(), "variant %d roots", i)
 		profile, params := sandbox.SeatbeltProfile(got)
@@ -182,4 +187,54 @@ func TestSpelling_NoCacheBetweenDecisions(t *testing.T) {
 	got, ok = sandbox.Canonical(filepath.Join(base, "tree"))
 	assert.True(t, ok)
 	assert.Equal(t, filepath.Join(base, "tree"), got)
+}
+
+// TestSpelling_FailedRootTakesItsHolder: a root left out because its
+// protected paths do not spell takes out a root that holds it too, which
+// would otherwise write its .git; and a name that may exist, behind a
+// directory that cannot be searched, does not spell.
+func TestSpelling_FailedRootTakesItsHolder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads any directory")
+	}
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	parent := filepath.Join(base, "parent")
+	ws := filepath.Join(parent, "ws")
+	require.NoError(t, os.MkdirAll(filepath.Join(ws, ".git"), 0o755))
+	require.NoError(t, os.Chmod(ws, 0o311))
+	t.Cleanup(func() { _ = os.Chmod(ws, 0o755) })
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, WritableRoots: []string{parent}}
+
+	assert.NotContains(t, p.Writable(), parent)
+	assert.NotContains(t, p.Writable(), ws)
+	assert.False(t, p.CanWrite(filepath.Join(ws, ".git", "config")))
+
+	hidden := filepath.Join(base, "hidden")
+	require.NoError(t, os.MkdirAll(hidden, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(hidden, "f"), nil, 0o644))
+	require.NoError(t, os.Chmod(hidden, 0o600))
+	t.Cleanup(func() { _ = os.Chmod(hidden, 0o755) })
+	_, ok := sandbox.Canonical(filepath.Join(hidden, "f"))
+	assert.False(t, ok, "a lookup that fails other than for a missing name")
+}
+
+// TestBwrap_ProtectedTargetAfterEveryBind: a protected symlink that leads
+// into another writable root stays read-only in bubblewrap too: its
+// read-only bind comes after that root's writable bind.
+func TestBwrap_ProtectedTargetAfterEveryBind(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	ws := filepath.Join(base, "ws")
+	meta := filepath.Join(ws, "metadata")
+	require.NoError(t, os.MkdirAll(meta, 0o755))
+	require.NoError(t, os.Symlink(meta, filepath.Join(ws, ".codex")))
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, WritableRoots: []string{meta}}
+
+	args := strings.Join(sandbox.BwrapArgs(p), "\n")
+	bind := strings.LastIndex(args, "--bind\n"+meta+"\n")
+	ro := strings.LastIndex(args, "--ro-bind\n"+meta+"\n")
+	require.GreaterOrEqual(t, bind, 0)
+	assert.Greater(t, ro, bind, args)
+	assert.False(t, p.CanWrite(filepath.Join(meta, "x")))
 }

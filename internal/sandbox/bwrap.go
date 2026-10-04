@@ -18,8 +18,10 @@ import (
 //	--ro-bind / / --dev /dev                   the whole disk read-only, a minimal /dev
 //	--bind R R                                 each existing writable root, shallowest first
 //	  --bind D D                               each directory between R and a ReadOnly path in it
-//	  --ro-bind P P                            each existing protected path in R, and ReadOnly path
-//	--ro-bind G G                              a worktree's gitdir inside a writable root, after every bind
+//	--ro-bind P P                              after every bind, shallowest first: each existing
+//	                                           protected path and ReadOnly path inside a writable
+//	                                           root, a worktree's gitdir and a protected symlink's
+//	                                           target included
 //	--unshare-user --unshare-pid --unshare-ipc
 //	--unshare-net                              unless the policy has network
 //	--proc /proc --cap-drop ALL
@@ -57,8 +59,10 @@ func bwrapLayout(p Policy, mountProc bool) []string {
 	for _, r := range layouts {
 		roots = append(roots, r.root)
 	}
-	// A protected path outside its own root, such as a worktree's gitdir,
-	// goes after every bind so a later root bind cannot cover it.
+	// Every protected path goes after every bind, shallowest first, so no
+	// writable bind, a root nested in another or one a protected symlink
+	// leads into, can cover it: the policy refuses such writes
+	// (CanWrite), and the mounts must too.
 	var later []string
 	for _, r := range layouts {
 		root := r.root
@@ -74,10 +78,8 @@ func bwrapLayout(p Policy, mountProc bool) []string {
 			args = append(args, "--bind", dir, dir)
 		}
 		for _, path := range protected {
-			if under(path, []string{root}) {
-				args = protect(args, path)
-			} else if under(path, roots) && !slices.Contains(later, path) {
-				// Outside every root it is already read-only.
+			// Outside every root it is already read-only.
+			if under(path, roots) && !slices.Contains(later, path) {
 				later = append(later, path)
 			}
 		}
