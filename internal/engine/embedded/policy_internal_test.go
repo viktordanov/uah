@@ -1,11 +1,14 @@
 package embedded
 
 import (
+	"encoding/json/jsontext"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/viktordanov/uah-core/harness/operation"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/toolpolicy"
 )
@@ -92,4 +95,55 @@ func TestMCPPolicy_Identity(t *testing.T) {
 			[][2]string{{"docs", "read-file"}, {"docs", "list"}})
 		assert.Equal(t, []string{"docs/list"}, got.offered)
 	})
+}
+
+// fakeOperations records what reaches the operation manager.
+type fakeOperations struct{ added []operation.Operation }
+
+func (f *fakeOperations) Add(op operation.Operation) error {
+	f.added = append(f.added, op)
+
+	return nil
+}
+func (*fakeOperations) Cancel(operation.ID, string) error   { return nil }
+func (*fakeOperations) Updates() <-chan operation.Operation { return nil }
+
+// TestPolicyOperations: an operation a resumed session restores runs only
+// if the current policy allows its tool: an MCP call by its identity in the
+// run's table, a resource request by its server, a command by Bash. Any
+// other is canceled before it starts; a terminal one is left alone.
+func TestPolicyOperations(t *testing.T) {
+	remote := func(planType operation.RemoteJobPlanType, data string) operation.Operation {
+		spec, err := operation.NewRemoteJobSpec(operation.RemoteJobPlan{Type: planType, Version: 1, Data: jsontext.Value(data)})
+		require.NoError(t, err)
+
+		return operation.Operation{MaxOutputLength: 1 << 10, ID: operation.ID(data), Type: spec.Type, Version: spec.Version, Status: operation.StatusReady, State: spec.State}
+	}
+	p := toolpolicy.Policy{Allow: []string{"mcp__docs__search", "read_mcp_resource", "mcp__files__*"}}
+	allowed := mcp.Qualify([]mcp.Tool{{Server: "docs", Tool: "search"}, {Server: "files", Tool: "read"}})
+	mp := newMCPPolicy(p, []string{"docs", "files"}, nil)
+	f := &fakeOperations{}
+	m := withPolicyOperations(f, operationAllowed(p, mp.tools(allowed), mp.allowsServer))
+
+	ops := map[string]operation.Operation{
+		"search":         remote(mcpPlanType, `{"server":"docs","tool":"search"}`),
+		"delete":         remote(mcpPlanType, `{"server":"docs","tool":"delete"}`),
+		"read files":     remote(mcpPlanType, `{"server":"files","op":"resources/read","uri":"x"}`),
+		"read docs":      remote(mcpPlanType, `{"server":"docs","op":"resources/read","uri":"x"}`),
+		"spawn":          remote(agentPlanType, `{"tool":"spawn_agent","arguments":{}}`),
+		"patch":          remote(engine.PatchPlanType, `{}`),
+		"shell":          {ID: "sh", Type: operation.TypeShell, Status: operation.StatusReady},
+		"done shell":     {ID: "sh2", Type: operation.TypeShell, Status: operation.StatusCompleted},
+		"awaiting shell": {ID: "sh3", Type: operation.TypeShell, Status: operation.StatusAwaiting},
+	}
+	want := map[string]operation.Status{
+		"search": operation.StatusReady, "delete": operation.StatusCanceling, "read files": operation.StatusReady,
+		"read docs": operation.StatusCanceling, "spawn": operation.StatusCanceling, "patch": operation.StatusCanceling,
+		"shell": operation.StatusCanceling, "done shell": operation.StatusCompleted, "awaiting shell": operation.StatusCanceling,
+	}
+	for name, op := range ops {
+		require.NoError(t, m.Add(op))
+		assert.Equal(t, want[name], f.added[len(f.added)-1].Status, name)
+	}
+	assert.Same(t, operation.Manager(f), withPolicyOperations(f, nil), "no policy: the manager as it is")
 }

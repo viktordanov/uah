@@ -244,6 +244,7 @@ What the policy does:
 
 - The model's tool definitions hold only the allowed tools, hosted `web_search` included. A call to any other tool, forced or made up, is refused with "the tool policy does not allow it" before a hook, an approval, or a job sees it, and no PostToolUse hook runs for it either. The call and its refusal still show in the transcript and in `--json`.
 - The MCP resource tools reach only a server the policy allows as a whole (`mcp__<server>__*`), and must name it: `list_mcp_resources` without a server is refused.
+- A resumed session can hold calls submitted under an earlier policy, or none, that had not finished. uah checks each one against the current policy before it runs and cancels one the policy does not allow.
 - The auto-reviewer runs no commands unless the policy allows `Bash`.
 - Without `request_user_input`, the default prompt does not mention the question tool.
 - A session under a policy fails closed when a hook fails: a PreToolUse or PermissionRequest hook that exits with a code other than 0 or 2, crashes, times out, prints invalid JSON, or answers a `permissionDecision` uah does not know blocks the call ([hook failures](#hooks)).

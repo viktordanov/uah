@@ -132,7 +132,7 @@ func TestEmbedded_ToolPolicyResources(t *testing.T) {
 		want  string
 	}{
 		{allow: []string{"mcp__test__*", "read_mcp_resource", "list_mcp_resources"}, want: "hello from the resource"},
-		{allow: []string{"mcp__test__echo", "read_mcp_resource", "list_mcp_resources"}, want: "the tool policy allows the resources of only the MCP servers it allows as a whole"},
+		{allow: []string{"mcp__test__echo", "read_mcp_resource", "list_mcp_resources"}, want: "for this server, the tool policy does not allow it"},
 	} {
 		e := newEnv(t, fakellm.Reply{Calls: []fakellm.Call{
 			call("read_mcp_resource", `{"server":"test","uri":"test://greeting"}`),
@@ -146,7 +146,7 @@ func TestEmbedded_ToolPolicyResources(t *testing.T) {
 		outputs := e.llm.Requests()[1].ToolOutputs
 		require.Len(t, outputs, 2)
 		assert.Contains(t, strings.Join(outputs, "\n"), c.want, c.allow)
-		assert.Contains(t, strings.Join(outputs, "\n"), "name one of them as server", "listing every server is refused")
+		assert.Contains(t, strings.Join(outputs, "\n"), "that the tool policy allows as a whole", "listing every server is refused")
 	}
 }
 

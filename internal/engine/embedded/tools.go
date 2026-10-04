@@ -74,6 +74,9 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 		gate.servers = mp.allowsServer
 	}
 	allowed := mp.tools(mcpTools)
+	if policy.Restricted() {
+		w.opAllowed = operationAllowed(policy, allowed, mp.allowsServer)
+	}
 	registry = withMCP(registry, scope.mcpTools(allowed), resources, scope.disallowResources(req.DisallowedTools), gate)
 	registry = withPatch(registry, offersPatch(w.e.models, req), w.patchGate(approvals, req))
 	registry = w.withAgents(registry, req)

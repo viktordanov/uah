@@ -16,6 +16,7 @@ import (
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
 // The remote job plan an MCP call runs as (see docs/design/mcp.md).
@@ -226,7 +227,7 @@ func (t resourceTranslator) Translate(ctx tool.Context, call llm.ToolCall) tool.
 		return tool.ErrorStatus(err.Error(), 0)
 	}
 	if t.servers != nil && (plan.Server == "" || !t.servers(plan.Server)) {
-		return tool.ErrorStatus("the tool policy allows the resources of only the MCP servers it allows as a whole (mcp__<server>__*); name one of them as server", 0)
+		return tool.ErrorStatus("name an MCP server that the tool policy allows as a whole (mcp__<server>__*); for this server, "+toolpolicy.Refused, 0)
 	}
 
 	return submitMCP(plan)(ctx)

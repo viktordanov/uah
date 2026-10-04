@@ -1,14 +1,18 @@
 package embedded
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/viktordanov/uah-core/harness/llm"
+	"github.com/viktordanov/uah-core/harness/operation"
 	"github.com/viktordanov/uah-core/harness/tool"
 
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/mcp"
+	"github.com/viktordanov/uah/internal/patch"
 	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
@@ -179,4 +183,87 @@ type policyRefusal struct {
 
 func (t policyRefusal) Translate(tool.Context, llm.ToolCall) tool.CallStatus {
 	return tool.ErrorStatus(fmt.Sprintf("tool %q is not available in this session: %s", t.name, t.why), 0)
+}
+
+// policyOperations checks each operation the coordinator adds against the
+// policy, the run's own tool table included, and cancels one the policy
+// does not allow before it starts. A new call's operation passed the
+// policy as it was translated; this catches one a resumed session
+// restores, which was submitted under another policy (or none) and the
+// coordinator adds again without translating it.
+type policyOperations struct {
+	operation.Manager
+
+	allowed func(operation.Operation) bool
+}
+
+// withPolicyOperations wraps the run's operations when allowed is set.
+func withPolicyOperations(m operation.Manager, allowed func(operation.Operation) bool) operation.Manager {
+	if allowed == nil {
+		return m
+	}
+
+	return policyOperations{Manager: m, allowed: allowed}
+}
+
+func (m policyOperations) Add(op operation.Operation) error {
+	if (op.Status == operation.StatusReady || op.Status == operation.StatusAwaiting) && !m.allowed(op) {
+		op.Status = operation.StatusCanceling // every handler stops a canceling operation without running it
+	}
+
+	return m.Manager.Add(op)
+}
+
+// operationAllowed reports whether the policy allows the tool an operation
+// runs: shell for Bash, view_image, skill_use, and the remote jobs by their
+// plans, an MCP call by its identity in the run's table and a resource
+// request by its server. The goal and question jobs carry a result the
+// session already applied, and a value operation runs nothing.
+func operationAllowed(p toolpolicy.Policy, mcpAllowed []mcp.Tool, servers func(string) bool) func(operation.Operation) bool {
+	identities := map[[2]string]bool{}
+	for _, t := range mcpAllowed {
+		identities[[2]string{t.Server, t.Tool}] = true
+	}
+
+	return func(op operation.Operation) bool {
+		switch op.Type {
+		case operation.TypeShell:
+			return p.Allows(tool.BashName)
+		case operation.TypeViewImage:
+			return p.Allows(tool.ViewImageName)
+		case operation.TypeSkillUse:
+			return p.Allows(tool.SkillUseName)
+		case operation.TypeRemoteJob:
+		default:
+			return true
+		}
+		state, err := operation.DecodeRemoteJobState(op)
+		if err != nil {
+			return false
+		}
+		switch state.Plan.Type {
+		case mcpPlanType:
+			var plan mcpPlan
+			if json.Unmarshal(state.Plan.Data, &plan) != nil {
+				return false
+			}
+			switch plan.Op {
+			case "":
+				return identities[[2]string{plan.Server, plan.Tool}]
+			case opListResources:
+				return p.Allows(mcp.ListResourcesTool) && servers(plan.Server)
+			case opListTemplates:
+				return p.Allows(mcp.ListResourceTemplatesTool) && servers(plan.Server)
+			}
+
+			return p.Allows(mcp.ReadResourceTool) && servers(plan.Server)
+		case agentPlanType:
+			var plan agentPlan
+			return json.Unmarshal(state.Plan.Data, &plan) == nil && p.Allows(plan.Tool)
+		case engine.PatchPlanType:
+			return p.Allows(patch.ToolName)
+		}
+
+		return true
+	}
 }
