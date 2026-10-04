@@ -242,9 +242,12 @@ func (t *terminal) release(restore string) error {
 
 // reset puts the terminal back as the program found it after a program
 // on the released terminal was stopped, which may have left its own
-// modes: the first mode, the main screen, the cursor shown, autowrap on.
+// modes: the first mode, the main screen, the cursor shown, autowrap on,
+// and no mouse, bracketed paste, or keyboard enhancements.
 func (t *terminal) reset() {
-	_ = t.write(resetFrame + autowrapOn + cursorShow + altScreenOff)
+	// The modes the program may have turned on are turned off; the kitty
+	// flags are set to none rather than popped, as its push is unknown.
+	_ = t.write(resetFrame + mouseOff + pasteOff + "\x1b[=0;1u\x1b[>4m" + autowrapOn + cursorShow + altScreenOff)
 	if t.orig != nil {
 		_ = xterm.Restore(t.inFd, t.orig)
 	}

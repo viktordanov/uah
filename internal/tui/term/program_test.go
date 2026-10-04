@@ -795,8 +795,11 @@ func TestFailingSlowFramesYield(t *testing.T) {
 
 			return
 		case <-time.After(10 * time.Millisecond):
-			assert.LessOrEqual(t, log.viewCount(), 1+maxWriteFails, "the retries wait for the timer")
+			// One try per frame, also when the try on the timer fails.
+			before := log.viewCount()
 			clk.advance(time.Second / FrameRate)
+			time.Sleep(10 * time.Millisecond)
+			assert.LessOrEqual(t, log.viewCount()-before, 1, "one try per timer tick")
 		}
 	}
 }
@@ -846,4 +849,46 @@ func (b *blocking) Run() error {
 	close(b.ended)
 
 	return b.ctx.Err()
+}
+
+// A stop that ends a program on the released terminal ends Run: an Exec
+// still queued behind it does not start.
+func TestExecQueuedBehindAStopDoesNotRun(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	inR, inW := io.Pipe()
+	defer inW.Close()
+	first := &blocking{started: make(chan struct{}), ended: make(chan struct{})}
+	second := &blocking{started: make(chan struct{}), ended: make(chan struct{})}
+	p := NewProgram(counter{log: newEvents()}, Options{In: inR, Out: &output{}, Width: 20, Height: 4, Profile: colorprofile.TrueColor})
+	p.Send(execMsg{cmd: first})
+	p.Send(execMsg{cmd: second})
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.Run(ctx)
+		done <- err
+	}()
+	<-first.started
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not end")
+	}
+	select {
+	case <-second.started:
+		t.Fatal("the queued program ran after the stop")
+	default:
+	}
+}
+
+// After a stopped program, the terminal's input modes it may have turned
+// on are off, as well as the screen and cursor put back.
+func TestResetTurnsOffTheProgramsModes(t *testing.T) {
+	out := &output{}
+	tm := &terminal{out: out}
+	tm.reset()
+	for _, seq := range []string{mouseOff, pasteOff, "\x1b[>4m", "\x1b[=0;1u", cursorShow, altScreenOff} {
+		assert.Contains(t, out.String(), seq)
+	}
 }

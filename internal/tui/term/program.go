@@ -185,16 +185,11 @@ func (p *Program) loop(w, h int) error {
 			if wait := time.Second/FrameRate - p.clock.Since(p.last); wait > 0 {
 				frame, stop = p.clock.Timer(wait)
 			} else {
-				p.draw()
-				if p.fatal != nil {
-					return p.fatal
-				}
-				// A frame that failed to write leaves dirty set: it is
-				// tried again a frame later, however long it took.
-				if p.dirty {
-					frame, stop = p.clock.Timer(time.Second / FrameRate)
-				}
+				frame, stop = p.drawFrame()
 			}
+		}
+		if p.fatal != nil {
+			return p.fatal
 		}
 		select {
 		case <-p.ctx.Done():
@@ -210,8 +205,7 @@ func (p *Program) loop(w, h int) error {
 		case msg := <-p.msgs:
 			p.handle(msg)
 		case <-frame:
-			frame, stop = nil, nil
-			p.draw()
+			frame, stop = p.drawFrame()
 		}
 		p.drain()
 		if p.stopped {
@@ -229,11 +223,25 @@ func (p *Program) loop(w, h int) error {
 	return nil
 }
 
+// drawFrame draws a frame and returns the timer for the next try when it
+// failed to write: a failed frame is tried again a frame later, however
+// long it took, so failing slow output cannot spin.
+func (p *Program) drawFrame() (<-chan time.Time, func()) {
+	p.draw()
+	if p.dirty && p.fatal == nil {
+		return p.clock.Timer(time.Second / FrameRate)
+	}
+
+	return nil, nil
+}
+
 // drain takes the input and results already waiting, so a burst (a
 // paste, a wheel spin, a batch of events) costs one frame.
 func (p *Program) drain() {
 	for range 256 {
-		if p.quit {
+		// Nothing more runs once the program is ending: a second queued
+		// Exec, say, after a stop signal ended the first.
+		if p.quit || p.stopped || p.fatal != nil || p.panicked != nil || p.ctx.Err() != nil {
 			return
 		}
 		select {
@@ -392,7 +400,9 @@ func (p *Program) runReleased(c ExecCommand) (stopped bool, err error) {
 	for {
 		select {
 		case err := <-done:
-			return stopped, err
+			// The context may have ended the program before this select
+			// saw it end.
+			return stopped || p.ctx.Err() != nil, err
 		case sig := <-p.term.stop:
 			if !p.term.stops(sig) {
 				continue
