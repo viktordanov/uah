@@ -186,6 +186,12 @@ func TestWorktrees_CraftedGitFiles(t *testing.T) {
 	_, ok = w.Of(filepath.Join(linked, "x.go"))
 	assert.False(t, ok, "a .git symlink to the common directory")
 
+	hardlinked := filepath.Join(r.base, "hardlinked")
+	require.NoError(t, os.MkdirAll(hardlinked, 0o755))
+	require.NoError(t, os.Link(filepath.Join(r.bar, ".git"), filepath.Join(hardlinked, ".git")))
+	_, ok = w.Of(filepath.Join(hardlinked, "x.go"))
+	assert.False(t, ok, "a hard link to a worktree's .git file")
+
 	_, ok = w.Of(filepath.Join(r.bar, "a.txt"))
 	assert.True(t, ok, "the real worktree still is one")
 }

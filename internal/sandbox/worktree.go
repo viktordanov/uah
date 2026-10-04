@@ -171,7 +171,9 @@ func (t tree) listed() string {
 		return ""
 	}
 	back, ok := readPath(filepath.Join(t.gitdir, "gitdir"))
-	if !ok || !sameFile(back, t.dotgit) {
+	if !ok || !sameFile(back, t.dotgit) || !sameFile(filepath.Dir(back), t.top) {
+		// The directory counts, not only the file: a hard link to a
+		// worktree's .git file elsewhere is the same file.
 		return ""
 	}
 

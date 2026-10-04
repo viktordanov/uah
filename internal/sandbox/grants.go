@@ -61,7 +61,9 @@ func NewGrants(workspace string, notify func(Grant)) *Grants {
 // is new. A path that is not an existing directory, is not resolved, or
 // fails Grantable is refused; so is one a grant already covers.
 func (g *Grants) Add(path string, reason GrantReason) bool {
-	return g.add(Grant{Path: path, Reason: reason}, nil, true)
+	_, ok := g.add(Grant{Path: path, Reason: reason}, nil, true)
+
+	return ok
 }
 
 // AddWorktree grants the worktree of the workspace's repository that holds
@@ -74,11 +76,11 @@ func (g *Grants) AddWorktree(path string, allow func(root string) bool) (string,
 		return "", false
 	}
 	root, dir, ok := g.Worktrees.check(path)
-	if !ok || !allow(root) || !g.add(Grant{Path: root, Reason: GrantWorktree}, dir, true) {
+	if !ok || !allow(root) {
 		return "", false
 	}
 
-	return root, true
+	return g.add(Grant{Path: root, Reason: GrantWorktree}, dir, true)
 }
 
 // Keep adds a grant kept from before a resume when it is still Valid,
@@ -88,26 +90,40 @@ func (g *Grants) Keep(gr Grant) bool {
 		return false
 	}
 	dir, ok := g.valid(gr)
+	if !ok {
+		return false
+	}
+	_, ok = g.add(gr, dir, false)
 
-	return ok && g.add(gr, dir, false)
+	return ok
 }
 
 // add adds the grant for the directory dir, or the one at its path now
-// when dir is nil, telling notify when tell is set.
-func (g *Grants) add(gr Grant, dir os.FileInfo, tell bool) bool {
+// when dir is nil, telling notify when tell is set, and returns the path it
+// keeps. The path is kept as
+// the file system spells it (Canonical), so two grants, or a grant and a
+// protected path, never name one directory in two ways that the sandbox,
+// which compares names as strings, would take apart.
+func (g *Grants) add(gr Grant, dir os.FileInfo, tell bool) (string, bool) {
 	if g == nil || !Grantable(gr.Path) {
-		return false
+		return "", false
 	}
 	info, ok := sameDir(gr.Path, dir)
 	if !ok {
-		return false
+		return "", false
+	}
+	if gr.Path = Canonical(gr.Path); !Grantable(gr.Path) {
+		return "", false
+	}
+	if _, ok := sameDir(gr.Path, info); !ok {
+		return "", false
 	}
 	g.mu.Lock()
 	for _, have := range g.grants {
 		if within(gr.Path, have.Path) {
 			g.mu.Unlock()
 
-			return false
+			return "", false
 		}
 	}
 	g.grants = append(g.grants, granted{Grant: gr, dir: info})
@@ -118,7 +134,7 @@ func (g *Grants) add(gr Grant, dir os.FileInfo, tell bool) bool {
 		notify(gr)
 	}
 
-	return true
+	return gr.Path, true
 }
 
 // List returns the grants that still hold, in the order they were made
@@ -294,4 +310,45 @@ var hookNames = []string{".git", ".uah", ".uagent"}
 
 func isProtectedName(name string, names []string) bool {
 	return slices.ContainsFunc(names, func(p string) bool { return strings.EqualFold(p, name) })
+}
+
+// Canonical returns an existing path as the file system spells it: each
+// name as its directory lists it, so a case alias or another Unicode
+// normalization on macOS becomes the stored name. A name its directory
+// does not list under any spelling is kept as given.
+func Canonical(path string) string {
+	out := string(filepath.Separator)
+	for name := range strings.SplitSeq(path, string(filepath.Separator)) {
+		if name == "" {
+			continue
+		}
+		out = filepath.Join(out, storedName(out, name))
+	}
+
+	return out
+}
+
+// storedName is the name dir lists for name: name itself, else the entry
+// that is the same file.
+func storedName(dir, name string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return name
+	}
+	for _, e := range entries {
+		if e.Name() == name {
+			return name
+		}
+	}
+	want, err := os.Lstat(filepath.Join(dir, name))
+	if err != nil {
+		return name
+	}
+	for _, e := range entries {
+		if info, err := os.Lstat(filepath.Join(dir, e.Name())); err == nil && os.SameFile(info, want) {
+			return e.Name()
+		}
+	}
+
+	return name
 }

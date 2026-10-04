@@ -177,3 +177,23 @@ func TestGrants_AddWorktree(t *testing.T) {
 	assert.Equal(t, realPath(t, r.bar), root)
 	assert.Equal(t, []sandbox.Grant{{Path: root, Reason: sandbox.GrantWorktree}}, g.List())
 }
+
+// TestGrants_Canonical: a grant keeps its directory as the file system
+// spells it, so a case alias is stored under the listed name, and a grant
+// inside it under another spelling is inside it.
+func TestGrants_Canonical(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	base := realPath(t, t.TempDir())
+	outer := filepath.Join(base, "Outer")
+	require.NoError(t, os.MkdirAll(filepath.Join(outer, "Inner"), 0o755))
+	alias := filepath.Join(base, "OUTER")
+	if _, err := os.Stat(alias); err != nil {
+		t.Skip("this file system tells case apart")
+	}
+	assert.Equal(t, filepath.Join(outer, "Inner"), sandbox.Canonical(filepath.Join(alias, "inner")))
+
+	g := sandbox.NewGrants(base, nil)
+	require.True(t, g.Add(alias, sandbox.GrantApproved))
+	assert.Equal(t, []string{outer}, g.Roots())
+	assert.False(t, g.Add(filepath.Join(base, "outer", "inner"), sandbox.GrantApproved), "inside it, under another case")
+}
