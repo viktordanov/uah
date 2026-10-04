@@ -199,8 +199,7 @@ func (w *wiring) mcpTools(ctx context.Context) ([]mcp.Tool, error) {
 
 // policy is the configured sandbox policy for the request's workspace,
 // with its private temporary directory, the sandbox scripts read-only, and
-// the session's grants as more writable roots: each one that no root
-// before it protects, so a grant never opens part of a protected path.
+// the session's grants as more writable roots (withGrants).
 func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 	p := *w.e.cfg.Sandbox
 	p.Mode, p.Workspace = mode, req.Workspace
@@ -210,10 +209,31 @@ func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 		p.ReadOnly = append(slices.Clip(p.ReadOnly), dir)
 	}
 	if mode == sandbox.WorkspaceWrite {
-		for _, root := range w.grants.Roots() {
-			if !p.Protects(root) {
-				p.WritableRoots = append(slices.Clip(p.WritableRoots), root)
-			}
+		p = withGrants(p, w.grants.Roots())
+	}
+
+	return p
+}
+
+// withGrants adds the granted directories to the policy's writable roots,
+// whatever order they were granted in, leaving out a grant that is or
+// holds one of the policy's own roots, and then a grant that a protected
+// path of any root, the other grants included, covers. So no grant opens
+// part of a protected path, as Seatbelt's rule for an inner root and
+// bubblewrap's later bind would, and none takes in a root's protected
+// paths under a name the sandbox compares differently.
+func withGrants(p sandbox.Policy, grants []string) sandbox.Policy {
+	var roots []string
+	for _, g := range grants {
+		if !p.Holds(g) {
+			roots = append(roots, g)
+		}
+	}
+	all := p
+	all.WritableRoots = append(slices.Clip(p.WritableRoots), roots...)
+	for _, g := range roots {
+		if !all.Protects(g) {
+			p.WritableRoots = append(slices.Clip(p.WritableRoots), g)
 		}
 	}
 

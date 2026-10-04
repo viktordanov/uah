@@ -31,14 +31,15 @@ func (b sandboxedBash) grantWorktrees(mode sandbox.Mode, command string) bool {
 
 // grantWorktrees adds the worktrees of the workspace's repository that hold
 // the paths (resolved) the policy does not let a command write, unless the
-// policy protects the worktree, and returns the ones it added.
+// policy protects the worktree or the worktree holds one of its roots, and
+// returns the ones it added.
 func grantWorktrees(grants *sandbox.Grants, policy sandbox.Policy, paths []string) []string {
 	var added []string
 	for _, p := range paths {
 		if policy.CanWriteResolved(p) {
 			continue
 		}
-		if root, ok := grants.AddWorktree(p, func(root string) bool { return !policy.Protects(root) }); ok {
+		if root, ok := grants.AddWorktree(p, func(root string) bool { return !policy.Protects(root) && !policy.Holds(root) }); ok {
 			added = append(added, root)
 		}
 	}

@@ -3,13 +3,16 @@ package embedded
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/viktordanov/uah/internal/patch"
 	"github.com/viktordanov/uah/internal/sandbox"
+	"github.com/viktordanov/uah/testing/harnesstest"
 )
 
 // TestCommandPaths pins the paths an escalated command names: words with a
@@ -65,4 +68,50 @@ func TestBoxes_FailClosed(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, ok)
 	assert.Equal(t, "sh-1", box.shell)
+}
+
+// TestWithGrants pins which grants a policy takes, in any order: not one
+// that holds the workspace, also under a case alias, and not one inside a
+// protected path of another grant.
+func TestWithGrants(t *testing.T) {
+	base := sandbox.ResolvePath(t.TempDir())
+	ws := filepath.Join(base, "Repo", "child")
+	outer := filepath.Join(base, "outer")
+	inner := filepath.Join(outer, ".agents", "inner")
+	for _, d := range []string{ws, inner} {
+		require.NoError(t, os.MkdirAll(d, 0o755))
+	}
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws}
+
+	for _, order := range [][]string{{outer, inner}, {inner, outer}} {
+		assert.Equal(t, []string{outer}, withGrants(p, order).WritableRoots, "inside the other grant's .agents")
+	}
+	assert.Empty(t, withGrants(p, []string{filepath.Join(base, "Repo")}).WritableRoots, "holds the workspace")
+	if alias := filepath.Join(base, "repo"); sandbox.ResolvePath(alias) == alias {
+		if _, err := os.Stat(alias); err == nil {
+			assert.Empty(t, withGrants(p, []string{alias}).WritableRoots, "holds the workspace under another case")
+		}
+	}
+}
+
+// TestPatchGate_Recheck: when the patch starts, a path the policy let it
+// write when it was checked, and not approved, must still be writable.
+func TestPatchGate_Recheck(t *testing.T) {
+	ws := sandbox.ResolvePath(t.TempDir())
+	outside := sandbox.ResolvePath(harnesstest.OutsideDir(t, "uah-recheck-"))
+	writable := true
+	g := patchGate{policy: func() sandbox.Policy {
+		p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws}
+		if writable {
+			p.WritableRoots = []string{outside}
+		}
+
+		return p
+	}}
+	targets := patch.Targets{"a": filepath.Join(ws, "a"), "b": filepath.Join(outside, "b")}
+
+	assert.Empty(t, g.recheck(targets, nil))
+	writable = false
+	assert.Contains(t, g.recheck(targets, nil), "b is no longer inside the writable roots")
+	assert.Empty(t, g.recheck(targets, []string{"b"}), "approved")
 }

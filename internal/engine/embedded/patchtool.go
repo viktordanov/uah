@@ -122,7 +122,7 @@ func (t patchTranslator) decide(ctx context.Context, call llm.ToolCall) submit {
 	if err != nil {
 		return refuse(tool.ErrorStatus("apply_patch verification failed: "+err.Error(), 0))
 	}
-	targets, granted, reason := t.gate.check(ctx, hunks, call.Arguments)
+	targets, granted, approved, reason := t.gate.check(ctx, hunks, call.Arguments)
 	if reason != "" {
 		return refuse(tool.ErrorStatus(reason, 0))
 	}
@@ -136,6 +136,10 @@ func (t patchTranslator) decide(ctx context.Context, call llm.ToolCall) submit {
 	}
 
 	return func(tc tool.Context) tool.CallStatus {
+		if reason := t.gate.recheck(targets, approved); reason != "" {
+			return tool.ErrorStatus(reason, 0)
+		}
+
 		return tool.CallStatus{WaitingFor: []operation.ID{tc.Submit(spec)}}
 	}
 }
@@ -209,24 +213,23 @@ type patchGate struct {
 // for a symlink after the check fails the patch instead of leading it out
 // of the checked directories. check blocks while the user decides, at most
 // until ctx ends.
-func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments string) (patch.Targets, []string, string) {
+func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments string) (targets patch.Targets, granted, approved []string, reason string) {
 	paths := patch.Paths(g.cwd, hunks)
-	targets := patch.Targets{}
+	targets = patch.Targets{}
 	for _, p := range paths {
 		targets[p] = sandbox.ResolvePath(p)
 	}
 	if reason := g.forbidden(hunks, paths, targets); reason != "" {
-		return nil, nil, reason
+		return nil, nil, nil, reason
 	}
 	if g.policy == nil {
-		return targets, nil, ""
+		return targets, nil, nil, ""
 	}
 	policy := g.policy()
 	if policy.Mode == sandbox.FullAccess {
-		return targets, nil, ""
+		return targets, nil, nil, ""
 	}
 	outside := outsidePaths(policy, paths, targets)
-	var granted []string
 	if len(outside) > 0 && g.grants != nil && policy.Mode == sandbox.WorkspaceWrite {
 		if granted = grantWorktrees(g.grants, policy, resolvedPaths(outside, targets)); len(granted) > 0 {
 			policy = g.policy()
@@ -234,7 +237,7 @@ func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments stri
 		}
 	}
 	if len(outside) == 0 {
-		return targets, granted, ""
+		return targets, granted, nil, ""
 	}
 	why := "the patch writes outside the writable roots"
 	if policy.Mode == sandbox.ReadOnly {
@@ -246,17 +249,35 @@ func (g patchGate) check(ctx context.Context, hunks []patch.Hunk, arguments stri
 		GrantRoot: g.offer(policy, resolvedPaths(outside, targets)),
 	}
 	if g.approver == nil {
-		return nil, nil, "apply_patch rejected: " + why + ", and no one can approve it."
+		return nil, nil, nil, "apply_patch rejected: " + why + ", and no one can approve it."
 	}
 	d := g.approver.Decide(ctx, req, g.ask)
 	if d.Run == approval.Deny {
-		return nil, nil, d.Reason
+		return nil, nil, nil, d.Reason
 	}
 	if d.Grant != "" && g.grants.Add(d.Grant, sandbox.GrantApproved) {
 		granted = append(granted, d.Grant)
 	}
 
-	return targets, granted, ""
+	return targets, granted, outside, ""
+}
+
+// recheck returns why the patch may no longer apply when it starts: a path
+// the policy let it write when it was checked, and not approved, that the
+// policy no longer lets it write, as when a granted directory was replaced
+// while the patch waited for another call, or the mode became stricter.
+func (g patchGate) recheck(targets patch.Targets, approved []string) string {
+	if g.policy == nil {
+		return ""
+	}
+	policy := g.policy()
+	for p, target := range targets {
+		if !slices.Contains(approved, p) && !policy.CanWriteResolved(target) {
+			return "apply_patch rejected: " + p + " is no longer inside the writable roots; a directory or the permission mode changed since the patch was checked. Check the files and apply the patch again."
+		}
+	}
+
+	return ""
 }
 
 // outsidePaths are the paths whose targets the policy does not let the
@@ -291,7 +312,7 @@ func (g patchGate) offer(policy sandbox.Policy, resolved []string) string {
 		return ""
 	}
 	dir := sandbox.GrantFor(resolved)
-	if dir == "" {
+	if dir == "" || policy.Holds(dir) {
 		return ""
 	}
 	policy.WritableRoots = append(slices.Clip(policy.WritableRoots), dir)

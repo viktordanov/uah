@@ -58,6 +58,20 @@ func (p Policy) Protects(path string) bool {
 	return false
 }
 
+// Holds reports whether dir is, or holds, one of the policy's writable
+// roots, by name without case or by identity. A grant there would take in
+// that root's protected paths under a name the sandbox may not compare
+// them by, so the engine grants no such directory.
+func (p Policy) Holds(dir string) bool {
+	for _, r := range p.Writable() {
+		if holds(dir, r) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // protects reports whether the protected path covers path: path is it or
 // inside it, its names compared without case, as macOS's default file
 // system and Linux's casefold directories compare them; or path, or one of
