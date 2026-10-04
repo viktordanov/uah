@@ -45,6 +45,10 @@ func (st *Styles) approvalLines(a state.Approval, w int) []string {
 		keys, labels = append(keys, "a"), append(labels, "Yes, and don't ask again for this tool")
 		hint += " · a always for the tool"
 	}
+	if a.GrantRoot != "" {
+		keys, labels = append(keys, "w"), append(labels, "Yes, and allow writes to "+a.GrantRoot+" for this session")
+		hint += " · w allow the directory"
+	}
 	keys, labels = append(keys, "n"), append(labels, "No, and tell the agent what to do differently")
 	body = append(body, "")
 	body = append(body, st.choiceRows(keys, labels, make([]string, len(keys)), -1, inner)...)

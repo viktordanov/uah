@@ -1,0 +1,24 @@
+
+
+
+
+╭────────────────────────────────────────────────╮
+│ λ uah                                          │
+│                                                │
+│ model:     gpt-6-sol high   /model to change   │
+│ directory: /workspace/proj                     │
+╰────────────────────────────────────────────────╯
+
+╭─ Run outside the sandbox? ───────────────────────────────────────────────────────────────────────╮
+│ Reason: the patch writes outside the writable roots                                              │
+│ $ apply_patch /workspace/proj-worktrees/other/a.go                                               │
+│                                                                                                  │
+│   y Yes, proceed                                                                                 │
+│   w Yes, and allow writes to /workspace/proj-worktrees/other for this session                    │
+│   n No, and tell the agent what to do differently                                                │
+╰─ y yes · w allow the directory · n or esc no ────────────────────────────────────────────────────╯
+
+
+λ
+
+ gpt-6-sol high · workspace mode · /workspace/proj
