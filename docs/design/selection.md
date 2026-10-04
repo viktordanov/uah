@@ -119,7 +119,7 @@ A plain click selects nothing. Clicks count as a double or triple click when the
 
 Tool rows, the banner, and the finish line copy as drawn. It copies what the user sees rather than the item's source text, even for whole items, so the rule is predictable: a wrapped paragraph copies as its wrapped lines, as a terminal's own selection would.
 
-**The clipboard** (`bubble/mouse.go`). The shell writes the text twice, off the update loop: OSC 52 through Bubble Tea's `tea.SetClipboard`, which reaches the local clipboard from a remote shell, and the system's tool through `Deps.CopyText` (`internal/images/clipboard.TextWriter`: pbcopy on macOS, wl-copy in a Wayland session, `xclip -selection clipboard` in an X11 one). A missing tool is skipped silently, and OSC 52 alone remains. Tests inject `CopyText`, so no test touches a real clipboard.
+**The clipboard** (`bubble/mouse.go`). The shell writes the text twice, off the update loop: OSC 52 through `term.SetClipboard` (Bubble Tea's `tea.SetClipboard` until 1.8.4), which reaches the local clipboard from a remote shell, and the system's tool through `Deps.CopyText` (`internal/images/clipboard.TextWriter`: pbcopy on macOS, wl-copy in a Wayland session, `xclip -selection clipboard` in an X11 one). A missing tool is skipped silently, and OSC 52 alone remains. Tests inject `CopyText`, so no test touches a real clipboard.
 
 ## Decisions
 

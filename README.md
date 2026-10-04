@@ -87,6 +87,8 @@ The [context preparation guide](docs/context-preparation.md) explains the module
    uah "Fix the failing test in pkg/foo"     # the TUI, starting with a prompt
    ```
 
+   The TUI draws only what changed on the screen. Left open, it uses no CPU; while the agent streams an answer it uses about half the CPU of 1.8.4, and scrolling and typing a third and a quarter ([TUI design](docs/design/tui.md#framework-revised-our-own-terminal-layer)).
+
 5. If you installed with `go install`, add shell completion (bash, zsh, fish, or pwsh):
 
    ```sh
@@ -516,7 +518,7 @@ The runner's session file, `sessions/<id>.session.jsonl`, is a versioned JSON-li
 <!-- /memoria:import -->
 
 <!-- memoria:import src="internal/tui/README.md#summary" -->
-The TUI is a pure reducer from session events and user intents to state and effects, a pure renderer from state to screen lines, and a thin Bubble Tea v2 shell that turns keys into intents and runs the effects against the session. As in Codex, enter while the agent works gives it the message after its running tool calls and tab queues it for the end of the run. Esc esc interrupts, and ctrl+v pastes an image.
+The TUI is a pure reducer from session events and user intents to state and effects, a pure renderer from state to screen lines, and a thin shell on uah's own terminal layer that turns keys into intents and runs the effects against the session. As in Codex, enter while the agent works gives it the message after its running tool calls and tab queues it for the end of the run. Esc esc interrupts, and ctrl+v pastes an image.
 <!-- /memoria:import -->
 
 Read more: [sessions](internal/session/README.md), [the session index](internal/store/README.md), [the session file](internal/sessionfile/README.md), and [the TUI](internal/tui/README.md) with its look. Diagnostics go to `~/.uah/logs/uah-tui.log`.
@@ -692,7 +694,7 @@ CI runs the race tests with `-short` and the Markdown renderer's benchmarks once
 The configuration reference, the context preparation guide, design records for the harness, the TUI, state storage, sandboxing, compaction, MCP, subagents, pasted images, streaming, Markdown rendering, going back to an earlier message, selecting text with the mouse, editing the prompt in an editor, the system prompt, web search, `/diff` and `/review`, goals (`/goal`), prompt history and the composer's height, how tool calls read in the transcript, keeping the ChatGPT login fresh, and running uah as a terminal host backend, plus the architecture rules and documentation procedure for uah.
 <!-- /memoria:import -->
 
-[`bench/tui`](bench/tui/README.md) is a separate Go module with the benchmark behind choosing Bubble Tea v2. `go test -run '^$' -bench Markdown -benchmem ./internal/tui/render` measures the Markdown renderer. `uah compaction eval [session file or directory]`, a hidden command, compares the compaction strategies on recorded sessions and prints tables of numbers only; its tests hold the strategies to their bounds on a synthetic session ([internal/compaction](internal/compaction/README.md#measuring-compaction)).
+[`bench/tui`](bench/tui/README.md) is a separate Go module with the benchmark behind first choosing Bubble Tea v2, which uah has since replaced with its own terminal layer ([TUI design](docs/design/tui.md#framework-revised-our-own-terminal-layer)). `go test -run '^$' -bench Markdown -benchmem ./internal/tui/render` measures the Markdown renderer. `uah compaction eval [session file or directory]`, a hidden command, compares the compaction strategies on recorded sessions and prints tables of numbers only; its tests hold the strategies to their bounds on a synthetic session ([internal/compaction](internal/compaction/README.md#measuring-compaction)).
 
 [`tools`](tools/README.md) lists every harness that measures uah, with how to run each and where its results go. `go run ./tools/perf` is the performance harness ([tools/perf](tools/perf/README.md)); compare a change with its baseline with `go run ./tools/perf -baseline tools/perf/baseline.json`:
 
