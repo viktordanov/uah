@@ -38,6 +38,26 @@ func (p Policy) CanWriteResolved(path string) bool {
 	return inside
 }
 
+// Protects reports whether path is, or is inside, a path the policy keeps
+// read-only: a protected path of one of its writable roots, or one of its
+// ReadOnly paths, also under another name. A writable root there would
+// open part of it again, as Seatbelt's rule for the inner root and
+// bubblewrap's later bind would, so the engine grants no such directory.
+func (p Policy) Protects(path string) bool {
+	if p.insideReadOnly(path) {
+		return true
+	}
+	for _, r := range p.Writable() {
+		for _, protected := range p.protectedIn(r) {
+			if protects(ResolvePath(protected), path) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // protects reports whether the protected path covers path: path is it or
 // inside it, its names compared without case, as macOS's default file
 // system and Linux's casefold directories compare them; or path, or one of

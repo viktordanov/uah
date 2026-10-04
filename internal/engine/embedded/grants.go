@@ -13,26 +13,32 @@ import (
 // workspace's repository that holds one of the paths an escalated command
 // names, outside the writable roots, and reports whether it added one. It
 // grants only in the workspace-write sandbox, where a writable root
-// applies; a grant asks no one, since such a worktree is a checkout of the
+// applies, and never for a command a forbid rule refuses, which runs
+// nowhere; a grant asks no one, since such a worktree is a checkout of the
 // session's own repository (sandbox.Worktrees).
 func (b sandboxedBash) grantWorktrees(mode sandbox.Mode, command string) bool {
 	if b.grants == nil || mode != sandbox.WorkspaceWrite {
 		return false
+	}
+	if b.approver != nil {
+		if _, forbidden := b.approver.Forbidden(command); forbidden {
+			return false
+		}
 	}
 
 	return grantWorktrees(b.grants, b.policy(mode), commandPaths(command, b.cwd)) != nil
 }
 
 // grantWorktrees adds the worktrees of the workspace's repository that hold
-// the paths (resolved) the policy does not let a command write, and
-// returns the ones it added.
+// the paths (resolved) the policy does not let a command write, unless the
+// policy protects the worktree, and returns the ones it added.
 func grantWorktrees(grants *sandbox.Grants, policy sandbox.Policy, paths []string) []string {
 	var added []string
 	for _, p := range paths {
 		if policy.CanWriteResolved(p) {
 			continue
 		}
-		if root, ok := grants.Worktrees.Of(p); ok && grants.Add(root, sandbox.GrantWorktree) {
+		if root, ok := grants.Worktrees.Of(p); ok && !policy.Protects(root) && grants.Add(root, sandbox.GrantWorktree) {
 			added = append(added, root)
 		}
 	}

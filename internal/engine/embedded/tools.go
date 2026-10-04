@@ -198,18 +198,23 @@ func (w *wiring) mcpTools(ctx context.Context) ([]mcp.Tool, error) {
 }
 
 // policy is the configured sandbox policy for the request's workspace,
-// with the session's grants as more writable roots, its private temporary
-// directory, and the sandbox scripts read-only.
+// with its private temporary directory, the sandbox scripts read-only, and
+// the session's grants as more writable roots: each one that no root
+// before it protects, so a grant never opens part of a protected path.
 func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 	p := *w.e.cfg.Sandbox
 	p.Mode, p.Workspace = mode, req.Workspace
-	if roots := w.grants.Roots(); len(roots) > 0 {
-		p.WritableRoots = append(slices.Clip(p.WritableRoots), roots...)
-	}
 	p.TempDir = uahsession.TempDir(w.l.SessionsDir, req.SessionID)
 	if dir := w.e.cfg.SandboxDir; dir != "" {
 		// The sandbox scripts run outside the sandbox (sandbox.Shell).
 		p.ReadOnly = append(slices.Clip(p.ReadOnly), dir)
+	}
+	if mode == sandbox.WorkspaceWrite {
+		for _, root := range w.grants.Roots() {
+			if !p.Protects(root) {
+				p.WritableRoots = append(slices.Clip(p.WritableRoots), root)
+			}
+		}
 	}
 
 	return p

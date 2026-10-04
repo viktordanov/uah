@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 // Worktrees finds the git worktrees of one repository, the workspace's,
@@ -13,55 +12,42 @@ import (
 // repository when the nearest .git entry above it leads to the same common
 // directory as the workspace's (git rev-parse --git-common-dir, resolved),
 // and the repository itself lists that worktree, so a .git file planted in
-// any directory cannot claim it. It is safe for concurrent use and caches
-// what it finds for the life of the session.
+// any directory cannot claim it. The workspace must pass the same check,
+// and NewWorktrees reads its repository at once, before the session runs
+// a command that could plant a .git file in it. Each target is read
+// afresh, so a worktree removed or replaced since is not taken from a
+// cache. It is safe for concurrent use.
 type Worktrees struct {
-	workspace string
-
-	once   sync.Once
 	common string // the workspace's common directory, resolved; "" outside a repository
 	top    string // the workspace's working tree, resolved
-
-	mu    sync.Mutex
-	known map[string]string // a working tree's top: its common directory, or "" when it is not the repository's
 }
 
 // NewWorktrees returns the finder for the workspace's repository.
 func NewWorktrees(workspace string) *Worktrees {
-	return &Worktrees{workspace: workspace, known: map[string]string{}}
+	w := &Worktrees{}
+	if t, ok := findTree(ResolvePath(workspace)); ok && t.listed() != "" {
+		w.top, w.common = t.top, t.common
+	}
+
+	return w
 }
 
 // Of returns the root of the worktree of the workspace's repository that
 // holds path, resolved, when it is another worktree than the workspace's
 // own: a linked worktree (git worktree add), or the main checkout of a
 // workspace that is a linked worktree. A submodule, a nested repository,
-// and an unrelated repository are not the same repository.
+// and an unrelated repository are not the same repository, and neither is
+// a worktree whose directory holds the common directory other than as its
+// own .git.
 func (w *Worktrees) Of(path string) (string, bool) {
-	w.once.Do(func() {
-		if t, ok := findTree(ResolvePath(w.workspace)); ok {
-			w.top, w.common = t.top, t.common
-		}
-	})
 	if w.common == "" {
 		return "", false
 	}
 	t, ok := findTree(ResolvePath(path))
-	if !ok || t.top == w.top {
+	if !ok || t.top == w.top || t.listed() != w.common {
 		return "", false
 	}
-	w.mu.Lock()
-	common, seen := w.known[t.top]
-	w.mu.Unlock()
-	if !seen {
-		common = t.listed()
-		w.mu.Lock()
-		w.known[t.top] = common
-		w.mu.Unlock()
-	}
-	if common == "" || common != w.common {
-		return "", false
-	}
-	if within(common, t.top) && common != filepath.Join(t.top, ".git") {
+	if within(w.common, t.top) && w.common != filepath.Join(t.top, ".git") {
 		// The repository's hooks and configuration would be writable
 		// under the grant, and git runs them outside the sandbox.
 		return "", false

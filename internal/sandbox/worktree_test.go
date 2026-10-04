@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -212,4 +213,43 @@ func TestWorktrees_HoldingTheCommonDirectory(t *testing.T) {
 	root, ok := w.Of(filepath.Join(side, "a.txt"))
 	assert.True(t, ok, "a worktree beside it is one")
 	assert.Equal(t, side, root)
+}
+
+// TestWorktrees_ForgedWorkspace: a workspace outside any repository cannot
+// become one by a .git entry a command plants in it, as bubblewrap leaves
+// a missing .git writable: the workspace must pass the same check as a
+// target, and its repository is read when the finder is made, before any
+// command runs.
+func TestWorktrees_ForgedWorkspace(t *testing.T) {
+	r := newRepo(t)
+	common := filepath.Join(r.main, ".git")
+
+	early := filepath.Join(r.base, "early")
+	require.NoError(t, os.MkdirAll(early, 0o755))
+	w := sandbox.NewWorktrees(early)
+	require.NoError(t, os.WriteFile(filepath.Join(early, ".git"), []byte("gitdir: "+common+"\n"), 0o644))
+	_, ok := w.Of(filepath.Join(r.main, "a.txt"))
+	assert.False(t, ok, "planted after the finder read the workspace")
+
+	for name, plant := range map[string]func(dir string){
+		"a .git file naming the common directory": func(dir string) {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+common+"\n"), 0o644))
+		},
+		"a .git file naming a worktree's git directory": func(dir string) {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+filepath.Join(common, "worktrees", "bar")+"\n"), 0o644))
+		},
+		"a .git directory whose commondir names it": func(dir string) {
+			require.NoError(t, os.MkdirAll(filepath.Join(dir, ".git"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, ".git", "commondir"), []byte(common+"\n"), 0o644))
+		},
+	} {
+		ws := filepath.Join(r.base, strings.ReplaceAll(name, " ", "-"))
+		require.NoError(t, os.MkdirAll(ws, 0o755))
+		plant(ws)
+		w := sandbox.NewWorktrees(ws)
+		_, ok := w.Of(filepath.Join(r.main, "a.txt"))
+		assert.False(t, ok, name+": the main checkout")
+		_, ok = w.Of(filepath.Join(r.bar, "a.txt"))
+		assert.False(t, ok, name+": a linked worktree")
+	}
 }

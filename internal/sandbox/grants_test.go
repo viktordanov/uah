@@ -113,3 +113,50 @@ func TestGrantFor(t *testing.T) {
 	assert.Empty(t, sandbox.GrantFor([]string{filepath.Join(plain, "loose", "a")}), "the home directory")
 	assert.Empty(t, sandbox.GrantFor([]string{filepath.Join(plain, "x", "a"), filepath.Join(bar, "a.txt")}), "a directory that holds the home")
 }
+
+// TestGrants_Replaced pins that a grant holds only for the directory it was
+// made for: one removed, replaced by another directory, or by a symlink to
+// another place, is dropped, with a new Version, so the sandbox is never
+// led elsewhere.
+func TestGrants_Replaced(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	base := realPath(t, t.TempDir())
+	elsewhere := realPath(t, t.TempDir())
+	for name, replace := range map[string]func(dir string){
+		"removed": func(dir string) { require.NoError(t, os.Remove(dir)) },
+		"another directory": func(dir string) {
+			require.NoError(t, os.Remove(dir))
+			require.NoError(t, os.Mkdir(dir, 0o755))
+		},
+		"a symlink": func(dir string) {
+			require.NoError(t, os.Remove(dir))
+			require.NoError(t, os.Symlink(elsewhere, dir))
+		},
+	} {
+		dir := filepath.Join(base, strings.ReplaceAll(name, " ", "-"))
+		require.NoError(t, os.Mkdir(dir, 0o755))
+		g := sandbox.NewGrants(base, nil)
+		require.True(t, g.Add(dir, sandbox.GrantApproved))
+		before := g.Version()
+		assert.Equal(t, []string{dir}, g.Roots(), name)
+
+		replace(dir)
+		assert.Empty(t, g.Roots(), name)
+		assert.Greater(t, g.Version(), before, name)
+	}
+}
+
+// TestPolicy_Protects pins the check that keeps a grant out of a protected
+// path: a directory inside a writable root's protected name or a ReadOnly
+// path is protected, one elsewhere in the root or outside it is not.
+func TestPolicy_Protects(t *testing.T) {
+	ws := realPath(t, t.TempDir())
+	scripts := filepath.Join(ws, "state", "sandbox")
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, ReadOnly: []string{scripts}}
+
+	assert.True(t, p.Protects(filepath.Join(ws, ".agents", "wt")))
+	assert.True(t, p.Protects(filepath.Join(ws, ".GIT", "x")), "another case")
+	assert.True(t, p.Protects(filepath.Join(scripts, "x")))
+	assert.False(t, p.Protects(filepath.Join(ws, "src")))
+	assert.False(t, p.Protects(realPath(t, t.TempDir())))
+}

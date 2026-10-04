@@ -28,21 +28,31 @@ type Grant struct {
 	Reason GrantReason `json:"reason"`
 }
 
-// Grants are a session's grants, shared with its subagents. Grants only
-// grow while the session lives; nothing writes them to a configuration
-// file. It is safe for concurrent use.
+// Grants are a session's grants, shared with its subagents. A grant lasts
+// while the session lives and its directory stays the same directory;
+// nothing writes grants to a configuration file. It is safe for
+// concurrent use.
 type Grants struct {
 	// Worktrees finds the worktrees of the workspace's repository.
 	Worktrees *Worktrees
 
 	mu      sync.Mutex
-	grants  []Grant
+	grants  []granted
 	version uint64
 	notify  func(Grant)
 }
 
-// NewGrants returns no grants for the workspace. notify, when set, hears
-// each new grant, on the goroutine that adds it.
+// granted is a grant and the directory it was made for, which a later
+// directory at the same path is not.
+type granted struct {
+	Grant
+
+	dir os.FileInfo
+}
+
+// NewGrants returns no grants for the workspace, whose repository it reads
+// at once (NewWorktrees). notify, when set, hears each new grant, on the
+// goroutine that adds it.
 func NewGrants(workspace string, notify func(Grant)) *Grants {
 	return &Grants{Worktrees: NewWorktrees(workspace), notify: notify}
 }
@@ -51,7 +61,11 @@ func NewGrants(workspace string, notify func(Grant)) *Grants {
 // is new. A path that is not an existing directory, is not resolved, or
 // fails Grantable is refused; so is one a grant already covers.
 func (g *Grants) Add(path string, reason GrantReason) bool {
-	if g == nil || !Grantable(path) || resolveDir(path) != path {
+	if g == nil || !Grantable(path) {
+		return false
+	}
+	info, ok := sameDir(path, nil)
+	if !ok {
 		return false
 	}
 	g.mu.Lock()
@@ -63,7 +77,7 @@ func (g *Grants) Add(path string, reason GrantReason) bool {
 		}
 	}
 	added := Grant{Path: path, Reason: reason}
-	g.grants = append(g.grants, added)
+	g.grants = append(g.grants, granted{Grant: added, dir: info})
 	g.version++
 	notify := g.notify
 	g.mu.Unlock()
@@ -80,29 +94,53 @@ func (g *Grants) Keep(gr Grant) bool {
 	if g == nil || !g.Valid(gr) {
 		return false
 	}
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if slices.Contains(g.grants, gr) {
+	info, ok := sameDir(gr.Path, nil)
+	if !ok {
 		return false
 	}
-	g.grants = append(g.grants, gr)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for _, have := range g.grants {
+		if have.Grant == gr {
+			return false
+		}
+	}
+	g.grants = append(g.grants, granted{Grant: gr, dir: info})
 	g.version++
 
 	return true
 }
 
-// List returns the grants in the order they were made.
+// List returns the grants that still hold, in the order they were made
+// (Roots).
 func (g *Grants) List() []Grant {
 	if g == nil {
 		return nil
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	kept := g.grants[:0]
+	for _, gr := range g.grants {
+		if _, ok := sameDir(gr.Path, gr.dir); ok {
+			kept = append(kept, gr)
+		}
+	}
+	if len(kept) != len(g.grants) {
+		clear(g.grants[len(kept):])
+		g.version++
+	}
+	g.grants = kept
+	out := make([]Grant, 0, len(kept))
+	for _, gr := range kept {
+		out = append(out, gr.Grant)
+	}
 
-	return slices.Clone(g.grants)
+	return out
 }
 
-// Roots returns the granted directories.
+// Roots returns the granted directories. A grant whose directory is gone,
+// or was replaced by another directory or a symlink since, is dropped
+// first, so it never leads the sandbox elsewhere.
 func (g *Grants) Roots() []string {
 	var roots []string
 	for _, gr := range g.List() {
@@ -112,16 +150,32 @@ func (g *Grants) Roots() []string {
 	return roots
 }
 
-// Version changes whenever a grant is added, so a sandboxing shell built
-// for the earlier roots is built again.
+// Version changes whenever a grant is added or dropped, so a sandboxing
+// shell built for the earlier roots is built again. It drops the grants
+// that no longer hold first (Roots).
 func (g *Grants) Version() uint64 {
 	if g == nil {
 		return 0
 	}
+	g.List()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	return g.version
+}
+
+// sameDir reports whether path is a real directory, not reached through a
+// symlink, and, when was is set, the same directory as was.
+func sameDir(path string, was os.FileInfo) (os.FileInfo, bool) {
+	if resolveDir(path) != path {
+		return nil, false
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || (was != nil && !os.SameFile(info, was)) {
+		return nil, false
+	}
+
+	return info, true
 }
 
 // Valid reports whether a grant kept from before a resume still holds: a
@@ -190,7 +244,7 @@ func Grantable(dir string) bool {
 	if !filepath.IsAbs(dir) || filepath.Dir(dir) == dir || isProtectedName(filepath.Base(dir), ProtectedNames) {
 		return false
 	}
-	for _, name := range strings.Split(filepath.Dir(dir), string(filepath.Separator)) {
+	for name := range strings.SplitSeq(filepath.Dir(dir), string(filepath.Separator)) {
 		if isProtectedName(name, hookNames) {
 			return false
 		}

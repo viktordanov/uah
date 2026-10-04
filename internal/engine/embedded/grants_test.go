@@ -236,6 +236,41 @@ func TestGrant_ForbidRuleWins(t *testing.T) {
 	assert.Equal(t, 1, count(e.ev.all, noticeWith("writable for this session: "+bar)), "granted by the second patch")
 }
 
+// TestGrant_NotForForbiddenOrProtected, in a headless workspace session:
+// an escalated command a forbid rule refuses grants nothing, and a
+// worktree inside a protected path of the workspace (.agents) is never
+// granted, so its escalation stays one and a later command cannot write
+// either.
+func TestGrant_NotForForbiddenOrProtected(t *testing.T) {
+	skipWithoutSandbox(t)
+	var bar, nested string
+	e := newPatchEnv(t, patchOpts{mode: sandbox.WorkspaceWrite, rules: func(string) []rules.Rule {
+		return []rules.Rule{{Pattern: [][]string{{"touch"}}, Decision: rules.Forbidden}}
+	}}, func(ws, outside string) []fakellm.Reply {
+		bar = sibling(t, ws, outside)
+		nested = filepath.Join(ws, ".agents", "wt")
+		harnesstest.Git(t, ws, "worktree", "add", "-q", "-b", "nested", nested)
+
+		return []fakellm.Reply{
+			{Escalated: []string{"touch " + filepath.Join(bar, "x.txt")}},
+			{Escalated: []string{"echo n > " + filepath.Join(nested, "n.txt")}},
+			{Commands: []string{"echo y > " + filepath.Join(bar, "y.txt")}},
+			{Text: "done"},
+		}
+	})
+	assert.Equal(t, core.StatusOK, e.ev.finished().Status)
+
+	assert.NoFileExists(t, filepath.Join(bar, "x.txt"))
+	assert.NoFileExists(t, filepath.Join(bar, "y.txt"), "the forbidden command granted nothing")
+	assert.NoFileExists(t, filepath.Join(nested, "n.txt"))
+	assert.Zero(t, count(e.ev.all, noticeWith("writable for this session")))
+	outputs := e.llm.Requests()[3].ToolOutputs
+	require.Len(t, outputs, 3)
+	assert.Contains(t, outputs[0], "a rule forbids this command")
+	assert.Contains(t, outputs[1], "no user can approve it", "still an escalation")
+	assert.Contains(t, outputs[2], "sandbox likely blocked this")
+}
+
 func skipWithoutSandbox(t *testing.T) {
 	t.Helper()
 	if _, err := (sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: t.TempDir()}).Wrap([]string{"/bin/sh"}); err != nil {
