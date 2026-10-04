@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
@@ -114,11 +115,15 @@ type terminal struct {
 	// reader is the running input reader; readDone is closed when it ends.
 	reader   cancelReader
 	readDone chan struct{}
+	// readStop is closed to stop the reader's handoff of events.
+	readStop chan struct{}
 	stopping atomic.Bool
 	// syncAsked is set when DECRQM 2026 was sent; only its answer turns
 	// synchronized output on.
 	syncAsked bool
 	entered   bool
+	// released is when the terminal was last taken back after Exec.
+	released time.Time
 }
 
 // fder is a file with a descriptor, such as *os.File.
@@ -132,6 +137,10 @@ func openTerminal(o Options) (*terminal, error) {
 	if t.profile == colorprofile.Unknown {
 		t.profile = colorprofile.Detect(o.Out, o.Env)
 	}
+	// Below ASCII (TERM=dumb or unset, or output that is not a
+	// terminal) colorprofile drops every escape sequence, cursor moves
+	// too; the TUI keeps them and drops only the colours.
+	t.profile = max(t.profile, colorprofile.ASCII)
 	if o.Width > 0 && o.Height > 0 {
 		return t, nil // headless
 	}
@@ -178,7 +187,7 @@ func (t *terminal) enter() error {
 		}
 		t.saved = saved
 		if t.winch == nil {
-			t.winch, t.stop = make(chan os.Signal, 1), make(chan os.Signal, 1)
+			t.winch, t.stop = make(chan os.Signal, 1), make(chan os.Signal, 4)
 			signal.Notify(t.winch, syscall.SIGWINCH)
 			signal.Notify(t.stop, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
 		}
@@ -231,9 +240,39 @@ func (t *terminal) reacquire(ctx context.Context) error {
 	if err := t.enter(); err != nil {
 		return err
 	}
+	t.released = time.Now()
 
 	return t.startInput(ctx)
 }
+
+// interruptGrace is how long after the terminal was taken back a SIGINT is
+// still the released program's: ctrl+c in its cooked mode sends SIGINT to
+// this process too, and it can arrive after the program ended.
+const interruptGrace = time.Second
+
+// stops reports whether sig stops the program. In raw mode ctrl+c is a
+// key, so a SIGINT comes from ctrl+c in a program on the released
+// terminal (dropped, during it and for interruptGrace after) or from kill.
+func (t *terminal) stops(sig os.Signal) bool {
+	return sig != syscall.SIGINT || (t.entered && time.Since(t.released) >= interruptGrace)
+}
+
+// dropInput drops the input decoded but not yet taken, such as keys typed
+// before ctrl+g's editor opened, which belong to neither it nor the TUI
+// after it.
+func (t *terminal) dropInput() {
+	for {
+		select {
+		case <-t.input:
+		default:
+			return
+		}
+	}
+}
+
+// errTerminalGone is the terminal's input ending while the TUI runs, as
+// when the terminal closed without a SIGHUP.
+var errTerminalGone = errors.New("the terminal's input ended")
 
 // startInput starts reading and decoding the terminal's input.
 func (t *terminal) startInput(ctx context.Context) error {
@@ -241,20 +280,29 @@ func (t *terminal) startInput(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to read the terminal: %w", err)
 	}
-	t.reader, t.readDone = r, make(chan struct{})
+	t.reader, t.readDone, t.readStop = r, make(chan struct{}), make(chan struct{})
 	t.stopping.Store(false)
 	termType := lookupEnv(t.env, "TERM")
-	go func(done chan struct{}) {
+	go func(done, stop chan struct{}) {
 		defer close(done)
-		err := readInput(ctx, r, termType, t.input)
-		if err == nil || t.stopping.Load() || errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+		err := readInput(ctx, r, termType, t.input, stop)
+		if t.stopping.Load() {
+			return
+		}
+		switch {
+		case err == nil || errors.Is(err, io.EOF):
+			if !t.tty {
+				return // a headless program's input may end
+			}
+			err = errTerminalGone
+		case errors.Is(err, context.Canceled):
 			return
 		}
 		select {
 		case t.inputErr <- err:
 		default:
 		}
-	}(t.readDone)
+	}(t.readDone, t.readStop)
 
 	return nil
 }
@@ -266,6 +314,7 @@ func (t *terminal) stopInput() {
 		return
 	}
 	t.stopping.Store(true)
+	close(t.readStop)
 	if t.reader.Cancel() {
 		<-t.readDone
 	}
@@ -289,17 +338,21 @@ func (t *terminal) onModeReport(m modeReportMsg, s *Screen) {
 
 // writeFrame writes a frame in one write, its colours downsampled below
 // true colour.
-func (t *terminal) writeFrame(pre string, frame []byte) {
-	if t.profile < colorprofile.TrueColor {
-		w := &colorprofile.Writer{Forward: t.out, Profile: t.profile}
-		_, _ = w.Write(append([]byte(pre), frame...))
-
-		return
-	}
+func (t *terminal) writeFrame(pre string, frame []byte) error {
 	if pre != "" {
 		frame = append([]byte(pre), frame...)
 	}
-	_, _ = t.out.Write(frame)
+	var err error
+	if t.profile < colorprofile.TrueColor {
+		_, err = (&colorprofile.Writer{Forward: t.out, Profile: t.profile}).Write(frame)
+	} else {
+		_, err = t.out.Write(frame)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to write to the terminal: %w", err)
+	}
+
+	return nil
 }
 
 func (t *terminal) write(s string) error {

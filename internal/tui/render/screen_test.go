@@ -175,3 +175,12 @@ func TestScreen_HomeFromState(t *testing.T) {
 	assert.NotContains(t, screen(s, ""), "~")
 	assert.Contains(t, screen(s, ""), "/workspace/proj")
 }
+
+// The session picker fits a narrow terminal: its empty state and its key
+// line are cut to the width, since the terminal does not wrap.
+func TestPickerFitsTheWidth(t *testing.T) {
+	s := apply(base(), state.SessionsLoaded{})
+	for _, line := range strings.Split(screenAt(s, "", 30), "\n") {
+		assert.LessOrEqual(t, ansi.StringWidth(line), 30, "%q", ansi.Strip(line))
+	}
+}

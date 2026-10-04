@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Screen is the line renderer: it remembers each row the terminal shows and
@@ -12,8 +14,8 @@ import (
 // width is measured to keep a line on its row: a line the terminal counts
 // wider than the row stays on it (its last cells overwrite the last
 // column), and every write erases what was there first, so one it counts
-// narrower leaves nothing behind. The renderer keeps lines within the
-// width; this only bounds the damage of a disagreement.
+// narrower leaves nothing behind. A line wider than the row by uah's own
+// count is cut to the row (clip).
 //
 // Three things keep a frame small:
 //   - Rows whose line did not change are not written.
@@ -117,7 +119,7 @@ func (s *Screen) rows(lines []string) {
 			s.writeRow(y, s.shown[y], line)
 		} else if line != "" {
 			s.move(y, 0)
-			s.buf.WriteString(line)
+			s.buf.WriteString(clip(line, s.w))
 			s.buf.WriteString("\x1b[m")
 		}
 		s.shown[y] = line
@@ -161,7 +163,7 @@ func (s *Screen) writeRow(y int, old, line string) {
 			s.move(y, col)
 			s.buf.WriteString("\x1b[m\x1b[K")
 			s.buf.WriteString(sgr)
-			s.buf.WriteString(line[at:])
+			s.buf.WriteString(clip(line[at:], s.w-col))
 			s.buf.WriteString("\x1b[m")
 
 			return
@@ -169,8 +171,20 @@ func (s *Screen) writeRow(y int, old, line string) {
 	}
 	s.move(y, 0)
 	s.buf.WriteString("\x1b[m\x1b[2K")
-	s.buf.WriteString(line)
+	s.buf.WriteString(clip(line, s.w))
 	s.buf.WriteString("\x1b[m")
+}
+
+// clip cuts line to w cells, so a line wider than the row does not
+// overwrite its last column (autowrap is off). The renderer keeps lines
+// within the width; this is the safety net. A line of at most w bytes
+// cannot be wider, so most lines are not measured.
+func clip(line string, w int) string {
+	if len(line) <= w {
+		return line
+	}
+
+	return ansi.Truncate(line, w, "")
 }
 
 func (s *Screen) move(y, x int) { s.buf.Write(appendMove(s.buf.AvailableBuffer(), y, x)) }

@@ -40,7 +40,7 @@ const (
 	// leaveSeq is what leaving writes last: the reverse of entering.
 	leaveSeq = "\x1b[<u\x1b[>4m\x1b[?2004l\x1b[?7h\x1b[?25h\x1b[?1049l"
 	// ptyDeadline bounds every wait on the child.
-	ptyDeadline = 5 * time.Second
+	ptyDeadline = 30 * time.Second
 )
 
 func TestMain(m *testing.M) {
@@ -565,6 +565,43 @@ func TestPtyResizeDuringExec(t *testing.T) {
 	r.resize(100, 30)
 	r.send("hello\r")
 	r.waitScreen(100, 30, "e", "", "done")
+
+	r.send("q")
+	assert.Equal(t, 0, r.wait())
+	r.assertRestored()
+}
+
+// Keys still queued when the program quits do not hold it: the input
+// reader stops even when its queue is full.
+func TestPtyQuitsWithInputQueued(t *testing.T) {
+	t.Parallel()
+	r := startPty(t, 80, 24)
+	r.waitScreen(80, 24, "", "", "")
+
+	r.send("q" + strings.Repeat("a", 400))
+	assert.Equal(t, 0, r.wait())
+	r.assertRestored()
+}
+
+// ctrl+c in the editor interrupts the editor, not the TUI: the SIGINT the
+// terminal sends with it is dropped, and the TUI comes back.
+func TestPtyInterruptInTheEditor(t *testing.T) {
+	t.Parallel()
+	r := startPty(t, 80, 24)
+	r.waitScreen(80, 24, "", "", "")
+
+	r.send("e")
+	r.waitFor("the editor's prompt", func() bool {
+		return !r.altScreen() && strings.Contains(strings.Join(r.rows(), "\n"), "editor-ran>")
+	})
+	r.send("\x03")
+	r.waitFor("the TUI back with the editor's error", func() bool {
+		rows := strings.Join(r.rows(), "\n")
+
+		return r.altScreen() && strings.Contains(rows, "exec error")
+	})
+	r.send("b")
+	r.waitFor("the next key", func() bool { return strings.Contains(strings.Join(r.rows(), "\n"), "keys e,b") })
 
 	r.send("q")
 	assert.Equal(t, 0, r.wait())

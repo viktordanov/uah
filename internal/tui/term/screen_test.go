@@ -197,8 +197,23 @@ func TestDivergence(t *testing.T) {
 	}
 }
 
-// A change past the screen's edge rewrites the row whole.
+// A change past the screen's edge rewrites the row whole, cut to the
+// width.
 func TestScreenFrameChangePastTheEdge(t *testing.T) {
 	s := drawn(t, 3, 1, []string{"abcd"}, nil)
-	assert.Equal(t, "\x1b[1H\x1b[m\x1b[2Kabce\x1b[m", string(s.Frame([]string{"abce"}, nil)))
+	assert.Equal(t, "\x1b[1H\x1b[m\x1b[2Kabc\x1b[m", string(s.Frame([]string{"abce"}, nil)))
+}
+
+// A line wider than the row is cut to it, whole and from mid-line, so it
+// cannot overwrite the last column with autowrap off.
+func TestScreenClipsWideLines(t *testing.T) {
+	s := NewScreen(10, 2)
+	out := string(s.Frame([]string{"0123456789abcdef", "\x1b[1mxyz\x1b[m"}, nil))
+	assert.Contains(t, out, "0123456789")
+	assert.NotContains(t, out, "a")
+	out = string(s.Frame([]string{"0123456789ABCDEF", "\x1b[1mxyz\x1b[m"}, nil))
+	assert.NotContains(t, out, "A")
+	out = string(s.Frame([]string{"01234XYZ890123", "\x1b[1mxyz\x1b[m"}, nil))
+	assert.Contains(t, out, "XYZ89")
+	assert.NotContains(t, out, "XYZ890")
 }

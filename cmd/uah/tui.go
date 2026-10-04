@@ -134,7 +134,10 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 			return session.Interactive(infos), err
 		},
 	}
-	exit, err := bubble.Run(ctx, deps)
+	// The TUI handles SIGINT and SIGTERM itself (term): it restores the
+	// terminal, and drops the SIGINT that ctrl+g's editor gets for ctrl+c,
+	// which main's signal context would turn into a quit.
+	exit, err := bubble.Run(context.WithoutCancel(ctx), deps)
 	printExit(os.Stdout, exit)
 	if err != nil {
 		return fmt.Errorf("the TUI stopped: %w", err)

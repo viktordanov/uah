@@ -72,6 +72,13 @@ type Program struct {
 	cursorColor string
 	// panicked is a command's panic, re-raised on the loop.
 	panicked any
+	// fatal ends the loop with an error: the terminal could not be taken
+	// back after Exec, or frames keep failing to write.
+	fatal error
+	// writeFails counts the frames that failed to write in a row; resend
+	// makes the next frame send the modes again after one did.
+	writeFails int
+	resend     bool
 }
 
 // NewProgram returns a program that runs model.
@@ -168,7 +175,9 @@ func (p *Program) loop(w, h int) error {
 		}
 	}()
 	for !p.quit {
-		if p.dirty && frame == nil {
+		// A frame that failed to write leaves dirty set, and is tried
+		// again on the timer.
+		for p.dirty && frame == nil {
 			if wait := time.Second/FrameRate - p.clock.Since(p.last); wait > 0 {
 				frame, stop = p.clock.Timer(wait)
 			} else {
@@ -182,8 +191,10 @@ func (p *Program) loop(w, h int) error {
 			p.handle(msg)
 		case <-p.term.winch:
 			p.resize()
-		case <-p.term.stop:
-			return nil
+		case sig := <-p.term.stop:
+			if p.term.stops(sig) {
+				return nil
+			}
 		case err := <-p.term.inputErr:
 			return fmt.Errorf("failed to read the terminal: %w", err)
 		case msg := <-p.msgs:
@@ -195,6 +206,9 @@ func (p *Program) loop(w, h int) error {
 		p.drain()
 		if p.panicked != nil {
 			panic(p.panicked)
+		}
+		if p.fatal != nil {
+			return p.fatal
 		}
 	}
 	p.draw()
@@ -303,16 +317,27 @@ func (p *Program) resize() {
 // runExec runs a program with the terminal released: the input stops, the
 // terminal leaves the alt screen and its modes, and after the program it
 // enters them again and the whole screen is drawn.
+//
+// The program's error goes to its callback; failing to release the
+// terminal or take it back ends the loop, which then restores what it
+// can.
 func (p *Program) runExec(msg execMsg) {
-	err := p.term.release(p.restore())
-	if err == nil {
-		msg.cmd.SetStdin(p.term.in)
-		msg.cmd.SetStdout(p.term.out)
-		msg.cmd.SetStderr(p.term.out)
-		err = msg.cmd.Run()
-		if rerr := p.term.reacquire(p.ctx); err == nil {
-			err = rerr
-		}
+	if err := p.term.release(p.restore()); err != nil {
+		p.fatal = fmt.Errorf("failed to release the terminal: %w", err)
+
+		return
+	}
+	// Keys typed before the program started are neither its nor, after
+	// it, the TUI's.
+	p.term.dropInput()
+	msg.cmd.SetStdin(p.term.in)
+	msg.cmd.SetStdout(p.term.out)
+	msg.cmd.SetStderr(p.term.out)
+	err := msg.cmd.Run()
+	if rerr := p.term.reacquire(p.ctx); rerr != nil {
+		p.fatal = fmt.Errorf("failed to take the terminal back: %w", rerr)
+
+		return
 	}
 	// The terminal may have been resized while it was released, so its
 	// size is read again; the SIGWINCH still queued then finds no change.
@@ -350,6 +375,10 @@ func (p *Program) draw() {
 	p.last = p.clock.Now()
 	v := p.model.View()
 	var pre strings.Builder
+	if p.resend {
+		p.resend = false
+		p.mouse, p.title, p.cursorStyle, p.cursorColor = !v.Mouse, "\x00", -1, "\x00"
+	}
 	if v.Mouse != p.mouse {
 		p.mouse = v.Mouse
 		pre.WriteString(mouseMode(v.Mouse))
@@ -373,8 +402,24 @@ func (p *Program) draw() {
 	if pre.Len() == 0 && frame == nil {
 		return
 	}
-	p.term.writeFrame(pre.String(), frame)
+	if err := p.term.writeFrame(pre.String(), frame); err != nil {
+		// The terminal may show part of the frame: the next one draws it
+		// all and sends the modes again; frames that keep failing end
+		// the program.
+		p.screen.Invalidate()
+		p.resend, p.dirty = true, true
+		if p.writeFails++; p.writeFails >= maxWriteFails {
+			p.fatal = err
+		}
+
+		return
+	}
+	p.writeFails = 0
 }
+
+// maxWriteFails is how many frames in a row may fail to write before the
+// program ends.
+const maxWriteFails = 3
 
 // clock is the loop's time: the frame budget and its one-shot timer.
 type clock interface {

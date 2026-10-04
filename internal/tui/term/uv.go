@@ -144,9 +144,14 @@ type modeReportMsg struct {
 }
 
 // readInput decodes the terminal's input from r and sends each event, as a
-// Msg, until ctx ends or r fails. term is $TERM, which picks the decoder's
-// legacy key table.
-func readInput(ctx context.Context, r io.Reader, termType string, out chan<- Msg) error {
+// Msg, until r ends or fails, ctx ends, or stop is closed. termType is $TERM, which
+// picks the decoder's legacy key table. When r ends, the events decoded
+// before it are sent first. After stop, the decoder's events are dropped
+// until it ends, so it never blocks on a full queue and the caller can
+// wait for it after cancelling r.
+func readInput(ctx context.Context, r io.Reader, termType string, out chan<- Msg, stop <-chan struct{}) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	events := make(chan uv.Event, 64)
 	errc := make(chan error, 1)
 	go func() { errc <- uv.NewTerminalReader(r, termType).StreamEvents(ctx, events) }()
@@ -156,12 +161,43 @@ func readInput(ctx context.Context, r io.Reader, termType string, out chan<- Msg
 			if msg := translate(ev); msg != nil {
 				select {
 				case out <- msg:
-				case <-ctx.Done():
-					return ctx.Err()
+				case <-stop:
+					cancel()
+
+					return drop(events, errc)
 				}
 			}
+		case <-stop:
+			cancel()
+
+			return drop(events, errc)
 		case err := <-errc:
-			return err //nolint:wrapcheck // the reader's own error, wrapped by the caller
+			// The decoder sent what it had before it ended.
+			for {
+				select {
+				case ev := <-events:
+					if msg := translate(ev); msg != nil {
+						select {
+						case out <- msg:
+						case <-stop:
+							return err //nolint:wrapcheck // the reader's own error
+						}
+					}
+				default:
+					return err //nolint:wrapcheck // the reader's own error, wrapped by the caller
+				}
+			}
+		}
+	}
+}
+
+// drop discards the decoder's events until it ends.
+func drop(events <-chan uv.Event, errc <-chan error) error {
+	for {
+		select {
+		case <-events:
+		case err := <-errc:
+			return err //nolint:wrapcheck // the reader's own error
 		}
 	}
 }

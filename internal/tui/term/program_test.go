@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -615,4 +616,125 @@ func count(list []string, s string) int {
 	}
 
 	return n
+}
+
+// On a dumb terminal, or with no TERM, the colours go but the control
+// sequences stay, so the screen is still drawn in place.
+func TestDumbTerminalKeepsControlSequences(t *testing.T) {
+	for _, env := range [][]string{{"TERM=dumb"}, {}} {
+		out := &output{}
+		p := NewProgram(styled{}, Options{In: strings.NewReader(""), Out: out, Width: 10, Height: 2, Env: env})
+		p.Send(QuitMsg{})
+		_, err := p.Run(context.Background())
+		require.NoError(t, err)
+		assert.Contains(t, out.String(), altScreenOn)
+		assert.Contains(t, out.String(), "\x1b[1H")
+		assert.Contains(t, out.String(), "hi")
+		assert.NotContains(t, out.String(), "38;2;")
+	}
+}
+
+// failing is an output whose writes fail while fail is set.
+type failing struct {
+	output
+	fail atomic.Bool
+}
+
+var errBroken = errors.New("broken pipe")
+
+func (f *failing) Write(b []byte) (int, error) {
+	if f.fail.Load() {
+		return 0, errBroken
+	}
+
+	return f.output.Write(b)
+}
+
+// A frame that fails to write is drawn whole the next time; frames that
+// keep failing end the program with the error.
+func TestFrameWriteErrors(t *testing.T) {
+	out := &failing{}
+	clk := newFakeClock()
+	inR, inW := io.Pipe()
+	defer inW.Close()
+	log := newEvents()
+	p := NewProgram(counter{log: log}, Options{In: inR, Out: out, Width: 20, Height: 4, Profile: colorprofile.TrueColor, clock: clk})
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.Run(context.Background())
+		done <- err
+	}()
+	waitUntil(t, func() bool { return log.viewCount() == 1 })
+	out.fail.Store(true)
+	clk.advance(time.Second)
+	p.Send(countMsg{})
+	waitUntil(t, func() bool { return log.viewCount() == 2 })
+	out.fail.Store(false)
+	before := len(out.String())
+	clk.advance(time.Second)
+	waitUntil(t, func() bool { return log.viewCount() == 3 })
+	waitUntil(t, func() bool { return len(out.String()) > before })
+	assert.Contains(t, out.String()[before:], "\x1b[2J", "the failed frame is drawn whole")
+
+	out.fail.Store(true)
+	for i := range maxWriteFails {
+		clk.advance(time.Second)
+		p.Send(countMsg{})
+		waitUntil(t, func() bool { return log.viewCount() >= 4+i })
+	}
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, errBroken)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the program did not end on failing writes")
+	}
+}
+
+// A terminal that cannot be taken back after Exec ends the program with
+// the error; the program's own error goes to its callback.
+func TestExecReacquireFailureEndsTheProgram(t *testing.T) {
+	out := &failing{}
+	inR, inW := io.Pipe()
+	defer inW.Close()
+	log := newEvents()
+	p := NewProgram(counter{log: log}, Options{In: inR, Out: out, Width: 20, Height: 4, Profile: colorprofile.TrueColor})
+	done := make(chan error, 1)
+	go func() {
+		_, err := p.Run(context.Background())
+		done <- err
+	}()
+	waitUntil(t, func() bool { return log.viewCount() == 1 })
+	p.Send(cmdMsg{cmd: Exec(breaker{out}, func(err error) Msg { return editedMsg{err} })})
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, errBroken)
+		assert.Contains(t, err.Error(), "take the terminal back")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the program did not end")
+	}
+	assert.False(t, contains(log.all(), "update term.editedMsg"))
+}
+
+// breaker is a program that breaks the terminal's output while it runs.
+type breaker struct{ out *failing }
+
+func (breaker) SetStdin(io.Reader)  {}
+func (breaker) SetStdout(io.Writer) {}
+func (breaker) SetStderr(io.Writer) {}
+
+func (b breaker) Run() error {
+	b.out.fail.Store(true)
+
+	return nil
+}
+
+func waitUntil(t *testing.T, check func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !check() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }

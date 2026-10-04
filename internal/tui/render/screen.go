@@ -408,7 +408,7 @@ func (st *Styles) picker(s state.State, f Frame) string {
 		if !s.Picker.All && s.Picker.Filter == "" {
 			empty = "  no sessions in this directory · tab shows all · esc starts a new one"
 		}
-		lines = append(lines, "", st.dim.Render(empty))
+		lines = append(lines, "", st.dim.Render(ansi.Truncate(empty, f.Width, "…")))
 	}
 	room := f.Height - 3
 	start := max(0, min(s.Picker.Selected-room/2, len(list)-room))
@@ -428,7 +428,7 @@ func (st *Styles) picker(s state.State, f Frame) string {
 	for len(lines) < f.Height-1 {
 		lines = append(lines, "")
 	}
-	lines = append(lines, st.dim.Render(" type to filter · ↑↓ choose · enter resume · tab this directory/all · esc back"))
+	lines = append(lines, st.dim.Render(ansi.Truncate(" type to filter · ↑↓ choose · enter resume · tab this directory/all · esc back", f.Width, "…")))
 
 	return strings.Join(lines, "\n")
 }
