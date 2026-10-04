@@ -6,9 +6,8 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 )
 
@@ -21,10 +20,10 @@ func TestTUI_StatusLineFollowsTheModel(t *testing.T) {
 		d := start(t, liveDeps(t, fakellm.New(t, fakellm.Reply{Freeze: true})))
 		d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 		d.typeText("hi")
-		d.key(tea.KeyEnter, 0)
+		d.key(term.KeyEnter, 0)
 		d.waitFor("Waiting for the model")
-		d.key(tea.KeyEscape, 0)
-		d.key(tea.KeyEscape, 0)
+		d.key(term.KeyEscape, 0)
+		d.key(term.KeyEscape, 0)
 		d.waitIdle()
 	})
 
@@ -45,7 +44,7 @@ func TestTUI_StatusLineFollowsTheModel(t *testing.T) {
 		d := start(t, liveDeps(t, llm))
 		d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 		d.typeText("add a.go")
-		d.key(tea.KeyEnter, 0)
+		d.key(term.KeyEnter, 0)
 		d.waitFor("Writing a patch · a.go ·")
 		d.until("the patch's request answered", func() bool { return len(llm.Requests()) == 2 })
 		d.waitFor("Thinking")

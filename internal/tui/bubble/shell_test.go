@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 
 	uaharness "github.com/viktordanov/uagent/harness"
@@ -14,6 +13,7 @@ import (
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/internal/usershell"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
@@ -53,18 +53,18 @@ func TestTUI_ShellMode(t *testing.T) {
 	d.typeText("!")
 	assert.Contains(t, d.view(), "! Run a command in the workspace", "the ! replaces the λ, and the placeholder says so")
 	assert.Contains(t, d.view(), "! shell mode · enter runs the command · esc leaves")
-	d.key(tea.KeyBackspace, 0)
+	d.key(term.KeyBackspace, 0)
 	assert.Contains(t, d.view(), "λ Ask uah to do anything", "backspace on the empty composer leaves shell mode")
 
 	d.typeText("!echo from the shell; exit 3")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("! echo from the shell; exit 3  ✗ exit 3")
 	assert.Contains(t, d.view(), "from the shell")
 	assert.Contains(t, d.view(), "the agent sees this with your next message")
 	assert.Contains(t, d.view(), "λ Ask uah to do anything", "back to messages after a command")
 
 	d.typeText("what failed?")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• hello")
 	assert.NotContains(t, d.view(), "the agent sees this with your next message", "the runner echoed the record")
 	assert.NotContains(t, d.view(), "<user_shell_command>", "the record shows as the command, not its tags")

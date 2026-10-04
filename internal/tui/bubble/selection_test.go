@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // selectionOn is the Amber theme's selection background, as drawn.
@@ -38,10 +39,10 @@ func (d *driver) at(text string) (x, y int) {
 	return 0, 0
 }
 
-func (d *driver) press(x, y int) { d.send(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft}) }
-func (d *driver) move(x, y int)  { d.send(tea.MouseMotionMsg{X: x, Y: y, Button: tea.MouseLeft}) }
+func (d *driver) press(x, y int) { d.send(term.MouseClickMsg{X: x, Y: y, Button: term.MouseLeft}) }
+func (d *driver) move(x, y int)  { d.send(term.MouseMotionMsg{X: x, Y: y, Button: term.MouseLeft}) }
 func (d *driver) release(x, y int) {
-	d.send(tea.MouseReleaseMsg{X: x, Y: y, Button: tea.MouseLeft})
+	d.send(term.MouseReleaseMsg{X: x, Y: y, Button: term.MouseLeft})
 }
 
 // copied waits for the next copy and its notice in the footer.
@@ -66,9 +67,9 @@ func (d *driver) copied(copies chan string, notice string) string {
 // the composer clear the selection, and the mouse is reported.
 func TestTUI_SelectAndCopy(t *testing.T) {
 	d, copies := copyDeps(t)
-	assert.Equal(t, tea.MouseModeCellMotion, d.m.View().MouseMode)
+	assert.True(t, d.m.View().Mouse)
 	d.typeText("hi there")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• hello")
 	d.waitIdle()
 
@@ -80,7 +81,7 @@ func TestTUI_SelectAndCopy(t *testing.T) {
 	d.release(x+7, y)
 	assert.Equal(t, "hi there", d.copied(copies, "copied 1 line"))
 
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	assert.NotContains(t, d.m.View().Content, selectionOn, "esc clears it")
 
 	x, y = d.at("hello")
@@ -103,14 +104,14 @@ func TestTUI_SelectAndCopy(t *testing.T) {
 // a drag; the copy has every line selected.
 func TestTUI_SelectWhileScrolling(t *testing.T) {
 	d, copies := copyDeps(t)
-	d.send(tea.WindowSizeMsg{Width: 100, Height: 60})
+	d.send(term.WindowSizeMsg{Width: 100, Height: 60})
 	for i, text := range []string{"first message", "second message"} {
 		d.typeText(text)
-		d.key(tea.KeyEnter, 0)
+		d.key(term.KeyEnter, 0)
 		d.until("the answer", func() bool { return strings.Count(d.view(), "• hello") == i+1 })
 		d.waitIdle()
 	}
-	d.send(tea.WindowSizeMsg{Width: 100, Height: 14})
+	d.send(term.WindowSizeMsg{Width: 100, Height: 14})
 	require.NotContains(t, d.view(), "first message", "the window is too short for both")
 
 	x, y := d.at("second message")
@@ -125,11 +126,11 @@ func TestTUI_SelectWhileScrolling(t *testing.T) {
 	assert.True(t, strings.HasSuffix(text, "second"), text)
 	assert.Contains(t, text, "hello\n")
 
-	d.key(tea.KeyEnd, 0)
+	d.key(term.KeyEnd, 0)
 	x, y = d.at("second message")
 	d.press(x+13, y)
 	d.move(x+5, y)
-	d.send(tea.MouseWheelMsg{X: x + 5, Y: y, Button: tea.MouseWheelUp})
+	d.send(term.MouseWheelMsg{X: x + 5, Y: y, Button: term.MouseWheelUp})
 	d.release(x+5, y)
 	text = d.copied(copies, "copied ")
 	assert.True(t, strings.HasSuffix(text, "second message"), "the wheel moved the text under the mouse: %q", text)

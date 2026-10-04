@@ -5,7 +5,7 @@
 `go run ./tools/perf` measures what uah costs outside the model: loading a session, the TUI's first frame and scrolling, an active turn, subagents and forks, the idle TUI, and leaks, on synthetic sessions of 100 to 10,000 records or on copies of real ones, against a scripted fake model. It prints a table, saves JSON, and compares a run with a baseline.
 <!-- /memoria:export -->
 
-The harness drives uah's real stack: `app.Setup` and `session.Open` as `uah` resumes a session, the embedded engine with its sandbox, and the TUI in a real Bubble Tea program. The model is [`testing/fakellm`](../../testing/fakellm/fakellm.go), so no run needs a network, a login, or tokens. Every scenario runs in its own scratch home, and the process environment points `HOME`, `UAH_HOME`, `CODEX_HOME`, and the XDG directories there and clears the variables that change what uah does (`home.Variables`: the provider, model, endpoint, key, sandbox, approval policy, and the rest), so the harness never reads `~/.uah`, `~/.codex`, the user's configuration, or settings exported in the shell.
+The harness drives uah's real stack: `app.Setup` and `session.Open` as `uah` resumes a session, the embedded engine with its sandbox, and the TUI on `term`'s real loop and renderer, headless. The model is [`testing/fakellm`](../../testing/fakellm/fakellm.go), so no run needs a network, a login, or tokens. Every scenario runs in its own scratch home, and the process environment points `HOME`, `UAH_HOME`, `CODEX_HOME`, and the XDG directories there and clears the variables that change what uah does (`home.Variables`: the provider, model, endpoint, key, sandbox, approval policy, and the rest), so the harness never reads `~/.uah`, `~/.codex`, the user's configuration, or settings exported in the shell.
 
 1. [Run it](#run-it)
 2. [Scenarios](#scenarios)
@@ -48,7 +48,7 @@ Each scenario builds its session in a fresh scratch home, measures one block, an
 | Scenario | Per size | Block | Its own measurements |
 | --- | --- | --- | --- |
 | `load` | yes | Resume the session as `uah resume` does (index already built) and send one message, to the first request and the end of the run | `open_ms`, `first_request_ms` (message to the request's arrival at the fake model), `session_syncs`, `history_ms` (`session.Load`, the TUI's transcript, outside the block), `index_ms` (building the SQLite index, outside the block) |
-| `tui` | yes | Start the TUI on the session; wait for the first frame of the resumed transcript; page up 20 times, then down 20 times | `first_frame_ms` (the view after the TUI takes the opened session), `first_paint_ms` (the renderer's first write after it), `scroll_p50_ms`, `scroll_p95_ms`, `scroll_max_ms` (a key to its view), `view_*_ms` (the model's View), `term_kb` |
+| `tui` | yes | Start the TUI on the session; wait for the first frame of the resumed transcript; page up 20 times, then down 20 times | `first_frame_ms` (the view after the TUI takes the opened session), `first_paint_ms` (the renderer's first write after it), `scroll_p50_ms`, `scroll_p95_ms`, `scroll_max_ms` (a key to its view, each key sent a frame after the last, as a key after a pause, which `term` draws at once), `view_*_ms` (the model's View), `term_kb` |
 | `turn` | yes | Resume the session and run the workload turn headless; the session closes before goroutines and connections are counted | `turn_ms`, `first_request_ms`, `events`, `events_per_s`, `records_appended` (records the turn added to the session file), `session_syncs` (the syncs of session files), `requests`, `request_mb` |
 | `spawn` | yes | Resume the session; the model spawns one child, waits, and finishes | `child_first_request_ms` (the parent's reply to the child's first request, once the fake model has read it; see `server_ms`) |
 | `fork` | yes | The same with `fork_context`: the child copies the whole history | `child_first_request_ms` |
@@ -117,31 +117,36 @@ A session with an operation that never finished is skipped: resuming it would ca
 <!-- memoria:section id="baseline" files="baseline.json" -->
 ## Baseline
 
-[baseline.json](baseline.json) is the report of `go run ./tools/perf -count 3` at 1eaf98d (main at 1eaf3cd on the [unreal-agent fork](../../internal/engine/README.md#uah-core) v0.3.2, now uah-core: requests encode each history item once and reuse the last request's encodings, and a resumed session's file is decoded once per run start), with the `turn` scenario closing its session before the count, the medians of three runs on an Apple M4 Max (14 cores), macOS 27.2, Go 1.27.1, in the workspace-write sandbox. Compare a change with it on a similar machine: `go run ./tools/perf -baseline tools/perf/baseline.json`. Replace it, with a new commit and this paragraph, when a change moves the numbers on purpose.
+[baseline.json](baseline.json) is the report of `go run ./tools/perf -count 3` at 1eaf7e6 (lane tuicore on main after 1.8.5: the TUI on uah's own terminal layer, `internal/tui/term`, instead of Bubble Tea), the medians of three runs on an Apple M4 Max (14 cores), macOS 27.2, Go 1.27.1, in the workspace-write sandbox. Compare a change with it on a similar machine: `go run ./tools/perf -baseline tools/perf/baseline.json`. Replace it, with a new commit and this paragraph, when a change moves the numbers on purpose.
 
 | Scenario | Wall ms | CPU ms | Alloc MB | Peak heap MB | Goroutines left | Conns after | Its own |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `load/small` | 17.8 | 13.5 | 9.86 | 8.47 | 0 | 0 | first_request_ms 5.99 |
-| `load/medium` | 92.8 | 104 | 120 | 44.1 | 0 | 0 | first_request_ms 65.8 |
-| `load/large` | 421 | 456 | 586 | 198 | 0 | 0 | first_request_ms 327, index_ms 42.7 |
-| `tui/small` | 45.7 | 24.2 | 7.10 | 9.15 | 0 | 0 | first_frame_ms 7.43, first_paint_ms 34.0, scroll_p95_ms 0.40 |
-| `tui/medium` | 43.2 | 36.1 | 17.6 | 12.5 | 0 | 0 | first_frame_ms 18.7, first_paint_ms 33.7, scroll_p95_ms 0.41 |
-| `tui/large` | 110 | 115 | 57.5 | 18.8 | 0 | 0 | first_frame_ms 85.2, first_paint_ms 101, scroll_p95_ms 0.35 |
-| `turn/small` | 359 | 54.9 | 19.0 | 12.8 | -1 | 0 | turn_ms 359, records_appended 51 |
-| `turn/medium` | 444 | 170 | 179 | 54.3 | -1 | 0 | turn_ms 442, records_appended 51 |
-| `turn/large` | 858 | 606 | 857 | 268 | -1 | 0 | turn_ms 852, records_appended 51 |
-| `spawn/small` | 61.6 | 29.2 | 17.1 | 13.4 | -1 | 0 | child_first_request_ms 22.6 |
-| `spawn/medium` | 226 | 219 | 203 | 93.0 | -1 | 0 | child_first_request_ms 25.3 |
-| `spawn/large` | 916 | 948 | 988 | 383 | -1 | 0 | child_first_request_ms 21.9 |
-| `fork/small` | 67.4 | 42.0 | 28.1 | 16.6 | -1 | 0 | child_first_request_ms 32.6, disk_written_mb 0.46 |
-| `fork/medium` | 296 | 338 | 389 | 104 | -1 | 0 | child_first_request_ms 126, disk_written_mb 4.93 |
-| `fork/large` | 1,348 | 1,575 | 1,979 | 558 | -1 | 0 | child_first_request_ms 564, disk_written_mb 24.0 |
-| `tui-turn/small` | 388 | 88.4 | 23.3 | 13.8 | 3 | 1 | view_p95_ms 0.35 |
-| `idle/tui` | 3,000 | 14.3 | 0 | 0 | -1 | 1 | cpu_ms_per_s 4.78, updates_per_s 0, wakeups_per_s 165 |
-| `agents/small` | 123 | 70.1 | 34.5 | 19.5 | -1 | 0 | fork_ms 81.8 |
-| `leak/5-runs` | 469 | 114 | 59.3 | 13.1 | 0 | 0 | goroutines_left 0 |
+| `load/small` | 17.4 | 14.7 | 10.0 | 8.06 | 0 | 0 | first_request_ms 7.13 |
+| `load/medium` | 83.0 | 93.8 | 112 | 40.9 | 0 | 0 | first_request_ms 57.7 |
+| `load/large` | 343 | 380 | 544 | 167 | 0 | 0 | first_request_ms 266 |
+| `tui/small` | 1,395 | 64.3 | 4.39 | 6.71 | 0 | 0 | first_frame_ms 34.7, first_paint_ms 34.7, scroll_p95_ms 0.73 |
+| `tui/medium` | 1,431 | 87.9 | 14.3 | 10.8 | 0 | 0 | first_frame_ms 33.9, first_paint_ms 34.0, scroll_p95_ms 1.49 |
+| `tui/large` | 1,489 | 174 | 55.0 | 16.9 | 0 | 0 | first_frame_ms 86.4, first_paint_ms 86.4, scroll_p95_ms 1.47 |
+| `turn/small` | 371 | 62.5 | 19.5 | 12.0 | -1 | 0 | turn_ms 371, records_appended 51 |
+| `turn/medium` | 437 | 169 | 170 | 48.2 | -1 | 0 | turn_ms 437, records_appended 51 |
+| `turn/large` | 769 | 531 | 807 | 238 | -1 | 0 | turn_ms 764, records_appended 51 |
+| `spawn/small` | 64.5 | 41.1 | 18.7 | 13.1 | -1 | 0 | child_first_request_ms 31.4 |
+| `spawn/medium` | 189 | 200 | 196 | 88.6 | -1 | 0 | child_first_request_ms 27.1 |
+| `spawn/large` | 792 | 853 | 948 | 384 | -1 | 0 | child_first_request_ms 28.5 |
+| `fork/small` | 65.6 | 41.3 | 28.9 | 18.3 | -1 | 0 | child_first_request_ms 32.2, disk_written_mb 0.50 |
+| `fork/medium` | 275 | 316 | 381 | 120 | -1 | 0 | child_first_request_ms 119, disk_written_mb 5.03 |
+| `fork/large` | 1,171 | 1,374 | 1,925 | 506 | -1 | 0 | child_first_request_ms 514, disk_written_mb 24.2 |
+| `memory/small` | 2,079 | 158 | 36.6 | 13.2 | 0 | 0 | live_mb 0.31, retained_mb 0.97 |
+| `memory/medium` | 2,260 | 371 | 345 | 52.7 | 0 | 0 | live_mb 3.95, retained_mb 8.88 |
+| `memory/large` | 3,068 | 1,248 | 1,653 | 255 | 0 | 0 | live_mb 19.3, retained_mb 35.5 |
+| `tui-turn/small` | 412 | 84.9 | 19.9 | 13.3 | 2 | 1 | view_p95_ms 0.91 |
+| `idle/tui` | 3,001 | 0.15 | 0 | 0 | -1 | 1 | cpu_ms_per_s 0.05, updates_per_s 0, wakeups_per_s 2.67 |
+| `agents/small` | 119 | 81.6 | 37.8 | 20.8 | -1 | 0 | fork_ms 69.1 |
+| `leak/5-runs` | 508 | 139 | 60.8 | 15.1 | 0 | 0 | goroutines_left 0 |
 
-Against the baseline before it (1eaf6a4), the runner fork cuts what the history costs by a third to two thirds: turn/large allocates 857 MB instead of 2,582 and takes 858 ms instead of 1,270, load/large's first request comes in 327 ms instead of 462, and fork/large allocates 1,979 MB instead of 3,630. Peak heap is up 10 to 20% on medium and large (turn/large 268 MB instead of 240) because the runner keeps the last request's item encodings between requests, about one request body. `child_cpu_ms` of turn/large (139 instead of 97) is the sandboxed commands' time, which no change here touched.
+Against the baseline before it (1eaf98d, on Bubble Tea), the idle TUI wakes 2.67 times a second instead of 165 and uses 0.05 ms of CPU a second instead of 4.78: `term` draws only after a change and has no ticker. The `tui` scenarios changed how they measure, so their wall time, CPU time, and wakeups are not comparable: each scroll key is now sent a frame (33 ms) after the last, as a key after a pause, which `term` draws at once, so a scenario lasts about 1.4 s instead of 45 to 110 ms, and its CPU and wakeups include the resumed session's own background work over that time (a TUI that only sleeps through the same 1.4 s costs as much). `scroll_p95_ms` (0.7 to 1.5) is a key to its drawn frame now, where with Bubble Tea it was a key to the model's view (0.4), before a paint that came on the next tick; `first_frame_ms` (34) is the first drawn frame of the opened session, which waits for the frame budget after the startup frame, as Bubble Tea's first paint waited for its tick (`first_paint_ms` 34 on both). `term_kb` counts every scroll step's frame, where Bubble Tea painted the whole burst of steps once or twice. The other scenarios moved by main's changes since 1eaf98d, and by noise.
+
+Against 1eaf6a4, the baseline before 1eaf98d, the runner fork cuts what the history costs by a third to two thirds: turn/large allocates 857 MB instead of 2,582 and takes 858 ms instead of 1,270, load/large's first request comes in 327 ms instead of 462, and fork/large allocates 1,979 MB instead of 3,630. Peak heap is up 10 to 20% on medium and large (turn/large 268 MB instead of 240) because the runner keeps the last request's item encodings between requests, about one request body. `child_cpu_ms` of turn/large (139 instead of 97) is the sandboxed commands' time, which no change here touched.
 
 Against 1eafd1f, the baseline before 1eaf6a4 (with the fork rows after ledger item 84 and the TUI-turn and idle rows after item 86), a turn takes 360 ms instead of 590 on the small fixture and writes 51 records instead of 75, a load's first request comes in 7 ms instead of 27, the large TUI allocates 58 MB instead of 403, and the subagent scenarios take half the time. Three changes there are not regressions:
 
@@ -155,5 +160,5 @@ Against 1eafd1f, the baseline before 1eaf6a4 (with the fork rows after ledger it
 <!-- memoria:section id="test" files="perf/perf_test.go perf/race_test.go perf/norace_test.go perf/fork_internal_test.go" -->
 ## The test
 
-`go test ./tools/perf/...` runs every scenario on the small fixture once, about 16 seconds, and checks generous ceilings: about ten times the baseline. Under the race detector it skips, since the detector would only blur the ceilings; CI runs it in a step without it. The tight ceilings are `idle/tui` `wakeups_per_s` below 250 (about 165 on macOS), which fails if the TUI goes back to 60 frames a second (about 320); `memory/small` `live_mb` below 0.6 (about 0.2), which fails if the open session keeps its last run in memory (about 1 MB); and `memory/small` `retained_mb` below 4 (about 0.3), which fails if the engine stops returning the free heap after its runs (about 8 MB). It catches a large regression, such as the TUI's clock running while idle, a turn that allocates ten times as much, or goroutines left by every session, without failing on a slow machine. `go test -short` skips it. `TestForkRerun` forks a session whose parent appended to a file with a command and checks that the file still has one line: a fork's first run must not start the parent's work again.
+`go test ./tools/perf/...` runs every scenario on the small fixture once, about 16 seconds, and checks generous ceilings: about ten times the baseline. Under the race detector it skips, since the detector would only blur the ceilings; CI runs it in a step without it. The tight ceilings are `idle/tui` `wakeups_per_s` below 10 (2 to 4 on macOS, the Go runtime's), which fails if the TUI wakes up while idle again, as Bubble Tea's frame ticker did (about 165 at 30 frames a second); `memory/small` `live_mb` below 0.6 (about 0.2), which fails if the open session keeps its last run in memory (about 1 MB); and `memory/small` `retained_mb` below 4 (about 0.3), which fails if the engine stops returning the free heap after its runs (about 8 MB). It catches a large regression, such as the TUI's clock running while idle, a turn that allocates ten times as much, or goroutines left by every session, without failing on a slow machine. `go test -short` skips it. `TestForkRerun` forks a session whose parent appended to a file with a command and checks that the file still has one line: a fork's first run must not start the parent's work again.
 <!-- /memoria:section -->

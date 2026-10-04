@@ -23,10 +23,10 @@ func (k Keys) NewlineKey() string {
 }
 
 // KeyboardReported is the terminal's answer to the keyboard enhancement
-// query (Bubble Tea's KeyboardEnhancementsMsg).
+// query (term.KeyboardEnhancementsMsg).
 type KeyboardReported struct{ Disambiguates bool }
 
-// Send keys, as Bubble Tea names them.
+// Send keys, as the terminal's key decoder names them (term.Key.String).
 const (
 	KeyEnter     = "enter"
 	KeyCtrlEnter = "ctrl+enter"

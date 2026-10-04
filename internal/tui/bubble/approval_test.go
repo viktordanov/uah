@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/sandbox"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
@@ -59,7 +59,7 @@ func TestTUI_ApproveAnEscalation(t *testing.T) {
 	deps, target := approvalDeps(t)
 	d := start(t, deps)
 	d.typeText("make the file")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 
 	d.waitFor("Run outside the sandbox?")
 	assert.Contains(t, d.view(), "Reason: it needs the network")
@@ -74,7 +74,7 @@ func TestTUI_ApproveAnEscalation(t *testing.T) {
 	assert.FileExists(t, target)
 
 	d.typeText("/quit")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitQuit()
 }
 
@@ -82,10 +82,10 @@ func TestTUI_DeclineAnEscalation(t *testing.T) {
 	deps, target := approvalDeps(t)
 	d := start(t, deps)
 	d.typeText("make the file")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 
 	d.waitFor("Run outside the sandbox?")
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 
 	d.waitFor("✗ declined: touch " + target)
 	d.waitFor("done")

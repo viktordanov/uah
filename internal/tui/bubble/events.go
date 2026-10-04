@@ -3,15 +3,15 @@ package bubble
 import (
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uagent/core"
+
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // next waits for the next batch of a session's events. Update re-arms it
 // after each batch, so exactly one waits at a time and order is kept.
-func next(gen int, batches <-chan []core.Event) tea.Cmd {
-	return func() tea.Msg {
+func next(gen int, batches <-chan []core.Event) term.Cmd {
+	return func() term.Msg {
 		events, ok := <-batches
 		if !ok {
 			return sessionClosedMsg{gen: gen}

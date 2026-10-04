@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -13,6 +12,7 @@ import (
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
@@ -66,27 +66,27 @@ func TestTUI_AnswerTheAgentsQuestions(t *testing.T) {
 	deps, llm := questionDeps(t)
 	d := start(t, deps)
 	d.typeText("plan the migration")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 
 	d.waitFor("Which way should the migration take?")
 	assert.Contains(t, d.view(), "› 1. Expand and contract (Recommended)")
 	assert.Contains(t, d.view(), "Waiting for your answer")
 	d.typeText("x")
 	assert.Empty(t, d.draft(), "the options take no text")
-	d.key(tea.KeyDown, 0)
+	d.key(term.KeyDown, 0)
 	assert.Contains(t, d.view(), "› 2. Rename in place")
 	d.typeText("n")
 	assert.Contains(t, d.view(), "Note on Rename in place")
 	d.typeText("lock it after 6pm")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	assert.Contains(t, d.view(), "✎ lock it after 6pm")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 
 	d.waitFor("When should it run?")
 	d.typeText("3")
 	assert.Contains(t, d.view(), "› 3. Type your own answer")
 	d.typeText("after the Friday backup")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 
 	d.waitFor("Planned it your way.")
 	assert.Contains(t, d.view(), "Migration: Rename in place · lock it after 6pm")
@@ -105,19 +105,19 @@ func TestTUI_DismissTheAgentsQuestions(t *testing.T) {
 	deps, llm := questionDeps(t)
 	d := start(t, deps)
 	d.typeText("plan the migration")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 
 	d.waitFor("Which way should the migration take?")
 	d.key('2', 0) // a number picks and answers
 	d.waitFor("When should it run?")
 	d.key('3', 0)
 	d.typeText("use expand and contract")
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.until("the picker closes", func() bool { return !strings.Contains(d.view(), "When should it run?") })
 	assert.Equal(t, "use expand and contract", d.draft())
 	d.waitIdle()
 
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("Planned it your way.")
 	reqs := llm.Requests()
 	require.Len(t, reqs, 2)

@@ -1,4 +1,4 @@
-// Package bubble is the Bubble Tea shell around the TUI state and renderer:
+// Package bubble is the shell around the TUI state and renderer, on term:
 // it turns keys into intents, runs effects against the session, batches
 // session events, and draws frames. Everything else lives in state and render.
 package bubble
@@ -9,9 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/textarea"
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/compaction"
@@ -20,8 +17,10 @@ import (
 	"github.com/viktordanov/uah/internal/images/clipboard"
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/tui/composer"
 	"github.com/viktordanov/uah/internal/tui/render"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/internal/usage"
 	"github.com/viktordanov/uah/internal/usage/cachestats"
 )
@@ -88,18 +87,21 @@ type Deps struct {
 	// image says it cannot).
 	Images    *images.Store
 	Clipboard clipboard.Reader
+	// PasteText reads the clipboard's text, which ctrl+v pastes when the
+	// clipboard holds no image (optional; clipboard.TextReader.ReadText).
+	PasteText func(ctx context.Context) (string, error)
 	// WritableRoots are the sandbox's extra writable roots, absolute; ctrl+g
 	// checks that sandboxed commands cannot write its draft file.
 	WritableRoots []string
 	// Exec runs the editor for ctrl+g with the terminal released (default
-	// tea.Exec); tests run it directly.
-	Exec func(tea.ExecCommand, tea.ExecCallback) tea.Cmd
+	// term.Exec); tests run it directly.
+	Exec func(term.ExecCommand, term.ExecCallback) term.Cmd
 	// History is the prompt history file for ↑ and ctrl+r (nil: this
 	// process's prompts only).
 	History *history.File
 }
 
-// Model is the Bubble Tea model.
+// Model is the TUI's term.Model.
 type Model struct {
 	ctx   context.Context
 	deps  Deps
@@ -107,7 +109,7 @@ type Model struct {
 	cache *render.Cache
 	// theme is the cache's theme, for what uah prints after the TUI.
 	theme    render.Theme
-	composer textarea.Model
+	composer composer.Composer
 	w, h     int
 
 	sess     *session.Session
@@ -166,7 +168,7 @@ func New(ctx context.Context, deps Deps) Model {
 }
 
 // onBackground picks the theme for the terminal's background.
-func (m Model) onBackground(msg tea.BackgroundColorMsg) Model {
+func (m Model) onBackground(msg term.BackgroundColorMsg) Model {
 	m.theme = render.ThemeFor(msg.Color)
 	m.cache = render.NewCache(m.theme)
 	m.composer.SetStyles(composerStyles(m.cache.Styles()))
@@ -174,20 +176,9 @@ func (m Model) onBackground(msg tea.BackgroundColorMsg) Model {
 	return m
 }
 
-// frameRate is how often Bubble Tea checks the view for changes. It checks
-// even when idle, so 30 halves the idle wakeups of the default 60 and keeps
-// a keystroke's echo within 33 ms.
-const frameRate = 30
-
-// ProgramOptions are the options every program running the model uses.
-func ProgramOptions(ctx context.Context) []tea.ProgramOption {
-	return []tea.ProgramOption{tea.WithContext(ctx), tea.WithFPS(frameRate)}
-}
-
-// Run starts the program and blocks until it exits.
-func Run(ctx context.Context, deps Deps, opts ...tea.ProgramOption) (Exit, error) {
-	p := tea.NewProgram(New(ctx, deps), append(ProgramOptions(ctx), opts...)...)
-	final, err := p.Run()
+// Run runs the TUI on the terminal and blocks until it exits.
+func Run(ctx context.Context, deps Deps) (Exit, error) {
+	final, err := term.Run(ctx, New(ctx, deps), term.Options{})
 	fm, ok := final.(Model)
 	if !ok {
 		return Exit{}, err // the caller wraps it
@@ -199,52 +190,52 @@ func Run(ctx context.Context, deps Deps, opts ...tea.ProgramOption) (Exit, error
 	return fm.Exit(), err // the caller wraps it
 }
 
-func (m Model) Init() tea.Cmd {
+func (m Model) Init() term.Cmd {
 	// The theme follows the terminal's background once it answers.
 	if m.deps.Picker {
-		return tea.Batch(tea.RequestBackgroundColor, m.run(state.EffLoadPrompts{}), m.run(state.EffLoadSessions{}))
+		return term.Batch(m.run(state.EffLoadPrompts{}), m.run(state.EffLoadSessions{}))
 	}
 
-	return tea.Batch(tea.RequestBackgroundColor, m.run(state.EffLoadPrompts{}), m.open(m.deps.SessionID))
+	return term.Batch(m.run(state.EffLoadPrompts{}), m.open(m.deps.SessionID))
 }
 
-// onTerminalReport takes the terminal's answers to Bubble Tea's startup
+// onTerminalReport takes the terminal's answers to term's startup
 // queries: its background color, and whether it tells shift+enter from
 // enter, which picks the new-line hint (no answer at all, as from tmux:
 // ctrl+j).
-func (m Model) onTerminalReport(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) onTerminalReport(msg term.Msg) (term.Model, term.Cmd) {
 	switch msg := msg.(type) {
-	case tea.BackgroundColorMsg:
+	case term.BackgroundColorMsg:
 		return m.onBackground(msg), nil
-	case tea.KeyboardEnhancementsMsg:
+	case term.KeyboardEnhancementsMsg:
 		return m.dispatch(state.KeyboardReported{Disambiguates: msg.SupportsKeyDisambiguation()})
 	}
 
 	return m, nil
 }
 
-func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg term.Msg) (term.Model, term.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
+	case term.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
 		m.resizeComposer()
 
 		return m, nil
-	case tea.BackgroundColorMsg, tea.KeyboardEnhancementsMsg:
+	case term.BackgroundColorMsg, term.KeyboardEnhancementsMsg:
 		return m.onTerminalReport(msg)
-	case tea.MouseWheelMsg:
+	case term.MouseWheelMsg:
 		return m.onWheel(msg)
-	case tea.MouseClickMsg, tea.MouseMotionMsg, tea.MouseReleaseMsg:
+	case term.MouseClickMsg, term.MouseMotionMsg, term.MouseReleaseMsg:
 		return m.onMouse(msg)
-	case tea.KeyPressMsg:
+	case term.KeyPressMsg:
 		return m.now().onKey(msg)
-	case tea.PasteMsg:
+	case term.PasteMsg:
 		return m.now().onPaste(msg)
 	case eventsMsg:
 		if msg.gen != m.gen {
 			return m, next(msg.gen, msg.batches) // drain a closed session's last events
 		}
-		cmds := []tea.Cmd{next(m.gen, msg.batches)}
+		cmds := []term.Cmd{next(m.gen, msg.batches)}
 		for _, e := range msg.events {
 			var effects []state.Effect
 			m.st, effects = state.Reduce(m.st, e)
@@ -257,7 +248,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// After the events: a batch that starts a run starts the clock.
 		cmds = append(cmds, m.afterChange())
 
-		return m, tea.Batch(cmds...)
+		return m, term.Batch(cmds...)
 	case sessionClosedMsg:
 		if msg.gen == m.gen {
 			m.sess = nil
@@ -278,20 +269,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case quitMsg:
 		m.sess = nil
 
-		return m, tea.Quit
+		return m, term.Quit
 	case state.Failed, state.SessionsLoaded, state.ActivityLoaded, state.FilesLoaded, state.MCPListed, state.ContextShown,
 		state.ModelsLoaded, state.ConfigLoaded, state.ConfigSaved, state.ImageAttached, state.ImageFailed, state.DraftEdited:
 		return m.dispatch(msg)
 	case state.UsageLoaded, state.CacheLoaded, state.Copied, state.DiffShown, state.ReviewTargetsLoaded, state.PromptsLoaded:
 		return m.dispatch(msg)
 	}
-	var cmd tea.Cmd
-	m.composer, cmd = m.composer.Update(msg)
 
-	return m, cmd
+	return m, nil
 }
 
-func (m Model) onOpened(msg openedMsg) (tea.Model, tea.Cmd) {
+func (m Model) onOpened(msg openedMsg) (term.Model, term.Cmd) {
 	m.gen++
 	m.stopWatch()
 	m.sess = msg.sess
@@ -302,7 +291,7 @@ func (m Model) onOpened(msg openedMsg) (tea.Model, tea.Cmd) {
 	}
 	batches := make(chan []core.Event)
 	go batch(msg.sess.Events(), batches)
-	cmds := []tea.Cmd{next(m.gen, batches)}
+	cmds := []term.Cmd{next(m.gen, batches)}
 	for _, e := range m.held {
 		cmds = append(cmds, m.run(e))
 	}
@@ -311,19 +300,19 @@ func (m Model) onOpened(msg openedMsg) (tea.Model, tea.Cmd) {
 		m.prompted = true
 		updated, cmd := m.dispatch(state.Submit{Text: m.deps.Prompt})
 
-		return updated, tea.Batch(append(cmds, cmd)...)
+		return updated, term.Batch(append(cmds, cmd)...)
 	}
 
-	return m, tea.Batch(cmds...)
+	return m, term.Batch(cmds...)
 }
 
 // dispatch reduces an intent and runs the effects it returns.
-func (m Model) dispatch(intent any) (tea.Model, tea.Cmd) {
+func (m Model) dispatch(intent any) (term.Model, term.Cmd) {
 	var effects []state.Effect
 	shell := m.st.Shell
 	m.st, effects = state.Reduce(m.st, intent)
 	m.syncShell(shell)
-	cmds := []tea.Cmd{m.afterChange()}
+	cmds := []term.Cmd{m.afterChange()}
 	for _, e := range effects {
 		if d, ok := e.(state.EffSetDraft); ok {
 			m.composer.SetValue(d.Text)
@@ -349,7 +338,7 @@ func (m Model) dispatch(intent any) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.run(e))
 	}
 
-	return m, tea.Batch(cmds...)
+	return m, term.Batch(cmds...)
 }
 
 // now sets the state's clock to deps.Now. The clock ticks only while
@@ -362,7 +351,7 @@ func (m Model) now() Model {
 }
 
 // afterChange keeps the clock ticking while anything moves on screen.
-func (m *Model) afterChange() tea.Cmd {
+func (m *Model) afterChange() term.Cmd {
 	moving := m.st.Busy || m.st.Live != nil || m.st.Status != "" || m.st.AgentsRunning() || m.st.ShellRunning() || m.st.ReviewRunning()
 	if v := m.st.View; v != nil {
 		moving = moving || v.St.Busy || v.St.Live != nil // the viewed agent's spinner
@@ -372,7 +361,7 @@ func (m *Model) afterChange() tea.Cmd {
 	}
 	m.ticking = true
 
-	return tea.Tick(tickInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+	return term.Tick(tickInterval, func(t time.Time) term.Msg { return tickMsg(t) })
 }
 
 // frame is what render.Screen draws around the state.
@@ -382,21 +371,18 @@ func (m Model) frame() render.Frame {
 	}
 }
 
-func (m Model) View() tea.View {
+func (m Model) View() term.View {
 	content, composerRow := render.Screen(m.st, m.cache, m.frame())
-	v := tea.NewView(content)
-	v.AltScreen = true
+	v := term.NewView(content)
 	// With the mouse reported, which is the default, wheel events scroll
 	// the transcript and a drag selects its text (mouse.go); the terminal's
 	// own selection needs its modifier (Option in iTerm2 and Terminal,
 	// Shift in most others). Without it, the terminal selects text and
 	// turns the wheel into ↑ and ↓ (keys.go).
-	if m.st.Mouse {
-		v.MouseMode = tea.MouseModeCellMotion
-	}
-	// Bubble Tea clears the title when the program ends.
+	v.Mouse = m.st.Mouse
+	// term clears the title when the program ends.
 	v.WindowTitle = m.st.WindowTitle()
-	if c := m.composer.Cursor(); c != nil && composerRow >= 0 {
+	if c := m.composerCursor(); c != nil && composerRow >= 0 {
 		c.Y += composerRow
 		v.Cursor = c
 		m.searchCursor(c, composerRow)

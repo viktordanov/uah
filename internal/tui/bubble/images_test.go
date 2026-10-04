@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/viktordanov/uah/internal/images/clipboard"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
@@ -84,17 +84,17 @@ func TestTUI_PasteImages(t *testing.T) {
 	dr := start(t, d)
 	dr.until("the session is open", func() bool { return dr.m.(bubble.Model).Exit().SessionID != "" })
 
-	dr.key('v', tea.ModCtrl)
+	dr.key('v', term.ModCtrl)
 	dr.waitFor("λ [Image #1]")
-	dr.key('v', tea.ModAlt)
+	dr.key('v', term.ModAlt)
 	dr.waitFor("[Image #1] [Image #2]")
 
-	dr.key(tea.KeyBackspace, 0) // the space after it
-	dr.key(tea.KeyBackspace, 0) // the whole placeholder
+	dr.key(term.KeyBackspace, 0) // the space after it
+	dr.key(term.KeyBackspace, 0) // the whole placeholder
 	assert.NotContains(t, dr.view(), "[Image #2")
 
 	dr.typeText("what is this?")
-	dr.key(tea.KeyEnter, 0)
+	dr.key(term.KeyEnter, 0)
 	dr.waitFor("• an image")
 	assert.Contains(t, dr.view(), "λ [Image #1] what is this?")
 	assert.NotContains(t, dr.view(), "uah-image", "the transcript shows placeholders, not tags")
@@ -115,9 +115,9 @@ func TestTUI_PasteAnImagePath(t *testing.T) {
 	dr := start(t, d)
 	dr.until("the session is open", func() bool { return dr.m.(bubble.Model).Exit().SessionID != "" })
 
-	dr.send(tea.PasteMsg{Content: "'" + shot + "'"})
+	dr.send(term.PasteMsg{Content: "'" + shot + "'"})
 	dr.waitFor("λ [Image #1]")
-	dr.send(tea.PasteMsg{Content: "plain words"})
+	dr.send(term.PasteMsg{Content: "plain words"})
 	dr.waitFor("[Image #1] plain words")
 	assert.NotContains(t, dr.view(), "my shot.png", "the path became an attachment")
 }

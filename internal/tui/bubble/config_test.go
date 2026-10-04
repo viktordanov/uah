@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/tui/bubble"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // configDeps back /config with a real user file, as `uah` does.
@@ -48,25 +48,25 @@ func TestTUI_ConfigSavesToTheUserFile(t *testing.T) {
 	d.Mouse = true
 	dr := start(t, d.Deps)
 	dr.typeText("hi")
-	dr.key(tea.KeyEnter, 0)
+	dr.key(term.KeyEnter, 0)
 	dr.waitFor("• hello")
 
 	dr.typeText("/config")
-	dr.key(tea.KeyEnter, 0)
+	dr.key(term.KeyEnter, 0)
 	dr.waitFor("Mouse")
 	assert.Regexp(t, `› Auto-compact +on at 90% +default`, dr.view())
 	assert.Regexp(t, `Effort +high +user file`, dr.view())
 
-	dr.key(tea.KeyUp, 0) // wraps to Mouse
-	dr.key(tea.KeySpace, 0)
+	dr.key(term.KeyUp, 0) // wraps to Mouse
+	dr.key(term.KeySpace, 0)
 	dr.waitFor("saved tui.mouse = false") // on by default
-	assert.Equal(t, tea.MouseModeNone, dr.m.View().MouseMode, "the mouse is off at once")
+	assert.False(t, dr.m.View().Mouse, "the mouse is off at once")
 
-	dr.key(tea.KeyDown, 0)
-	dr.key(tea.KeyDown, 0) // the token limit
-	dr.key(tea.KeyEnter, 0)
+	dr.key(term.KeyDown, 0)
+	dr.key(term.KeyDown, 0) // the token limit
+	dr.key(term.KeyEnter, 0)
 	dr.typeText("50000")
-	dr.key(tea.KeyEnter, 0)
+	dr.key(term.KeyEnter, 0)
 	dr.waitFor("saved model_auto_compact_token_limit = 50000")
 	dr.waitFor("50000")
 
@@ -74,7 +74,7 @@ func TestTUI_ConfigSavesToTheUserFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "# my settings\neffort = \"high\" # keep\nmodel_auto_compact_token_limit = 50000\n\n[tui]\nmouse = false\n", string(data))
 
-	dr.key(tea.KeyEscape, 0)
+	dr.key(term.KeyEscape, 0)
 	assert.NotContains(t, dr.view(), "enter or space change", "esc closes the panel")
 }
 

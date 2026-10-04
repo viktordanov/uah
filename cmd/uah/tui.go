@@ -71,6 +71,11 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		first = st.Options.ID
 	}
 	newID := &takeOnce{value: cmd.String(flagSessionID)}
+	// From here the TUI handles SIGINT and SIGTERM itself (term): it
+	// restores the terminal, and drops the SIGINT that ctrl+c in ctrl+g's
+	// editor also sends uah, which would cancel main's signal context for
+	// good. The TUI and every dependency below live on this context.
+	ctx = tuiContext(ctx)
 
 	deps := bubble.Deps{
 		SessionID:   first,
@@ -87,6 +92,7 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		SaveConfig:  tuiSaveConfig(ctx, cmd),
 		Images:      &images.Store{Dir: images.DirIn(st.StateDir)},
 		Clipboard:   clipboard.System(),
+		PasteText:   clipboard.SystemTextReader().ReadText,
 		CopyText:    clipboard.SystemWriter().WriteText,
 		// ctrl+g refuses a draft directory these roots expose.
 		WritableRoots: st.Sandbox.WritableRoots,
@@ -191,3 +197,8 @@ func (t *takeOnce) take() string {
 
 	return v
 }
+
+// tuiContext is the context the TUI and its dependencies live on: ctx's
+// values without its cancellation, since term handles the signals that
+// cancel main's context.
+func tuiContext(ctx context.Context) context.Context { return context.WithoutCancel(ctx) }

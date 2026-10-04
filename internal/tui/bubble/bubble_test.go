@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,6 +19,7 @@ import (
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
 
@@ -59,26 +59,26 @@ func depsIn(t *testing.T, fixture string, mode approval.Mode) bubble.Deps {
 	}
 }
 
-// driver runs a model like tea.Program does: commands run in goroutines and
+// driver runs a model like term.Program does: commands run in goroutines and
 // their messages go back through Update. Checks read the rendered view, which
 // is exact, unlike the renderer's cell-diff output.
 type driver struct {
 	t    *testing.T
-	m    tea.Model
-	msgs chan tea.Msg
+	m    term.Model
+	msgs chan term.Msg
 	quit bool
 }
 
 func start(t *testing.T, d bubble.Deps) *driver {
 	t.Helper()
-	dr := &driver{t: t, m: bubble.New(context.Background(), d), msgs: make(chan tea.Msg, 256)}
-	dr.send(tea.WindowSizeMsg{Width: 100, Height: 30})
+	dr := &driver{t: t, m: bubble.New(context.Background(), d), msgs: make(chan term.Msg, 256)}
+	dr.send(term.WindowSizeMsg{Width: 100, Height: 30})
 	dr.exec(dr.m.Init())
 
 	return dr
 }
 
-func (d *driver) exec(cmd tea.Cmd) {
+func (d *driver) exec(cmd term.Cmd) {
 	if cmd != nil {
 		go func() {
 			if msg := cmd(); msg != nil {
@@ -90,7 +90,7 @@ func (d *driver) exec(cmd tea.Cmd) {
 
 // update gives the model a message and returns its command without running
 // it, so a test can choose when, and in which order, commands run.
-func (d *driver) update(msg tea.Msg) tea.Cmd {
+func (d *driver) update(msg term.Msg) term.Cmd {
 	next, cmd := d.m.Update(msg)
 	d.m = next
 
@@ -98,15 +98,15 @@ func (d *driver) update(msg tea.Msg) tea.Cmd {
 }
 
 // execNow runs a command in a goroutine at once, and each command of a batch
-// in its own, as tea.Program does; exec leaves a batch for send to start.
-func (d *driver) execNow(cmd tea.Cmd) {
+// in its own, as term.Program does; exec leaves a batch for send to start.
+func (d *driver) execNow(cmd term.Cmd) {
 	if cmd == nil {
 		return
 	}
 	go func() {
 		switch msg := cmd().(type) {
 		case nil:
-		case tea.BatchMsg:
+		case term.BatchMsg:
 			for _, c := range msg {
 				d.execNow(c)
 			}
@@ -116,15 +116,15 @@ func (d *driver) execNow(cmd tea.Cmd) {
 	}()
 }
 
-func (d *driver) send(msg tea.Msg) {
+func (d *driver) send(msg term.Msg) {
 	switch msg := msg.(type) {
-	case tea.BatchMsg:
+	case term.BatchMsg:
 		for _, c := range msg {
 			d.exec(c)
 		}
 
 		return
-	case tea.QuitMsg:
+	case term.QuitMsg:
 		d.quit = true
 
 		return
@@ -138,11 +138,11 @@ func (d *driver) view() string { return ansi.Strip(d.m.View().Content) }
 
 func (d *driver) typeText(s string) {
 	for _, r := range s {
-		d.send(tea.KeyPressMsg{Code: r, Text: string(r)})
+		d.send(term.KeyPressMsg{Code: r, Text: string(r)})
 	}
 }
 
-func (d *driver) key(code rune, mod tea.KeyMod) { d.send(tea.KeyPressMsg{Code: code, Mod: mod}) }
+func (d *driver) key(code rune, mod term.KeyMod) { d.send(term.KeyPressMsg{Code: code, Mod: mod}) }
 
 // waitIdle waits until the session is idle: no run, and no message on its
 // way. It reads the state, since the screen shows no "esc to interrupt"
@@ -201,15 +201,15 @@ func TestTUI_SendAMessageAndQuit(t *testing.T) {
 	assert.False(t, d.m.(bubble.Model).Exit().Resumable, "a session that never ran has nothing to resume")
 
 	d.typeText("hi there") // typed before the session opens: it is held, not lost
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• hello")
 	assert.Contains(t, d.view(), "λ hi there")
 	assert.NotContains(t, d.view(), "1 run ·", "the compact view hides totals")
 
-	d.key('t', tea.ModCtrl)
+	d.key('t', term.ModCtrl)
 	d.waitFor("1 run ·")
 	d.waitFor("● answer")
-	d.key('t', tea.ModCtrl)
+	d.key('t', term.ModCtrl)
 	d.until("the compact view again", func() bool { return !strings.Contains(d.view(), "1 run ·") })
 
 	exit := d.m.(bubble.Model).Exit()
@@ -217,7 +217,7 @@ func TestTUI_SendAMessageAndQuit(t *testing.T) {
 	assert.NotEmpty(t, exit.SessionID)
 
 	d.typeText("/quit")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitQuit()
 }
 
@@ -229,21 +229,21 @@ func TestTUI_CommandsAndPrompt(t *testing.T) {
 
 	d.typeText("/re")
 	assert.Contains(t, d.view(), "/resume [id]", "typing a command shows completions")
-	d.key('c', tea.ModCtrl) // clears the draft, not quits
+	d.key('c', term.ModCtrl) // clears the draft, not quits
 	assert.Contains(t, d.view(), "Ask uah to do anything", "the composer is empty again")
 	assert.NotContains(t, d.view(), "/resume [id]")
 
 	d.typeText("/effort low")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("effort low, applies from the next run")
 	assert.Contains(t, d.view(), "gpt-6-sol low", "the footer shows the new effort")
 
 	d.typeText("/nope")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("unknown command /nope")
 
 	d.waitIdle() // ctrl+c while a run is live only arms the quit
-	d.key('c', tea.ModCtrl)
+	d.key('c', term.ModCtrl)
 	d.waitQuit()
 }
 
@@ -255,21 +255,21 @@ func TestTUI_ResumeFromThePicker(t *testing.T) {
 	d.waitIdle() // /new waits while a run is live
 
 	d.typeText("/new")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.until("a new, empty session", func() bool {
 		v := d.view()
 
 		return !strings.Contains(v, "remember this") && !strings.Contains(v, "hello")
 	})
 
-	d.key('s', tea.ModCtrl)
+	d.key('s', term.ModCtrl)
 	d.waitFor("Resume a session")
 	d.typeText("remember")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("λ remember this")
 	d.waitFor("• hello")
 
-	d.key('c', tea.ModCtrl)
+	d.key('c', term.ModCtrl)
 	d.waitQuit()
 }
 
@@ -282,61 +282,61 @@ func TestTUI_QueueInterruptAndEdit(t *testing.T) {
 	d.waitFor("sleep 300")
 
 	d.typeText("then update the README")
-	d.key(tea.KeyTab, 0) // queues for the end of the run
+	d.key(term.KeyTab, 0) // queues for the end of the run
 	d.waitFor("↳ queued: then update the README")
 
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("press esc again to interrupt")
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	d.waitFor("■ interrupted")
 	d.waitIdle()
 	assert.Contains(t, d.view(), "↳ queued: then update the README", "an interrupt keeps the queue")
 	assert.Contains(t, d.view(), "stop ", "the unfinished tool is shown as stopped")
 
-	d.key(tea.KeyUp, 0)
+	d.key(term.KeyUp, 0)
 	d.until("the queued message back in the composer", func() bool {
 		v := d.view()
 
 		return strings.Contains(v, "λ then update the README") && !strings.Contains(v, "queued: then update the README")
 	})
 
-	d.key('c', tea.ModCtrl) // clears the draft
-	d.key('c', tea.ModCtrl) // quits: the session is idle
+	d.key('c', term.ModCtrl) // clears the draft
+	d.key('c', term.ModCtrl) // quits: the session is idle
 	d.waitQuit()
 }
 
 func TestTUI_WheelScrolls(t *testing.T) {
 	d := start(t, deps(t, "simple.jsonl"))
 	d.typeText("hi")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• hello")
 	d.waitIdle() // a busy footer's elapsed time would change the views compared below
 	for range 3 {
 		d.typeText("/help")
-		d.key(tea.KeyEnter, 0)
+		d.key(term.KeyEnter, 0)
 	}
 	bottom := d.view()
 
-	d.send(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+	d.send(term.MouseWheelMsg{Button: term.MouseWheelUp})
 	assert.Contains(t, d.view(), "scrolled up")
 	for range 200 {
-		d.send(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+		d.send(term.MouseWheelMsg{Button: term.MouseWheelUp})
 	}
 	top := d.view()
 	assert.Contains(t, top, "λ hi", "the first message is reachable")
-	d.send(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
+	d.send(term.MouseWheelMsg{Button: term.MouseWheelDown})
 	assert.NotEqual(t, top, d.view(), "scrolling back down moves at once: the offset stops at the top")
 
-	d.key(tea.KeyEnd, 0)
+	d.key(term.KeyEnd, 0)
 	assert.Equal(t, bottom, d.view())
 
 	// The terminal's wheel as ↑ and ↓ scrolls with a prompt typed too: a
 	// one-line prompt has no row above or below for the cursor.
 	d.typeText("half a thought")
-	d.key(tea.KeyUp, 0)
+	d.key(term.KeyUp, 0)
 	assert.Contains(t, d.view(), "scrolled up")
 	assert.Contains(t, d.view(), "half a thought", "the prompt stays")
-	d.key(tea.KeyDown, 0)
+	d.key(term.KeyDown, 0)
 	assert.NotContains(t, d.view(), "scrolled up")
 }
 
@@ -346,23 +346,23 @@ func TestTUI_MenuCompletes(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(deps.Cwd, "notes.md"), []byte("x"), 0o600))
 	d := start(t, deps)
 	d.typeText("hi")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• hello")
 	d.waitIdle() // esc below must find no live run
 
 	d.typeText("/eff")
-	d.key(tea.KeyTab, 0)
+	d.key(term.KeyTab, 0)
 	d.typeText("l")
-	d.key(tea.KeyTab, 0)
+	d.key(term.KeyTab, 0)
 	assert.Contains(t, d.view(), "λ /effort low")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("effort low, applies from the next run")
 
 	d.typeText("see @not")
 	d.waitFor("notes.md")
-	d.key(tea.KeyTab, 0)
+	d.key(term.KeyTab, 0)
 	assert.Contains(t, d.view(), "λ see notes.md")
-	d.key(tea.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
 	assert.NotContains(t, d.view(), "press esc again", "esc with no menu open still means interrupt only while busy")
 }
 
@@ -371,10 +371,10 @@ func TestTUI_StatusShowsActivity(t *testing.T) {
 	deps.Activity = func() (map[string]int, error) { return map[string]int{time.Now().Format(time.DateOnly): 3}, nil }
 	d := start(t, deps)
 	d.typeText("hi")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• hello")
 	d.typeText("/status")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("activity · last 12 weeks · 3 runs")
 }
 
@@ -384,16 +384,16 @@ func TestTUI_LambdaOnTheFirstRowOnly(t *testing.T) {
 	d := start(t, deps(t, "simple.jsonl"))
 	d.until("the session is open", func() bool { return !strings.Contains(d.view(), "Opening the session") })
 	d.typeText("first")
-	d.key('j', tea.ModCtrl) // a new line
+	d.key('j', term.ModCtrl) // a new line
 	d.typeText("second")
-	d.key('j', tea.ModCtrl)
+	d.key('j', term.ModCtrl)
 	d.typeText("third")
 	view := d.view()
 	assert.Contains(t, view, "λ first")
 	assert.Contains(t, view, "\n  second")
 	assert.Contains(t, view, "\n  third")
 	assert.Equal(t, 1, strings.Count(view, "\nλ "), "one λ for the whole composer")
-	d.key('c', tea.ModCtrl)
-	d.key('c', tea.ModCtrl)
+	d.key('c', term.ModCtrl)
+	d.key('c', term.ModCtrl)
 	d.waitQuit()
 }

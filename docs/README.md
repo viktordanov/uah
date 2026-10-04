@@ -17,7 +17,7 @@ The design records below keep the research and the decisions behind each feature
 Design:
 
 1. [Harness design](design/harness.md) (historical): what the runner provided, what the harness added, the two engines it planned, and the scope accepted then.
-2. [TUI design](design/tui.md) (historical): the framework choice, architecture, screens, keys, and commands as first designed.
+2. [TUI design](design/tui.md) (historical): the framework choice, architecture, screens, keys, and commands as first designed, and the move from Bubble Tea to uah's own terminal layer with its measurements.
 3. [Implementation spec](design/implementation.md) (historical): the first plan of packages, files, types, and milestones; the [architecture rules](documentation/architecture.md) have today's packages.
 4. [State storage](design/state.md): what is stored where, and the plan for a rebuildable SQLite index.
 5. [Sandboxing and approvals: research](design/sandbox-research.md) (historical): how Codex sandboxes and approves commands, and the options for uah.

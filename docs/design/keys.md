@@ -77,7 +77,7 @@ tmux does not answer the query in any mode. With extended keys on, ctrl+enter ar
 
 The compact footer shows `enter after tool · ^enter now · tab later` while the agent works, in place of `/ commands`, with `alt+enter` in place of `^enter` where the terminal did not answer the query, since there ctrl+enter may arrive as enter. It is short so the model, mode, and directory still fit at 100 columns. In the detailed view while idle it shows `enter send · shift+enter new line` where the terminal answered the query, and `enter send · ctrl+j new line` elsewhere, as Codex's footer picks its new-line key. The queue's hint says `enter sends now`. `/help` gives the keys and the new-line key for this terminal.
 
-`State.SendIntent(key, draft)` maps the keys, and `State.Working` says whether the agent the composer talks to works: in the agent view, the viewed subagent. `State.Keys.Disambiguated` is the terminal's answer, set by `state.KeyboardReported`, which the shell sends for `tea.KeyboardEnhancementsMsg`.
+`State.SendIntent(key, draft)` maps the keys, and `State.Working` says whether the agent the composer talks to works: in the agent view, the viewed subagent. `State.Keys.Disambiguated` is the terminal's answer, set by `state.KeyboardReported`, which the shell sends for `term.KeyboardEnhancementsMsg` (`tea.KeyboardEnhancementsMsg` until 1.8.4). `term` sends the same sequences and query as Bubble Tea v2.0.9 did (below), through the same decoder, so these measurements still hold.
 
 ## Decisions
 

@@ -6,11 +6,10 @@ import (
 	"strings"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/images"
 	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // resourceListTimeout bounds listing the resources for the "@" menu.
@@ -18,7 +17,7 @@ const resourceListTimeout = 10 * time.Second
 
 // runMCP runs the MCP prompt and resource effects; ok is false for any
 // other effect.
-func (m Model) runMCP(e state.Effect) (tea.Cmd, bool) {
+func (m Model) runMCP(e state.Effect) (term.Cmd, bool) {
 	sess, ctx, store := m.sess, m.ctx, m.deps.Images
 	manager := func() *mcp.Manager {
 		if sess == nil {
@@ -29,7 +28,7 @@ func (m Model) runMCP(e state.Effect) (tea.Cmd, bool) {
 	}
 	switch e := e.(type) {
 	case state.EffLoadMCPPrompts:
-		return func() tea.Msg {
+		return func() term.Msg {
 			prompts := []mcp.Prompt{}
 			if mg := manager(); mg != nil {
 				prompts = append(prompts, mg.Prompts()...)
@@ -38,7 +37,7 @@ func (m Model) runMCP(e state.Effect) (tea.Cmd, bool) {
 			return state.MCPPromptsLoaded{Prompts: prompts}
 		}, true
 	case state.EffLoadMCPResources:
-		return func() tea.Msg {
+		return func() term.Msg {
 			resources := []mcp.ResourceRef{}
 			if mg := manager(); mg != nil {
 				ctx, cancel := context.WithTimeout(ctx, resourceListTimeout)
@@ -49,7 +48,7 @@ func (m Model) runMCP(e state.Effect) (tea.Cmd, bool) {
 			return state.MCPResourcesLoaded{Resources: resources}
 		}, true
 	case state.EffRunPrompt:
-		return m.calls.next(func() tea.Msg {
+		return m.calls.next(func() term.Msg {
 			mg := manager()
 			if mg == nil {
 				return state.Failed{Err: errNoSession}

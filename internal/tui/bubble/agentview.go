@@ -1,12 +1,11 @@
 package bubble
 
 import (
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/state"
+	"github.com/viktordanov/uah/internal/tui/term"
 )
 
 // Messages of the agent view: a watch that opened, and a batch of the
@@ -27,7 +26,7 @@ type (
 )
 
 // onAgentMsg routes the agent view's messages.
-func (m Model) onAgentMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) onAgentMsg(msg term.Msg) (term.Model, term.Cmd) {
 	switch msg := msg.(type) {
 	case agentOpenedMsg:
 		return m.onAgentOpened(msg)
@@ -41,10 +40,10 @@ func (m Model) onAgentMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // watchAgent starts following an agent of the session.
-func (m Model) watchAgent(id string) tea.Cmd {
+func (m Model) watchAgent(id string) term.Cmd {
 	sess := m.sess
 
-	return func() tea.Msg {
+	return func() term.Msg {
 		if sess == nil {
 			return state.Failed{Err: errNoSession}
 		}
@@ -59,7 +58,7 @@ func (m Model) watchAgent(id string) tea.Cmd {
 
 // onAgentOpened shows the agent's transcript and follows its events, in
 // batches as the session's are.
-func (m Model) onAgentOpened(msg agentOpenedMsg) (tea.Model, tea.Cmd) {
+func (m Model) onAgentOpened(msg agentOpenedMsg) (term.Model, term.Cmd) {
 	m.stopWatch()
 	m.watch = msg.w
 	m.watchGen++
@@ -68,10 +67,10 @@ func (m Model) onAgentOpened(msg agentOpenedMsg) (tea.Model, tea.Cmd) {
 	w := msg.w
 	updated, cmd := m.dispatch(state.AgentViewOpened{ID: w.ID, Nickname: w.Nickname, History: w.History, Events: w.Events})
 
-	return updated, tea.Batch(cmd, nextAgent(m.watchGen, w.ID, batches))
+	return updated, term.Batch(cmd, nextAgent(m.watchGen, w.ID, batches))
 }
 
-func (m Model) onAgentEvents(msg agentEventsMsg) (tea.Model, tea.Cmd) {
+func (m Model) onAgentEvents(msg agentEventsMsg) (term.Model, term.Cmd) {
 	if msg.gen != m.watchGen {
 		// A watch that ended: keep reading until its batches close, so its
 		// batch goroutine is not left blocked on a send.
@@ -79,13 +78,13 @@ func (m Model) onAgentEvents(msg agentEventsMsg) (tea.Model, tea.Cmd) {
 	}
 	m.st, _ = state.Reduce(m.st, state.AgentEvents{ID: msg.id, Events: msg.events})
 
-	return m, tea.Batch(m.afterChange(), nextAgent(msg.gen, msg.id, msg.batches))
+	return m, term.Batch(m.afterChange(), nextAgent(msg.gen, msg.id, msg.batches))
 }
 
 // onAgentWatchEnded reopens the view when the watch closed while it was
 // still shown: the manager closes a view that fell a whole queue behind,
 // and opening it again catches up.
-func (m Model) onAgentWatchEnded(msg agentWatchEndedMsg) (tea.Model, tea.Cmd) {
+func (m Model) onAgentWatchEnded(msg agentWatchEndedMsg) (term.Model, term.Cmd) {
 	if msg.gen != m.watchGen || m.watch == nil || m.st.View == nil || m.st.View.ID != msg.id {
 		return m, nil
 	}
@@ -95,8 +94,8 @@ func (m Model) onAgentWatchEnded(msg agentWatchEndedMsg) (tea.Model, tea.Cmd) {
 
 // nextAgent waits for the watched agent's next batch, and reports when its
 // events end.
-func nextAgent(gen int, id string, batches <-chan []core.Event) tea.Cmd {
-	return func() tea.Msg {
+func nextAgent(gen int, id string, batches <-chan []core.Event) term.Cmd {
+	return func() term.Msg {
 		events, ok := <-batches
 		if !ok {
 			return agentWatchEndedMsg{gen: gen, id: id}
@@ -116,10 +115,10 @@ func (m *Model) stopWatch() {
 }
 
 // sendToAgent gives the watched agent a message.
-func (m Model) sendToAgent(text string, when session.When) tea.Cmd {
+func (m Model) sendToAgent(text string, when session.When) term.Cmd {
 	w := m.watch
 
-	return m.calls.next(func() tea.Msg {
+	return m.calls.next(func() term.Msg {
 		if w == nil {
 			return nil
 		}
@@ -132,10 +131,10 @@ func (m Model) sendToAgent(text string, when session.When) tea.Cmd {
 }
 
 // steerAgentQueue sends the watched agent's queued messages now.
-func (m Model) steerAgentQueue() tea.Cmd {
+func (m Model) steerAgentQueue() term.Cmd {
 	w := m.watch
 
-	return m.calls.next(func() tea.Msg {
+	return m.calls.next(func() term.Msg {
 		if w == nil || w.SteerQueued == nil {
 			return nil
 		}

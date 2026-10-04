@@ -5,10 +5,10 @@ import (
 	"sync"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 )
 
@@ -23,7 +23,7 @@ func TestTUI_StreamsTheAnswer(t *testing.T) {
 	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 
 	d.typeText("write something")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• Streaming answer so far")
 	v := d.view()
 	assert.Contains(t, v, "Writing", "the run is live and writing")

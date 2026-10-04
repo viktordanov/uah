@@ -14,11 +14,10 @@ import (
 	"sync"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/store"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 )
 
@@ -204,11 +203,11 @@ func (r *run) tui(t target) ([]Named, error) {
 		_, before := ui.probe.stats()
 		var steps []time.Duration
 		for i := range 2 * scrollSteps {
-			key := tea.KeyPgUp
+			key := term.KeyPgUp
 			if i >= scrollSteps {
-				key = tea.KeyPgDown
+				key = term.KeyPgDown
 			}
-			step, err := ui.step(tea.KeyPressMsg{Code: key})
+			step, err := ui.step(term.KeyPressMsg{Code: key})
 			if err != nil {
 				return err
 			}
@@ -233,8 +232,12 @@ func stopTUI(ui *TUI) {
 	}
 }
 
-// step sends msg and waits for the view that follows it.
-func (t *TUI) step(msg tea.Msg) (time.Duration, error) {
+// step sends msg and waits for the view that follows it. It sends it a
+// frame after the last one, as a key pressed after a pause, which term
+// draws at once: the time is the update's, the view's, and the write's.
+// Sooner, it would wait for the frame budget (term.FrameRate).
+func (t *TUI) step(msg term.Msg) (time.Duration, error) {
+	time.Sleep(time.Second / term.FrameRate)
 	_, views := t.probe.stats()
 	start := time.Now()
 	t.Send(msg)
@@ -252,8 +255,8 @@ func (t *TUI) step(msg tea.Msg) (time.Duration, error) {
 	}
 }
 
-// painted waits for the renderer's first write at or after at (it
-// writes on its own clock, 60 frames a second) and returns its time.
+// painted waits for the renderer's first write at or after at (term
+// writes a frame right after its view) and returns its time.
 func (t *TUI) painted(at time.Time) (time.Time, error) {
 	deadline := time.Now().Add(waitTimeout)
 	for {

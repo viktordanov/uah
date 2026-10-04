@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
@@ -50,7 +50,7 @@ func liveDeps(t *testing.T, llm *fakellm.Server) bubble.Deps {
 // enhanced is the terminal's answer to the keyboard enhancement query when
 // it tells shift+enter and ctrl+enter from enter (kitty, Ghostty, WezTerm);
 // tmux and Terminal.app never answer. It changes no send key.
-var enhanced = tea.KeyboardEnhancementsMsg{Flags: 1}
+var enhanced = term.KeyboardEnhancementsMsg{Flags: 1}
 
 // TestTUI_SendTheQueueNow: while the model thinks, tab queues two messages;
 // enter (or ctrl+enter) on the empty composer gives both to the working
@@ -58,10 +58,10 @@ var enhanced = tea.KeyboardEnhancementsMsg{Flags: 1}
 func TestTUI_SendTheQueueNow(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		sendNow tea.KeyPressMsg
+		sendNow term.KeyPressMsg
 	}{
-		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}},
-		{"ctrl+enter", tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModCtrl}},
+		{"enter", term.KeyPressMsg{Code: term.KeyEnter}},
+		{"ctrl+enter", term.KeyPressMsg{Code: term.KeyEnter, Mod: term.ModCtrl}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gate := make(chan struct{})
@@ -71,12 +71,12 @@ func TestTUI_SendTheQueueNow(t *testing.T) {
 			d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 
 			d.typeText("start")
-			d.key(tea.KeyEnter, 0)
+			d.key(term.KeyEnter, 0)
 			d.until("the model thinking", func() bool { return len(llm.Requests()) == 1 })
 			d.typeText("first queued")
-			d.key(tea.KeyTab, 0)
+			d.key(term.KeyTab, 0)
 			d.typeText("second queued")
-			d.key(tea.KeyTab, 0)
+			d.key(term.KeyTab, 0)
 			d.waitFor("↳ queued: second queued")
 			assert.Contains(t, d.view(), "↳ queued: first queued")
 			assert.Contains(t, d.view(), "enter sends now", "the queue's hint")
@@ -111,13 +111,13 @@ func TestTUI_SessionCallsKeepTheKeyOrder(t *testing.T) {
 	d := start(t, liveDeps(t, llm))
 	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 	d.typeText("start")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.until("the model thinking", func() bool { return len(llm.Requests()) == 1 })
 
 	d.typeText("first queued")
-	first := d.update(tea.KeyPressMsg{Code: tea.KeyTab})
+	first := d.update(term.KeyPressMsg{Code: term.KeyTab})
 	d.typeText("second queued")
-	second := d.update(tea.KeyPressMsg{Code: tea.KeyTab})
+	second := d.update(term.KeyPressMsg{Code: term.KeyTab})
 	d.execNow(second)
 	time.Sleep(50 * time.Millisecond) // without the chain, the second Send lands first
 	d.execNow(first)
@@ -126,7 +126,7 @@ func TestTUI_SessionCallsKeepTheKeyOrder(t *testing.T) {
 	v := d.view()
 	assert.Less(t, strings.Index(v, "↳ queued: first queued"), strings.Index(v, "↳ queued: second queued"), "queued in order")
 
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitFor("• done")
 	d.waitIdle()
 	reqs := llm.Requests()
@@ -147,11 +147,11 @@ func TestTUI_EnterWaitsForTheToolCallCtrlEnterCutsIn(t *testing.T) {
 	patch := fakellm.Call{Name: "apply_patch", Args: "*** Begin Patch\n*** Add File: a.go\n+package a\n*** End Patch\n", Custom: true}
 	for _, tc := range []struct {
 		name string
-		mod  tea.KeyMod
+		mod  term.KeyMod
 	}{
 		{"enter", 0},
-		{"ctrl+enter", tea.ModCtrl},
-		{"alt+enter", tea.ModAlt},
+		{"ctrl+enter", term.ModCtrl},
+		{"alt+enter", term.ModAlt},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hold := make(chan struct{})
@@ -162,11 +162,11 @@ func TestTUI_EnterWaitsForTheToolCallCtrlEnterCutsIn(t *testing.T) {
 			d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 
 			d.typeText("start")
-			d.key(tea.KeyEnter, 0)
+			d.key(term.KeyEnter, 0)
 			d.waitFor("Reading the code first")
 			d.waitFor("enter after tool · alt+enter now · tab later")
 			d.typeText("look here")
-			d.key(tea.KeyEnter, tc.mod)
+			d.key(term.KeyEnter, tc.mod)
 			if tc.mod != 0 {
 				d.until("the request with the message", func() bool { return len(llm.Requests()) == 2 })
 				next := llm.Requests()[1]
@@ -199,7 +199,7 @@ func TestTUI_EnterWaitsForTheToolCallCtrlEnterCutsIn(t *testing.T) {
 func TestTUI_TabWaitsForTheRunsEnd(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		report  tea.Msg
+		report  term.Msg
 		newline string
 		hint    string
 	}{
@@ -213,7 +213,7 @@ func TestTUI_TabWaitsForTheRunsEnd(t *testing.T) {
 			deps := liveDeps(t, llm)
 			deps.Details = true // the idle footer names the new-line key
 			d := start(t, deps)
-			d.send(tea.WindowSizeMsg{Width: 140, Height: 30}) // the detailed footer's hint fits
+			d.send(term.WindowSizeMsg{Width: 140, Height: 30}) // the detailed footer's hint fits
 			if tc.report != nil {
 				d.send(tc.report)
 			}
@@ -221,14 +221,14 @@ func TestTUI_TabWaitsForTheRunsEnd(t *testing.T) {
 			d.waitFor(tc.newline)
 
 			d.typeText("start")
-			d.key(tea.KeyEnter, 0)
+			d.key(term.KeyEnter, 0)
 			d.until("the model thinking", func() bool { return len(llm.Requests()) == 1 })
 			d.waitFor(tc.hint) // the footer while the agent works
 			d.typeText("after the run")
-			d.key(tea.KeyTab, 0)
+			d.key(term.KeyTab, 0)
 			d.waitFor("1. after the run") // the detailed view lists the queue
 			d.typeText("look here first")
-			d.key(tea.KeyEnter, tea.ModCtrl)
+			d.key(term.KeyEnter, term.ModCtrl)
 			d.until("the steered request", func() bool {
 				reqs := llm.Requests()
 

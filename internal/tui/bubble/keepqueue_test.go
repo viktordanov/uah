@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/testing/fakellm"
 	"github.com/viktordanov/uah/testing/harnesstest"
 )
@@ -47,13 +47,13 @@ func TestTUI_QueueSurvivesARestart(t *testing.T) {
 	d := start(t, deps)
 	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 	d.typeText("start")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	<-llm.Seen()
 	d.typeText("then update the README")
-	d.key(tea.KeyTab, 0)
+	d.key(term.KeyTab, 0)
 	d.waitFor("↳ queued: then update the README")
 	d.typeText("/quit")
-	d.key(tea.KeyEnter, 0)
+	d.key(term.KeyEnter, 0)
 	d.waitQuit()
 	assert.Equal(t, 1, d.m.(bubble.Model).Exit().Queued, "the exit summary counts it")
 
@@ -63,11 +63,11 @@ func TestTUI_QueueSurvivesARestart(t *testing.T) {
 	d.waitIdle()
 	seen := len(llm.Requests())
 
-	d.key(tea.KeyEnter, 0) // on the empty composer: the queue now
+	d.key(term.KeyEnter, 0) // on the empty composer: the queue now
 	d.waitFor("• done")
 	assert.Greater(t, len(llm.Requests()), seen, "sent only now")
 	assert.Contains(t, d.view(), "λ then update the README")
 	assert.NotContains(t, d.view(), "queued: then update the README")
-	d.key('c', tea.ModCtrl)
+	d.key('c', term.ModCtrl)
 	d.waitQuit()
 }
