@@ -3,6 +3,7 @@ package embedded
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -63,7 +64,11 @@ type compactor struct {
 	older   []compaction.Record
 	cuts    compaction.Cuts
 	settled bool
-	stale   bool // the record does not match the history; reported once
+	// stale is set when the record does not match the history, which then
+	// goes out in full or compacts again; reported is set once that was
+	// reported (reportStale).
+	stale    bool
+	reported bool
 	// pending is the compaction asked for, "" when none: manual (/compact)
 	// or clear (/clear), which wins over manual. focus is what a /compact
 	// asked the summary to focus on.
@@ -73,6 +78,9 @@ type compactor struct {
 	job     *compactionJob
 	// autoFailures counts failed automatic compactions in a row.
 	autoFailures int
+	// failed is the last compaction's error in this run, nil after one
+	// that succeeded (overflow).
+	failed error
 }
 
 type compactionJob struct {
@@ -82,6 +90,10 @@ type compactionJob struct {
 	// not go out, since the run is stopping.
 	interrupted bool
 }
+
+// errTooLarge stops a request estimated to be over the window after a
+// failed compaction: the provider would only refuse it, on every retry.
+var errTooLarge = errors.New("the context does not fit the model's window")
 
 // requestCompaction compacts (or clears) before the next model request;
 // focus is what the summary should focus on (manual only).
@@ -132,6 +144,9 @@ func (c *compactor) Respond(ctx context.Context, req llm.Request, opts llm.Reque
 		}
 	}
 	ctx, req.Input = c.applyPinned(ctx, req.Input)
+	if err := c.overflow(req.Input); err != nil {
+		return llm.Response{}, err
+	}
 	resp, err := c.next.Respond(c.withItem(ctx), req, opts)
 	if err == nil {
 		c.mu.Lock()
@@ -170,14 +185,21 @@ func (c *compactor) startOrJoin(req llm.Request, opts llm.RequestOptions) *compa
 // request. It holds c.mu.
 func (c *compactor) dueLocked(input []llm.Item) (compaction.Trigger, int64, bool) {
 	c.settleLocked(input)
-	covered := 0
-	view := input
+	covered, view, last := 0, input, c.used
 	if c.record != nil && !c.stale {
 		if out, err := compaction.Apply(input, *c.record); err == nil {
 			covered, view = c.record.Covered, out
+		} else {
+			c.stale = true
 		}
 	}
-	used := compaction.InUse(view, c.used)
+	if c.stale {
+		// The full history goes out, and the last response measured the
+		// compacted one: estimate it, so a history over the limit compacts
+		// again instead of overflowing the window.
+		last = 0
+	}
+	used := compaction.InUse(view, last)
 	if c.pending != "" {
 		return c.pending, used, true
 	}
@@ -204,8 +226,9 @@ func (c *compactor) autoLimit() int64 {
 }
 
 // apply rewrites the input with the latest compaction. A history that does
-// not match it (a session file changed outside uah) goes out in full, and
-// the mismatch is reported once.
+// not match it (a session file changed outside uah) goes out in full, or
+// compacts again when it is over the limit (dueLocked), and the mismatch is
+// reported once.
 func (c *compactor) apply(input []llm.Item) []llm.Item {
 	out, _ := c.applied(input)
 
@@ -239,18 +262,54 @@ func (c *compactor) applied(input []llm.Item) ([]llm.Item, []llm.Item) {
 		return out, input[1 : 1+rec.Covered]
 	}
 	c.mu.Lock()
-	report := !c.stale
+	again := c.job != nil
 	c.stale = true
 	c.mu.Unlock()
-	if report {
-		msg := "the saved compaction no longer matches the session; sending the full history"
-		if !errors.Is(err, compaction.ErrMismatch) {
-			msg = err.Error()
-		}
-		c.emit(engine.Compacted{At: time.Now(), Trigger: rec.Trigger, Err: msg})
-	}
+	c.reportStale(err, again)
 
 	return input, nil
+}
+
+// reportStale reports, once, that the record does not match the history
+// (err), and that the full history goes out, or compacts again.
+func (c *compactor) reportStale(err error, again bool) {
+	c.mu.Lock()
+	report, trigger := !c.reported, compaction.Trigger("")
+	c.reported = true
+	if c.record != nil {
+		trigger = c.record.Trigger
+	}
+	c.mu.Unlock()
+	if !report {
+		return
+	}
+	msg := "the saved compaction no longer matches the session; sending the full history"
+	if again {
+		msg = "the saved compaction no longer matches the session; compacting the full history again"
+	}
+	if !errors.Is(err, compaction.ErrMismatch) {
+		msg = err.Error()
+	}
+	c.emit(engine.Compacted{At: time.Now(), Trigger: trigger, Err: msg})
+}
+
+// overflow stops a request after a failed compaction when its history is
+// estimated to be over the model's window, with why, instead of sending a
+// request the provider can only refuse. Without a failure the request goes
+// out: the estimate is not exact, and the provider has the last word.
+func (c *compactor) overflow(input []llm.Item) error {
+	c.mu.Lock()
+	failed := c.failed
+	c.mu.Unlock()
+	if failed == nil {
+		return nil
+	}
+	window := compaction.ContextWindow(c.next.currentModel(), c.window, c.windows)
+	if used := compaction.EstimateTokens(input); used > window {
+		return fmt.Errorf("%w: it is about %d tokens, the window %d, and compacting it failed (%w); the request was not sent", errTooLarge, used, window, failed)
+	}
+
+	return nil
 }
 
 // lastUsage is the context the session's last model response used (input

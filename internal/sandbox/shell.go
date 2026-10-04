@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -69,9 +70,43 @@ func Shell(dir string, p Policy, env EnvPolicy, realShell string) (string, error
 	for _, a := range argv {
 		words = append(words, quote(a))
 	}
-	script := "#!/bin/sh\n# Written by uah: runs the command in the " + string(p.Mode) + " sandbox.\nexec " + strings.Join(words, " ") + " \"$@\"\n"
+	script := "#!/bin/sh\n" + scriptHeader + string(p.Mode) + " sandbox.\nexec " + strings.Join(words, " ") + " \"$@\"\n"
 
 	return writeScript(dir, script)
+}
+
+// scriptHeader starts the second line of every script Shell writes, before
+// the policy's mode.
+const scriptHeader = "# Written by uah: runs the command in the "
+
+// ScriptMode reads the sandbox mode from the header of a script Shell
+// wrote, also of one an older policy named, which the current policy no
+// longer returns. ok is false for any other file, such as a real shell, or
+// a script that is gone.
+func ScriptMode(path string) (mode Mode, ok bool) {
+	if !strings.HasPrefix(filepath.Base(path), "sh-") {
+		return "", false
+	}
+	// The path comes from a session file: only a regular file is read, and
+	// the open does not block, as a FIFO's would.
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	head := make([]byte, 128)
+	n, _ := io.ReadFull(f, head)
+	_, line, _ := strings.Cut(string(head[:n]), "\n")
+	rest, found := strings.CutPrefix(line, scriptHeader)
+	name, _, closed := strings.Cut(rest, " sandbox.\n")
+	if !found || !closed || !slices.Contains(Modes, Mode(name)) {
+		return "", false
+	}
+
+	return Mode(name), true
 }
 
 // tempVars name the temporary directory; Shell sets each to the policy's
