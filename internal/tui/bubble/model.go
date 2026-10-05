@@ -295,7 +295,7 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 		return m.dispatch(msg)
 	case state.UsageLoaded, state.CacheLoaded, state.Copied, state.DiffShown, state.ReviewTargetsLoaded, state.PromptsLoaded:
 		return m.dispatch(msg)
-	case state.LinksResolved, state.PeekLoaded, state.FileOpened:
+	case state.LinksResolved, state.PeekLoaded, state.FileOpened, state.LinkTimer:
 		return m.dispatch(msg)
 	}
 

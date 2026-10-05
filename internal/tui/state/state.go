@@ -185,6 +185,10 @@ type State struct {
 	// are not looked up yet (links.go).
 	pressed  *FileLink
 	unlinked []string
+	// waiting is a clicked link that opens unless a second click comes
+	// (LinkTimer with linkSeq).
+	waiting *FileLink
+	linkSeq int
 
 	// Toast is a short note drawn over the transcript's corner for a
 	// moment, such as the copy's (toast.go).

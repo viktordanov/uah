@@ -24,8 +24,21 @@ func linked(mode string) state.State {
 	return s
 }
 
-// click presses and lets go on one cell of the answer, over link.
+// click presses and lets go on one cell of the answer, over link, and
+// lets the double click's window pass: the effects are the timer's.
 func click(s state.State, at time.Time, link *state.FileLink) (state.State, []state.Effect) {
+	s, effects := clickNow(s, at, link)
+	for _, e := range effects {
+		if timer, ok := e.(state.EffLinkTimer); ok {
+			return apply(s, state.LinkTimer{Seq: timer.Seq})
+		}
+	}
+
+	return s, effects
+}
+
+// clickNow presses and lets go without waiting.
+func clickNow(s state.State, at time.Time, link *state.FileLink) (state.State, []state.Effect) {
 	key := s.Items[len(s.Items)-1].Key
 	pos := state.TextPos{Key: key, Line: 0, Col: 8}
 
@@ -57,7 +70,7 @@ func TestLinks_ClickDoesWhatFileLinksSays(t *testing.T) {
 
 // TestLinks_DragSelectsInstead: a press on a link and a drag off it
 // selects and copies, and opens nothing; a double click on a link selects
-// its word and opens it once, on the first click.
+// its word and opens nothing.
 func TestLinks_DragSelectsInstead(t *testing.T) {
 	s := linked(state.LinksEditor)
 	key := s.Items[len(s.Items)-1].Key
@@ -70,10 +83,15 @@ func TestLinks_DragSelectsInstead(t *testing.T) {
 	assert.NotNil(t, s.Selection)
 
 	s = linked(state.LinksEditor)
-	s, effects = click(s, t0, &peekGo)
-	assert.Equal(t, []state.Effect{state.EffEditFile{Link: peekGo}}, effects, "the first click")
-	s, effects = click(s, t0.Add(100*time.Millisecond), &peekGo)
+	s, effects = clickNow(s, t0, &peekGo)
+	require.Len(t, effects, 1)
+	timer, ok := effects[0].(state.EffLinkTimer)
+	require.True(t, ok, "the first click waits for a second")
+	assert.Equal(t, 500*time.Millisecond, timer.After)
+	s, effects = clickNow(s, t0.Add(100*time.Millisecond), &peekGo)
 	assert.Equal(t, []state.Effect{state.EffCopySelection{}}, effects, "the second selects the word")
+	s, effects = apply(s, state.LinkTimer{Seq: timer.Seq})
+	assert.Empty(t, effects, "and the link does not open")
 	start, end, ok := s.SelectedRange()
 	require.True(t, ok)
 	assert.Equal(t, [2]int{6, 13}, [2]int{start.Col, end.Col})
@@ -203,5 +221,8 @@ func TestPeek_OpenScrollClose(t *testing.T) {
 	assert.Zero(t, s.Peek.Top, "a short file from its top")
 
 	s, _ = apply(s, state.FileOpened{Link: short, Err: assert.AnError})
-	assert.Contains(t, s.Items[len(s.Items)-1].Text, "file link: "+assert.AnError.Error())
+	require.NotNil(t, s.Toast)
+	assert.Equal(t, "can't open short.go: "+assert.AnError.Error(), s.Toast.Text, "a toast, not a notice")
+	s, _ = apply(s, state.FileOpened{Link: short, With: "code"})
+	assert.Equal(t, "opened short.go in code", s.Toast.Text)
 }

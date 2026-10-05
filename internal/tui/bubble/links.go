@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -46,6 +47,8 @@ const (
 // runLinks runs the file links' effects; ok is false for any other.
 func (m Model) runLinks(e state.Effect) (term.Cmd, bool) {
 	switch e := e.(type) {
+	case state.EffLinkTimer:
+		return term.Tick(e.After, func(time.Time) term.Msg { return state.LinkTimer{Seq: e.Seq} }), true
 	case state.EffResolveLinks:
 		return func() term.Msg { return resolveLinks(e) }, true
 	case state.EffPeekFile:
@@ -309,7 +312,7 @@ func (m Model) launch(l state.FileLink, args []string) term.Cmd {
 			return state.FileOpened{Link: l, Err: err}
 		}
 
-		return nil
+		return state.FileOpened{Link: l, With: filepath.Base(args[0])}
 	}
 }
 

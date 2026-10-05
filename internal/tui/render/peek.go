@@ -57,17 +57,29 @@ func (st *Styles) Highlight(name string, lines []string) []string {
 // overlayPeek draws the overlay over a screen's lines.
 func (st *Styles) overlayPeek(lines []string, s state.State, w, h int) []string {
 	x, y, pw, ph := PeekRect(w, h)
+	if pw < 4 || ph < 3 {
+		return lines // no room for a frame and a line
+	}
 	for len(lines) < h {
 		lines = append(lines, "")
 	}
 	for i, row := range st.peekLines(s, pw, ph) {
+		if y+i >= len(lines) {
+			break
+		}
 		base := lines[y+i]
 		left := leftCells(base, x)
 		if n := ansi.StringWidth(left); n < x {
 			left += strings.Repeat(" ", x-n)
 		}
+		right := ansi.TruncateLeft(base, x+pw, "")
+		if n := ansi.StringWidth(right); n > 0 && n > ansi.StringWidth(base)-x-pw {
+			// A wide character the overlay's edge cuts: a space for its
+			// half, in its styles, so what follows keeps its columns.
+			right = "\x1b[m" + stylesAt(base, x+pw-1) + " " + ansi.TruncateLeft(base, x+pw+1, "")
+		}
 		// The overlay starts and ends with no style or link in force.
-		lines[y+i] = left + "\x1b[m" + linkClose + row + "\x1b[m" + ansi.TruncateLeft(base, x+pw, "")
+		lines[y+i] = left + "\x1b[m" + linkClose + row + "\x1b[m" + right
 	}
 
 	return lines
@@ -102,7 +114,7 @@ func (st *Styles) peekLines(s state.State, pw, ph int) []string {
 	case p.Loading:
 		body = append(body, st.peekRow(st.dim.Render("reading…"), inner, false))
 	case p.Note != "":
-		body = append(body, st.peekRow(st.warn.Render(p.Note), inner, false))
+		body = append(body, st.peekRow(st.warn.Render(state.Printable(p.Note)), inner, false))
 	}
 	top := clampTop(p.Top, len(p.Lines), rows-len(body))
 	gw := len(strconv.Itoa(max(len(p.Lines), 1)))
@@ -116,7 +128,7 @@ func (st *Styles) peekLines(s state.State, pw, ph int) []string {
 	for len(body) < rows {
 		body = append(body, st.peekRow("", inner, false))
 	}
-	title := st.accent.Render(peekTitle(s))
+	title := st.accent.Render(state.Printable(peekTitle(s)))
 	hint := "esc close · e editor · o open · ↑↓ pgup pgdn g G scroll"
 	if len(p.Lines) > 0 {
 		hint = fmt.Sprintf("%d-%d of %d · ", top+1, end, len(p.Lines)) + hint

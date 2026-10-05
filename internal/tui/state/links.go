@@ -7,8 +7,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/viktordanov/uah/internal/session"
+	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // File paths in the transcript are links ([tui] file_links): the paths of
@@ -42,13 +43,24 @@ type (
 	// OpenLink opens a link as file_links says: a click on it, which the
 	// shell finds with render.Cache.LinkAt.
 	OpenLink struct{ Link FileLink }
+	// EffLinkTimer answers with LinkTimer after After: a click on a link
+	// opens it once no second click came in that time, so a double click
+	// selects the word instead.
+	EffLinkTimer struct {
+		Seq   int
+		After time.Duration
+	}
+	LinkTimer struct{ Seq int }
 	// EffEditFile opens the file in the editor at its line, and EffOpenFile
 	// with the system's default app; a failure comes back as FileOpened.
 	EffEditFile struct{ Link FileLink }
 	EffOpenFile struct{ Link FileLink }
-	// FileOpened reports a file that could not be opened.
+	// FileOpened reports a file started in a program of its own (With:
+	// the editor or the opener), or one that could not be opened (Err); a
+	// toast says which.
 	FileOpened struct {
 		Link FileLink
+		With string
 		Err  error
 	}
 	// EffResolveLinks asks which words of the agent's messages name a
@@ -75,21 +87,40 @@ type (
 	}
 )
 
+func (EffLinkTimer) effect()    {}
 func (EffEditFile) effect()     {}
 func (EffOpenFile) effect()     {}
 func (EffResolveLinks) effect() {}
+
+// Printable is text with its control characters as U+FFFD, so a path or
+// an error that names one cannot send the terminal a command.
+func Printable(text string) string {
+	if !strings.ContainsFunc(text, unicode.IsControl) {
+		return text
+	}
+
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return utf8.RuneError
+		}
+
+		return r
+	}, text)
+}
 
 // linksOn reports whether paths are links.
 func (s State) linksOn() bool { return s.FileLinks != "" && s.FileLinks != LinksOff }
 
 // onLinks handles opening links and the words found to name files; ok is
-// false for any other event. A press keeps its link and a release that
-// selected nothing (a click, not a drag or a double click) opens it, after
-// the selection has seen both.
+// false for any other event. A press keeps its link, and a release that
+// selected nothing (a click, not a drag) waits the double click's window:
+// with no press in it, the link opens; another press makes it a double
+// click, which selects the word. The selection sees every press and
+// release.
 func (s *State) onLinks(ev any) (effects []Effect, ok bool) {
 	switch e := ev.(type) {
 	case MousePress:
-		s.pressed = e.Link
+		s.pressed, s.waiting = e.Link, nil // a second press is a double click: no link opens
 
 		return nil, false
 	case MouseRelease:
@@ -98,10 +129,20 @@ func (s *State) onLinks(ev any) (effects []Effect, ok bool) {
 		s.pressed = nil
 		effects, _ = s.onSelection(ev)
 		if click && link != nil {
-			effects = append(effects, s.openLink(*link)...)
+			s.linkSeq++
+			s.waiting = link
+			effects = append(effects, EffLinkTimer{Seq: s.linkSeq, After: clickWindow})
 		}
 
 		return effects, true
+	case LinkTimer:
+		if l := s.waiting; l != nil && e.Seq == s.linkSeq {
+			s.waiting = nil
+
+			return s.openLink(*l), true
+		}
+
+		return nil, true
 	case OpenLink:
 		return s.openLink(e.Link), true
 	case LinksResolved:
@@ -109,8 +150,12 @@ func (s *State) onLinks(ev any) (effects []Effect, ok bool) {
 
 		return nil, true
 	case FileOpened:
-		if e.Err != nil {
-			s.notice(session.LevelWarning, "file link: "+e.Err.Error())
+		name := path.Base(e.Link.Path)
+		switch {
+		case e.Err != nil:
+			s.ShowToast(Printable("can't open "+name+": "+e.Err.Error()), s.Now)
+		case e.With != "":
+			s.ShowToast(Printable("opened "+name+" in "+e.With), s.Now)
 		}
 
 		return nil, true

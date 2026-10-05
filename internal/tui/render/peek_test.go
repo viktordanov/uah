@@ -135,3 +135,41 @@ func TestPeek_States(t *testing.T) {
 	assert.Contains(t, got, "100 ", "the last line shows after a resize")
 	assert.Contains(t, got, "of 100", "the position")
 }
+
+// TestPeek_EdgeCases: a screen too short for the frame draws no overlay
+// and does not panic; a wide character the overlay's right edge cuts
+// leaves a space and the columns after it in place; escapes in a path or
+// a note are not written.
+func TestPeek_EdgeCases(t *testing.T) {
+	c := render.NewCache(render.Amber)
+	s := peeking(c, 1)
+	for _, size := range [][2]int{{80, 1}, {80, 2}, {3, 10}, {80, 3}} {
+		assert.NotPanics(t, func() { peekScreen(s, c, size[0], size[1]) }, "%v", size)
+	}
+
+	w, h := 120, 40
+	x, _, pw, _ := render.PeekRect(w, h)
+	// After "• ", 日 takes the overlay's last column and the one after it.
+	s = linksOn(apply(base(), core.AssistantMessage{At: t0, Text: strings.Repeat("a", x+pw-3) + "日本tail", Final: true}))
+	tailCol := func(lines []string) int {
+		for _, l := range lines {
+			if p := ansi.Strip(l); strings.Contains(p, "tail") {
+				return ansi.StringWidth(p[:strings.Index(p, "tail")])
+			}
+		}
+
+		return -1
+	}
+	want := tailCol(peekScreen(s, c, w, h))
+	s.Peek = &state.Peek{Link: state.FileLink{Path: ws + "/a.go"}, Lines: []string{"x"}}
+	lines := peekScreen(s, c, w, h)
+	assert.Equal(t, want, tailCol(lines), "tail keeps its column")
+	for i, l := range lines {
+		assert.LessOrEqual(t, ansi.StringWidth(l), w, "row %d", i)
+	}
+
+	evil := ws + "/x\x1b]52;c;aGk=\x07.go"
+	s.Peek = &state.Peek{Link: state.FileLink{Path: evil}, Note: "lstat " + evil + ": no such file"}
+	out := strings.Join(peekScreen(s, c, w, h), "\n")
+	assert.NotContains(t, out, "\x1b]52", "no escape from the path or the note")
+}

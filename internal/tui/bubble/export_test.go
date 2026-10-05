@@ -29,3 +29,12 @@ func (m Model) EdgeScrolling() bool { return m.edgeTicking }
 
 // Workspace is the open session's workspace.
 func (m Model) Workspace() string { return m.st.Settings.Workspace }
+
+// ToastText is the toast's text, "" without one.
+func (m Model) ToastText() string {
+	if m.st.Toast == nil {
+		return ""
+	}
+
+	return m.st.Toast.Text
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
@@ -132,6 +133,7 @@ func TestTUI_ClickOpensInTheEditor(t *testing.T) {
 	x, y := dr.readCell()
 	dr.clickAt(x, y)
 	dr.until("code started", func() bool { return last() != nil })
+	dr.waitFor("opened a.txt in code")
 	assert.Equal(t, []string{"code", filepath.Join(ws, "a.txt")}, last(), "no --wait, no line for a whole file")
 
 	d = deps(t, "simple.jsonl")
@@ -146,13 +148,13 @@ func TestTUI_ClickOpensInTheEditor(t *testing.T) {
 	require.NoError(t, os.Chmod(filepath.Join(ws, "a.txt"), 0o700))
 	n := len(launched)
 	dr.clickAt(x+2, y)
-	dr.waitFor("a file the system would run, not opened")
+	dr.until("the refusal", func() bool { return strings.Contains(dr.m.(bubble.Model).ToastText(), "would run") })
 	assert.Len(t, launched, n, "an executable file is not handed to the opener")
 
 	require.NoError(t, os.Remove(filepath.Join(ws, "a.txt")))
 	dr.clickAt(x+1, y) // another cell: not a double click
 
-	dr.waitFor("file link:")
+	dr.waitFor("can't open a.txt")
 
 	d = deps(t, "simple.jsonl")
 	fe := useFakeEditor(t, &d, "keep")
@@ -165,4 +167,19 @@ func TestTUI_ClickOpensInTheEditor(t *testing.T) {
 	got := readSeen(t, fe.record)
 	assert.Equal(t, filepath.Join(ws, "a.txt"), got.Path, "the terminal editor ran on the file")
 	assert.Equal(t, "kept\n", got.Text)
+}
+
+// TestTUI_DoubleClickOnALinkSelects: with peek, the default, a double click
+// on a path selects its word and opens nothing.
+func TestTUI_DoubleClickOnALinkSelects(t *testing.T) {
+	copies := make(chan string, 1)
+	d := deps(t, "simple.jsonl")
+	d.CopyText = func(_ context.Context, s string) error { copies <- s; return nil }
+	dr := readA(t, d, "peek", "x\n")
+	x, y := dr.readCell()
+	dr.clickAt(x+1, y)
+	dr.clickAt(x+1, y)
+	assert.Equal(t, "a.txt", dr.copied(copies, "copied 1 line"), "the word")
+	dr.pump(700 * time.Millisecond)
+	assert.NotContains(t, dr.view(), "╭─ a.txt", "no overlay after the double click's window")
 }
