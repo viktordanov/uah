@@ -104,6 +104,9 @@ func transcript(s state.State, c *Cache, w, height int, head []string) []string 
 		}
 		all = append(slices.Clip(head), all...)
 		c.maxScroll = max(len(all)-height, 0)
+		if n := len(all) - d.count; d.banner >= 0 && n > 0 {
+			d.scroll = len(all) - 1 - min(d.banner, n-1) // anchored in the banner
+		}
 	}
 	end := len(all) - min(d.scroll, max(len(all)-height, 0))
 	start := max(end-height, 0)
@@ -137,6 +140,8 @@ type gathered struct {
 	// window; whole says every item is drawn.
 	count, scroll int
 	whole         bool
+	// banner is the anchor's line when it is in the banner, else -1.
+	banner int
 	// below and selected place the message selected to go back to: the
 	// lines under it and its own.
 	below, selected int
@@ -150,10 +155,13 @@ func (c *Cache) gather(s state.State, w, height int) gathered {
 	if s.Backtrack == nil && s.Anchor.Key != "" {
 		anchor = s.Order(s.Anchor.Key)
 	}
-	d := gathered{scroll: s.Scroll, below: -1}
+	d := gathered{scroll: s.Scroll, below: -1, banner: -1}
 	need := height + d.scroll
-	if anchor >= 0 {
-		need = math.MaxInt // until the anchor is found
+	if anchor == -1 {
+		d.banner = s.Anchor.Line
+	}
+	if anchor >= -1 {
+		need = math.MaxInt // until the anchor is found, the banner after every item
 	}
 	i := len(s.Items) - 1
 	for ; i >= 0 && d.count < need; i-- {

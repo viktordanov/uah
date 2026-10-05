@@ -278,7 +278,7 @@ func (s *State) onIntent(ev any) (State, []Effect) { //nolint:gocyclo // a dispa
 	case ScrollBy:
 		s.Scroll, s.Anchor = max(0, s.Scroll+e.Lines), TextPos{} // the shell reports the new window
 	case ScrollToBottom:
-		s.Scroll = 0
+		s.Scroll, s.Anchor = 0, TextPos{} // also during a drag, which keeps the window pinned
 	case Anchored:
 		s.anchored(e)
 	case StepEffort:

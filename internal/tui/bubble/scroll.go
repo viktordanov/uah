@@ -1,8 +1,6 @@
 package bubble
 
-import (
-	"github.com/viktordanov/uah/internal/tui/state"
-)
+import "github.com/viktordanov/uah/internal/tui/state"
 
 // anchor reports the window to the state after each update while it is
 // pinned (state/scroll.go): the renderer draws it from the anchor, so new
@@ -22,9 +20,8 @@ func (m Model) anchor() Model {
 	}
 	m.View()
 	at, scroll := m.cache.Anchor()
-	if at == st.Anchor && scroll == st.Scroll {
-		return m
-	}
+	// Reported even when unchanged, since the report also records the
+	// layout it was drawn in (a resize may change no line below).
 	m.st, _ = state.Reduce(m.st, state.Anchored{At: at, Scroll: scroll, Width: m.w})
 
 	return m

@@ -105,3 +105,16 @@ func TestScroll_DragPins(t *testing.T) {
 	assert.False(t, s.Pinned())
 	assert.Empty(t, s.Anchor, "nothing arrived: the window follows again")
 }
+
+// TestScroll_EndDuringADrag: end returns to the bottom also while a drag
+// keeps the window pinned.
+func TestScroll_EndDuringADrag(t *testing.T) {
+	s, keys := selectable(t)
+	s, _ = apply(s, state.MousePress{At: at(keys[1], 0, 0), When: t0}, state.MouseDrag{At: at(keys[1], 1, 2)},
+		state.ScrollBy{Lines: 10}, state.Anchored{At: at(keys[0], 0, 0), Scroll: 10, Width: 80})
+	require.Equal(t, 10, s.Scroll)
+	s, _ = apply(s, state.ScrollToBottom{})
+	assert.Zero(t, s.Scroll)
+	assert.Empty(t, s.Anchor, "the next frame anchors at the bottom")
+	assert.True(t, s.Pinned(), "the drag still pins it")
+}

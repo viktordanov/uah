@@ -17,6 +17,9 @@ func (m Model) onMouse(msg term.Msg) (term.Model, term.Cmd) {
 	if _, ok := msg.(edgeMsg); ok {
 		return m.edgeScroll()
 	}
+	if click, ok := msg.(term.MouseClickMsg); ok && click.Button == term.MouseLeft && m.st.Mode == state.ModeChat && m.cache.OnPill(click.X, click.Y) {
+		return m.dispatch(state.ScrollToBottom{}) // also in the agent view
+	}
 	if m.st.Mode != state.ModeChat || m.st.View != nil {
 		return m, nil
 	}
@@ -24,9 +27,6 @@ func (m Model) onMouse(msg term.Msg) (term.Model, term.Cmd) {
 	case term.MouseClickMsg:
 		if msg.Button != term.MouseLeft {
 			return m, nil
-		}
-		if m.cache.OnPill(msg.X, msg.Y) {
-			return m.dispatch(state.ScrollToBottom{})
 		}
 		at, text, ok := m.cache.At(msg.X, msg.Y, false)
 		if !ok {

@@ -39,7 +39,7 @@ func pin(t *testing.T, s state.State, w, h int) *pinned {
 func (p *pinned) draw() []string {
 	p.t.Helper()
 	raw := p.frame()
-	if p.s.Pinned() {
+	if st := p.s; st.Pinned() || (st.View != nil && st.View.St.Pinned()) {
 		at, scroll := p.c.Anchor()
 		p.s = apply(p.s, state.Anchored{At: at, Scroll: scroll, Width: p.w})
 		raw = p.frame()
@@ -245,4 +245,58 @@ func TestNotes(t *testing.T) {
 			assert.NotContains(t, strings.Join(p.draw(), "\n"), "copied", "gone")
 		})
 	}
+}
+
+// TestNote_WideCharacters: a note whose ends cut a wide character keeps
+// the row's width: a space stands for the half that is left.
+func TestNote_WideCharacters(t *testing.T) {
+	st := render.NewStyles(render.Amber)
+	line := strings.Repeat("界", 10) // 20 cells
+	for at := range 18 {
+		for _, text := range []string{"abc", "ab"} {
+			got := st.Note(line, text, at)
+			assert.Equal(t, 20, ansi.StringWidth(got), "%q at %d: %q", text, at, ansi.Strip(got))
+			assert.Contains(t, ansi.Strip(got), text)
+		}
+	}
+	assert.Equal(t, 9, ansi.StringWidth(st.Note("ab", "xyz", 6)), "a short line is padded to the note")
+}
+
+// TestScroll_AnchorInTheBanner: a window scrolled to the top, with the
+// banner on its bottom row, holds still too.
+func TestScroll_AnchorInTheBanner(t *testing.T) {
+	p := pin(t, longRun(), 100, 10)
+	p.apply(state.ScrollBy{Lines: 1000})
+	before := p.draw()
+	require.Equal(t, state.BannerKey, p.s.Anchor.Key, "the window shows only the banner: %q", before)
+
+	p.apply(session.Notice{At: t0, Level: "info", Message: "new"})
+	after := p.draw()
+	last := p.lastRow()
+	assert.Equal(t, without(before, last), without(after, last))
+	assert.True(t, p.s.NewBelow)
+}
+
+// TestScroll_AgentViewPill: the agent view draws the pill for its own
+// transcript, and the cache places it on the screen for a click.
+func TestScroll_AgentViewPill(t *testing.T) {
+	evs := []core.Event{core.RunStarted{At: t0, RunID: "c1"}}
+	for i := range 40 {
+		evs = append(evs, core.AssistantMessage{At: t0, Text: fmt.Sprintf("child line %02d", i)})
+	}
+	p := pin(t, apply(longRun(), state.AgentViewOpened{ID: "a1", Nickname: "Ada", Events: evs}), 100, 24)
+	p.apply(state.ScrollBy{Lines: 10})
+	p.draw()
+	p.apply(state.AgentEvents{ID: "a1", Events: []core.Event{core.AssistantMessage{At: t0, Text: "child news"}}})
+	lines := p.draw()
+	row := -1
+	for i, l := range lines {
+		if strings.Contains(l, "New activity") {
+			row = i
+		}
+	}
+	require.GreaterOrEqual(t, row, 0, "the pill: %q", lines)
+	x := strings.Index(lines[row], "New activity")
+	assert.True(t, p.c.OnPill(ansi.StringWidth(lines[row][:x]), row))
+	assert.False(t, p.c.OnPill(0, row))
 }

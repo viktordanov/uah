@@ -19,6 +19,7 @@ func agentScreen(s state.State, c *Cache, f Frame) (string, int) {
 	st.History = s.History // the composer and its ctrl+r search are the session's
 	out, row := Screen(st, c.view, f)
 	c.maxScroll, c.bottom, c.scrolled = c.view.maxScroll, c.view.bottom, c.view.scrolled
+	c.pill, c.top = c.view.pill, c.view.top+1 // under the header line; the agent view takes no selection
 	header := " " + c.styles.accent.Render("agent "+v.Nickname) + c.styles.dim.Render(" · alt+← alt+→ switch agents · esc esc interrupts")
 
 	return ansi.Truncate(header, f.Width, "") + "\n" + out, row + 1

@@ -253,4 +253,15 @@ func TestTUI_ScrolledUpStaysPut(t *testing.T) {
 	d.press(x+2, pill)
 	assert.NotContains(t, d.view(), "scrolled up", "the click returned to the bottom")
 	assert.NotContains(t, d.view(), "New activity")
+
+	// A resize that changes no line below the window is still a new
+	// layout: output after it shows the pill.
+	for range 4 {
+		d.send(term.MouseWheelMsg{Button: term.MouseWheelUp})
+	}
+	d.send(term.WindowSizeMsg{Width: 99, Height: 30})
+	require.NotContains(t, d.view(), "New activity")
+	d.typeText("/help")
+	d.key(term.KeyEnter, 0)
+	assert.Contains(t, d.view(), "New activity")
 }

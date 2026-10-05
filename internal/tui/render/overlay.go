@@ -71,8 +71,12 @@ func (st *Styles) Note(line, text string, at int) string {
 	to := at + ansi.StringWidth(text)
 	// The styles in force where the note ends carry on after it.
 	resume := strings.Join(sgr.FindAllString(ansi.Truncate(line, to, ""), -1), "")
+	right := ansi.TruncateLeft(line, to, "")
+	if w := ansi.StringWidth(right); w > 0 && w > ansi.StringWidth(line)-to { // a wide character the note's end cuts: a space for its half
+		right = " " + ansi.TruncateLeft(line, to+1, "")
+	}
 
-	return left + "\x1b[m" + st.chip.Render(text) + "\x1b[m" + resume + ansi.TruncateLeft(line, to, "")
+	return left + "\x1b[m" + st.chip.Render(text) + "\x1b[m" + resume + right
 }
 
 // OnPill reports whether screen cell (x, y) is on the new-output pill the
