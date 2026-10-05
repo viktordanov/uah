@@ -309,7 +309,15 @@ func TestScroll_AgentViewPill(t *testing.T) {
 // character's half keeps the background the line has there.
 func TestNote_WideCharacterKeepsItsBackground(t *testing.T) {
 	const blue = "\x1b[44m"
-	got := render.NewStyles(render.Amber).Note(blue+"界界界\x1b[m", "X", 0)
-	assert.Equal(t, 6, ansi.StringWidth(got))
-	assert.Contains(t, got, blue+" ", "the half cell on the line's background: %q", got)
+	st := render.NewStyles(render.Amber)
+	for _, line := range []string{blue + "界界界\x1b[m", blue + "界\x1b[mabc", "a" + blue + "界\x1b[mbc"} {
+		w := ansi.StringWidth(line)
+		for at := range w - 1 {
+			got := st.Note(line, "X", at)
+			assert.Equal(t, w, ansi.StringWidth(got), "%q at %d", line, at)
+			if strings.Contains(ansi.Strip(got), "X ") || strings.Contains(ansi.Strip(got), " X") {
+				assert.Contains(t, got, blue+" ", "the half cell on the line's background: %q at %d: %q", line, at, got)
+			}
+		}
+	}
 }

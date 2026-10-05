@@ -68,17 +68,20 @@ func fitting(labels []string, w int) string {
 func (st *Styles) Note(line, text string, at int) string {
 	at = max(at, 0)
 	left := ansi.Truncate(line, at, "")
-	left += strings.Repeat(" ", at-ansi.StringWidth(left)) // short, or a wide character cut
+	if pad := at - ansi.StringWidth(left); pad > 0 { // short, or a wide character the note's start cuts
+		if ansi.StringWidth(line) > at {
+			left += "\x1b[m" + stylesAt(line, at-1)
+		}
+		left += strings.Repeat(" ", pad)
+	}
 	to := at + ansi.StringWidth(text)
 	// The styles in force where the note ends carry on after it.
 	resume := strings.Join(sgr.FindAllString(ansi.Truncate(line, to, ""), -1), "")
 	right := ansi.TruncateLeft(line, to, "")
 	if w := ansi.StringWidth(right); w > 0 && w > ansi.StringWidth(line)-to {
 		// A wide character the note's end cuts: a space for its half, in
-		// the styles the rest of the line starts with.
-		right = ansi.TruncateLeft(line, to+1, "")
-		lead := leadingSGR.FindString(right)
-		right = lead + " " + right[len(lead):]
+		// its styles.
+		right = "\x1b[m" + stylesAt(line, to-1) + " " + ansi.TruncateLeft(line, to+1, "")
 	}
 
 	return left + "\x1b[m" + st.chip.Render(text) + "\x1b[m" + resume + right
@@ -86,6 +89,12 @@ func (st *Styles) Note(line, text string, at int) string {
 
 // leadingSGR matches the SGR sequences a line starts with.
 var leadingSGR = regexp.MustCompile("^(?:\x1b\\[[0-9;]*m)*")
+
+// stylesAt is the SGR sequences in force at cell col of line: what
+// ansi.TruncateLeft keeps before the character there.
+func stylesAt(line string, col int) string {
+	return leadingSGR.FindString(ansi.TruncateLeft(line, col, ""))
+}
 
 // OnPill reports whether screen cell (x, y) is on the new-output pill the
 // last frame drew, which a click takes to the bottom.
