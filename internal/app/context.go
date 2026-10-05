@@ -93,9 +93,9 @@ func PreviewContext(ctx context.Context, in Inputs, getenv func(string) string) 
 	sub.Subagent = true
 	if _, err := policy.Wrap([]string{main.Shell}); err == nil { //nolint:contextcheck,nolintlint // on Linux, the sandbox probes bwrap once per process, with its own timeout; not on darwin
 		if mode := sandbox.Mode(r.Settings.Sandbox); mode != sandbox.FullAccess && mode != "" {
-			main.Sandbox = contextprep.Sandbox{Mode: string(mode), Network: policy.Network, TempDir: tmp}
+			main.Sandbox = contextprep.Sandbox{Mode: string(mode), Network: policy.Network && mode == sandbox.WorkspaceWrite, TempDir: tmp}
 		}
-		sub.Sandbox = contextprep.Sandbox{Mode: string(sandbox.ReadOnly), Network: policy.Network, TempDir: tmp}
+		sub.Sandbox = contextprep.Sandbox{Mode: string(sandbox.ReadOnly), TempDir: tmp} // the read-only sandbox has no network
 	}
 
 	check := ContextCheck(workspace, getenv) //nolint:contextcheck,nolintlint // on Linux, the sandbox probes bwrap once per process, with its own timeout; not on darwin
