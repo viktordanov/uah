@@ -137,7 +137,10 @@ type Session struct {
 	// clearPending is a /clear the engine has not started yet.
 	clearPending bool
 	// held are injected messages waiting for the next run (Inject).
-	held        []core.UserInput
+	held []core.UserInput
+	// injected are the injected messages sent into the live run that the
+	// runner has not recorded yet: a run that ends first holds them again.
+	injected    []core.UserInput
 	hooks       hookState
 	interactive bool
 	// policy is Options.Tools: a call it does not allow was refused before

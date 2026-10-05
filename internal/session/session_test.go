@@ -100,7 +100,11 @@ func (r *fakeRun) Send(in core.UserInput) error {
 		return errNotLive
 	}
 	r.sent = append(r.sent, in)
-	if !r.unread {
+	switch {
+	case r.unread:
+	case in.Role == core.RoleDeveloper:
+		r.sink(core.DeveloperMessage{At: time.Now(), ID: in.ID, Text: in.Text})
+	default:
 		r.sink(core.UserMessage{At: time.Now(), ID: in.ID, Text: in.Text})
 	}
 

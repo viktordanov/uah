@@ -118,6 +118,9 @@ func (s *Session) onRunEvent(e core.Event) {
 		delete(s.hooks.tools, v.CallID)
 		s.sendAfterTool()
 	}
+	if m, ok := e.(core.DeveloperMessage); ok { // the runner recorded it (Inject)
+		s.injected = slices.DeleteFunc(s.injected, func(in core.UserInput) bool { return in.ID == m.ID })
+	}
 	s.onGoalRunEvent(e)
 	s.sendGoalSteer() // one held while the run started
 	s.noteCompaction(e)
@@ -130,6 +133,7 @@ func (s *Session) onRunEvent(e core.Event) {
 // onEnded handles the end of a run and reports whether the session closed.
 func (s *Session) onEnded(m evEnded) bool {
 	s.run = nil
+	s.held, s.injected = slices.Concat(s.injected, s.held), nil // the run never read them
 	s.noteLast(nil)
 	s.declinePending(false)
 	if m.err != nil {

@@ -17,9 +17,9 @@ type evDo func()
 // its own and so cancels no model request: it rides the run's next request,
 // so an agent that works while its subagents run learns at once that one
 // finished, rather than polling wait_agent or asking the subagent. A run
-// that ends first leaves it in the history for the next request. Otherwise
-// it is held and goes out before the next run's messages, and it never
-// starts a run; withdraw takes it back while it is held.
+// that ends before the runner records it holds it again. Otherwise it is
+// held and goes out before the next run's messages, and it never starts a
+// run; withdraw takes it back while it is held.
 // Live says it went into the run. It waits for the session's loop, so it
 // is never called from the loop.
 func (s *Session) Inject(text string) (withdraw func(), live bool) {
@@ -43,7 +43,10 @@ func (s *Session) onInject(id, text string) bool {
 		return false
 	}
 	if s.state == StateRunning && s.run != nil {
-		if err := s.run.Send(core.UserInput{ID: id, Text: text, Role: core.RoleDeveloper}); err == nil {
+		in := core.UserInput{ID: id, Text: text, Role: core.RoleDeveloper}
+		if err := s.run.Send(in); err == nil {
+			s.injected = append(s.injected, in)
+
 			return true
 		}
 	}
