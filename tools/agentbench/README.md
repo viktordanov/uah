@@ -265,7 +265,7 @@ The report has, per model and effort: a table per harness (runs, pass rate, medi
 
 ### Subagents
 
-A uah run whose main agent spawned subagents also has `agent_use` (`bench/agentuse.go`): how the main agent treated them, from the session files in its `uah-state`. A child works from a message that reaches it idle to its next answer (a response without tool calls), so a message that comes while it works does not end its work.
+A uah run whose main agent spawned subagents also has `agent_use` (`bench/agentuse.go`): how the main agent treated them, from the session files in its `uah-state`. A child works from a message that reaches it idle to its next answer (a response without tool calls), so a message that comes while it works does not end its work, and work that never ends in an answer (a child interrupted or closed mid-task) lasts to the end.
 
 | Field | Meaning |
 | --- | --- |
