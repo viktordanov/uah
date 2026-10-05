@@ -15,6 +15,11 @@ func (m Model) onPointer(msg term.Msg) (term.Model, term.Cmd) {
 	if _, ok := msg.(edgeMsg); ok {
 		return m.onMouse(msg) // the edge scroll's tick stops by itself
 	}
+	if _, ok := msg.(term.MouseClickMsg); ok && m.st.LinkWaiting() {
+		// Any press, on the pill or the composer too, cancels a clicked
+		// link; one on the transcript counts as a double click there.
+		m.st, _ = state.Reduce(m.st, state.CancelLink{})
+	}
 	if m.st.Peek != nil {
 		return m.onPeekMouse(msg)
 	}

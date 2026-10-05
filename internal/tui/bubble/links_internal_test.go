@@ -1,11 +1,13 @@
 package bubble
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,6 +53,19 @@ func TestEditorAt(t *testing.T) {
 	editor := []string{"code", "--wait"}
 	editorAt(editor, p, 1)
 	assert.Equal(t, []string{"code", "--wait"}, editor, "the command is not changed")
+}
+
+// TestFileOpenedAfterIdle: a toast after the clock sat still is timed
+// from now, not from the last tick, so it does not end at once.
+func TestFileOpenedAfterIdle(t *testing.T) {
+	t0 := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	later := t0.Add(time.Minute)
+	m := New(context.Background(), Deps{Now: func() time.Time { return later }})
+	m.st.Now = t0 // the last tick, before the TUI sat idle
+	next, _ := m.Update(state.FileOpened{Link: state.FileLink{Path: "/w/a.go"}, With: "code"})
+	toast := next.(Model).st.Toast //nolint:forcetypeassert // Update returns a Model
+	require.NotNil(t, toast)
+	assert.Equal(t, later.Add(2*time.Second), toast.Until)
 }
 
 // TestRunnable: the opener gets no file it would run.

@@ -183,3 +183,33 @@ func TestTUI_DoubleClickOnALinkSelects(t *testing.T) {
 	dr.pump(700 * time.Millisecond)
 	assert.NotContains(t, dr.view(), "╭─ a.txt", "no overlay after the double click's window")
 }
+
+// TestTUI_LinkAfterIdle: a click's toast shows, and a press elsewhere (the
+// composer) before the double click's window ends cancels the click.
+func TestTUI_LinkAfterIdle(t *testing.T) {
+	var mu sync.Mutex
+	clock := time.Now()
+	now := func() time.Time { mu.Lock(); defer mu.Unlock(); return clock }
+	var launched int
+	d := deps(t, "simple.jsonl")
+	d.Now = now
+	d.Launch = func(context.Context, []string) error { mu.Lock(); defer mu.Unlock(); launched++; return nil }
+	t.Setenv("VISUAL", "code")
+	dr := readA(t, d, "editor", "a\n")
+	mu.Lock()
+	clock = clock.Add(time.Minute) // idle: no tick moved the state's clock
+	mu.Unlock()
+	x, y := dr.readCell()
+	dr.clickAt(x, y)
+	dr.waitFor("opened a.txt in code")
+	dr.pump(400 * time.Millisecond)
+	assert.Contains(t, dr.view(), "opened a.txt in code", "the toast lasts, timed from the click")
+
+	_, cy := dr.at("Ask uah to do anything")
+	dr.clickAt(x+2, y)
+	dr.clickAt(5, cy)
+	dr.pump(800 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, launched, "the press on the composer cancelled the second click")
+}

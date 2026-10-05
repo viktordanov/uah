@@ -51,6 +51,9 @@ type (
 		After time.Duration
 	}
 	LinkTimer struct{ Seq int }
+	// CancelLink drops a clicked link still waiting to open: another press,
+	// such as on the pill or the composer, came first.
+	CancelLink struct{}
 	// EffEditFile opens the file in the editor at its line, and EffOpenFile
 	// with the system's default app; a failure comes back as FileOpened.
 	EffEditFile struct{ Link FileLink }
@@ -108,6 +111,10 @@ func Printable(text string) string {
 	}, text)
 }
 
+// LinkWaiting reports whether a clicked link waits for the double click's
+// window to open.
+func (s State) LinkWaiting() bool { return s.waiting != nil }
+
 // linksOn reports whether paths are links.
 func (s State) linksOn() bool { return s.FileLinks != "" && s.FileLinks != LinksOff }
 
@@ -135,6 +142,10 @@ func (s *State) onLinks(ev any) (effects []Effect, ok bool) {
 		}
 
 		return effects, true
+	case CancelLink:
+		s.waiting = nil
+
+		return nil, true
 	case LinkTimer:
 		if l := s.waiting; l != nil && e.Seq == s.linkSeq {
 			s.waiting = nil
