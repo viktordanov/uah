@@ -45,9 +45,10 @@ func branchRepo(t *testing.T, dir string) string {
 
 // TestReviewCommand runs `uah review --base main` headless: the reviewer
 // gets Codex's branch prompt with the merge base, the review goes to
-// stdout as Codex renders it, and its progress, verdict, model, effort,
-// and tokens to stderr; -o writes the review's text, and --json prints
-// the findings with what the review ran on and used.
+// stdout with its counts, verdict, confidence, and sorted findings (plain
+// text off a terminal), and its shaped steps, verdict, model, effort, and
+// tokens to stderr; -o writes Codex's text, and --json prints the
+// findings with what the review ran on and used.
 func TestReviewCommand(t *testing.T) {
 	t.Parallel()
 	llm := fakellm.New(t)
@@ -65,13 +66,14 @@ func TestReviewCommand(t *testing.T) {
 	res := uahWith(t, env, "", "review", "-C", e.Workspace, "-e", "xhigh", "--base", "main", "-o", out)
 
 	require.Equal(t, 0, res.code, res.stderr)
-	assert.Equal(t, "One bug.\n\nReview comment:\n\n- [P1] Check the error — /w/a.go:3-4\n  It is dropped.\n", res.stdout)
+	assert.Regexp(t, `^REVIEW  changes against 'main'\n        1 finding \(1 P1\) · ✗ patch is incorrect · confidence 70% · [0-9]+s · \S+ xhigh · [0-9.]+k? tokens\n\n`+
+		`One bug\.\n\nP1  Check the error  80%\n    /w/a\.go:3-4\n    It is dropped\.\n$`, res.stdout, "plain text, not a terminal")
 	data, err := os.ReadFile(out)
 	require.NoError(t, err)
-	assert.Equal(t, strings.TrimSuffix(res.stdout, "\n"), string(data))
+	assert.Equal(t, "One bug.\n\nReview comment:\n\n- [P1] Check the error — /w/a.go:3-4\n  It is dropped.", string(data), "-o writes Codex's text")
 	assert.Contains(t, res.stderr, "uah review · changes against 'main' · ")
-	assert.Contains(t, res.stderr, "→ Bash")
-	assert.Regexp(t, `review: 1 finding · patch is incorrect · [0-9.]+s · \S+, effort xhigh · [0-9,]+ in \([0-9,]+ cached\) · [0-9,]+ out tokens`, res.stderr)
+	assert.Contains(t, res.stderr, "→ RAN     echo looked", "the reviewer's steps, shaped")
+	assert.Regexp(t, `review: 1 finding \(1 P1\) · ✗ patch is incorrect · confidence 70% · [0-9.]+s · \S+, effort xhigh · [0-9,]+ in \([0-9,]+ cached\) · [0-9,]+ out tokens`, res.stderr)
 	req := lastRequest(t, llm)
 	require.NotEmpty(t, req.UserTexts)
 	assert.Contains(t, req.UserTexts[0], "The merge base commit for this comparison is "+base)
