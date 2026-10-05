@@ -44,7 +44,27 @@ type Composer struct {
 
 	focus bool
 	sel   selection
+
+	// killed is the text the last kills deleted, which ctrl+y yanks, as in
+	// Emacs and readline; killing is true while kills follow each other, so
+	// they add up.
+	killed  []rune
+	killing bool
+
+	// undo holds the drafts before the latest edits, newest last, for
+	// ctrl+_; typing is true while typed characters join one undo step.
+	undo   []snapshot
+	typing bool
 }
+
+// snapshot is a draft and its cursor, as undo restores it.
+type snapshot struct {
+	lines    [][]rune
+	row, col int
+}
+
+// maxUndo caps the undo steps kept.
+const maxUndo = 100
 
 // line is one line of the draft and its cached layout.
 type line struct {
@@ -87,6 +107,7 @@ func (c *Composer) Reset() {
 	c.lines = []line{{}}
 	c.row, c.col, c.goal, c.offset = 0, 0, 0, 0
 	c.sel = selection{}
+	c.undo, c.typing = nil, false // a new draft starts its own history
 	c.fit()
 }
 
@@ -100,10 +121,49 @@ func (c *Composer) InsertString(s string) {
 	c.fit()
 }
 
-// Paste inserts pasted text in place of the selection, if any.
+// Paste inserts pasted text in place of the selection, if any. Undo takes
+// it back in one step.
 func (c *Composer) Paste(s string) {
+	before, was := c.snap(), c.Value()
 	c.deleteSelection()
 	c.InsertString(s)
+	c.typing = false
+	if c.Value() != was {
+		c.pushUndo(before)
+	}
+}
+
+// snap copies the draft and its cursor.
+func (c *Composer) snap() snapshot {
+	s := snapshot{lines: make([][]rune, len(c.lines)), row: c.row, col: c.col}
+	for i, l := range c.lines {
+		s.lines[i] = slices.Clone(l.text)
+	}
+
+	return s
+}
+
+// pushUndo keeps s as the draft an undo returns to.
+func (c *Composer) pushUndo(s snapshot) {
+	if len(c.undo) == maxUndo {
+		c.undo = slices.Delete(c.undo, 0, 1)
+	}
+	c.undo = append(c.undo, s)
+}
+
+// undoEdit puts back the draft before the latest edit, if any.
+func (c *Composer) undoEdit() {
+	if len(c.undo) == 0 {
+		return
+	}
+	s := c.undo[len(c.undo)-1]
+	c.undo = c.undo[:len(c.undo)-1]
+	c.lines = make([]line, len(s.lines))
+	for i, text := range s.lines {
+		c.lines[i] = line{text: text}
+	}
+	c.row, c.goal, c.sel = s.row, 0, selection{}
+	c.setCol(s.col)
 }
 
 // LineCount is the number of lines in the draft.

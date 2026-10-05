@@ -97,6 +97,13 @@ func TestKeys(t *testing.T) {
 		{"ctrl+k at the line's end joins", "ab|\ncd", []string{"ctrl+k"}, "ab|cd"},
 		{"ctrl+u deletes to the line's start", "ab\ncd|ef", []string{"ctrl+u"}, "ab\n|ef"},
 		{"ctrl+u at the line's start joins", "ab\n|cd", []string{"ctrl+u"}, "ab|cd"},
+		{"ctrl+y yanks what ctrl+k killed", "ab|cd", []string{"ctrl+k", "ctrl+y"}, "abcd|"},
+		{"ctrl+k after ctrl+k adds up, line breaks too", "a|b\ncd", []string{"ctrl+k", "ctrl+k", "ctrl+k", "ctrl+y"}, "ab\ncd|"},
+		{"ctrl+w after ctrl+w adds before", "foo bar baz|", []string{"ctrl+w", "ctrl+w", "ctrl+y"}, "foo bar baz|"},
+		{"ctrl+u then ctrl+y elsewhere", "ab|cd", []string{"ctrl+u", "ctrl+e", "ctrl+y"}, "cdab|"},
+		{"alt+d then ctrl+y", "foo| bar baz", []string{"alt+d", "ctrl+y"}, "foo bar| baz"},
+		{"a move between kills starts a new kill", "ab|cd", []string{"ctrl+k", "left", "ctrl+k", "ctrl+y"}, "ab|"},
+		{"ctrl+y with nothing killed does nothing", "a|b", []string{"ctrl+y"}, "a|b"},
 		{"shift+enter splits the line", "ab|cd", []string{"shift+enter"}, "ab\n|cd"},
 		{"ctrl+j splits the line", "ab|", []string{"ctrl+j"}, "ab\n|"},
 		{"enter does not edit", "ab|", []string{"enter"}, "ab|"},
@@ -340,4 +347,38 @@ func TestSelection(t *testing.T) {
 	assert.Equal(t, "ab\ncd", c.SelectedText())
 	c.Paste("x")
 	assert.Equal(t, "x|", marked(c))
+}
+
+func TestUndo(t *testing.T) {
+	c := at(t, 40, "|")
+	typeText(&c, "hello world")
+	press(&c, "ctrl+_")
+	assert.Equal(t, "hello |", marked(c), "the last word typed is one step")
+	press(&c, "ctrl+/")
+	assert.Equal(t, "hello|", marked(c), "the space is its own step")
+	press(&c, "ctrl+7")
+	assert.Equal(t, "|", marked(c))
+	press(&c, "ctrl+_")
+	assert.Equal(t, "|", marked(c), "nothing left to undo")
+
+	c = at(t, 40, "ab|cd")
+	press(&c, "ctrl+k", "ctrl+u", "ctrl+_")
+	assert.Equal(t, "ab|", marked(c), "a kill comes back")
+	press(&c, "ctrl+_")
+	assert.Equal(t, "ab|cd", marked(c))
+
+	c = at(t, 40, "a|")
+	c.Paste("one\ntwo")
+	press(&c, "ctrl+_")
+	assert.Equal(t, "a|", marked(c), "a paste is one step")
+
+	c = at(t, 40, "ab|")
+	press(&c, "left", "ctrl+_")
+	assert.Equal(t, "a|b", marked(c), "a move is no step")
+
+	c = at(t, 40, "x|")
+	typeText(&c, "yz")
+	c.Reset()
+	press(&c, "ctrl+_")
+	assert.Equal(t, "|", marked(c), "a reset draft keeps no history")
 }

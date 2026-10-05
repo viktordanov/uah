@@ -2,6 +2,7 @@ package composer
 
 import (
 	"slices"
+	"strings"
 	"unicode"
 )
 
@@ -51,6 +52,8 @@ const (
 	OpSelectLineDown
 	OpSelectAll
 	OpCopySelection
+	OpYank
+	OpUndo
 )
 
 // KeyMap maps key names to operations. A key it does not name types its
@@ -99,6 +102,8 @@ func DefaultKeyMap() KeyMap {
 	bind(OpSelectLineDown, "shift+down")
 	bind(OpSelectAll, "ctrl+g")
 	bind(OpCopySelection, "ctrl+shift+c")
+	bind(OpYank, "ctrl+y")
+	bind(OpUndo, "ctrl+_", "ctrl+/", "ctrl+7") // terminals send ctrl+/ as ctrl+_, which reads as ctrl+7 too
 
 	return km
 }
@@ -115,12 +120,28 @@ const (
 	ActionCopy
 )
 
-// Press applies a key. A blurred composer ignores it.
+// Press applies a key. A blurred composer ignores it. An edit can be undone
+// with ctrl+_; typed characters up to a space or a new line are one step.
 func (c *Composer) Press(k Key) Action {
 	if !c.focus {
 		return ActionNone
 	}
+	op := c.KeyMap[k.Name]
+	if op == OpUndo {
+		c.undoEdit()
+		c.typing, c.killing = false, false
+		c.fit()
+
+		return ActionNone
+	}
+	before, was := c.snap(), c.Value()
+	typing := c.typing
 	act := c.press(k)
+	typed := op == OpNone && k.Text != "" && !strings.ContainsAny(k.Text, " \t\n")
+	if c.Value() != was && (!typed || !typing) {
+		c.pushUndo(before)
+	}
+	c.typing = typed
 	c.fit()
 
 	return act
@@ -128,8 +149,15 @@ func (c *Composer) Press(k Key) Action {
 
 func (c *Composer) press(k Key) Action { //nolint:gocyclo,cyclop // a dispatch switch over a closed set
 	op := c.KeyMap[k.Name]
+	killing := c.killing
+	c.killing = false
 	if c.edits(op) && c.deleteSelection() {
 		return ActionNone // a deletion deletes the selection only
+	}
+	if kills(op) {
+		c.kill(op, killing)
+
+		return ActionNone
 	}
 	switch op {
 	case OpNone:
@@ -152,21 +180,10 @@ func (c *Composer) press(k Key) Action { //nolint:gocyclo,cyclop // a dispatch s
 		c.deleteClusterBackward()
 	case OpDeleteCharacterForward:
 		c.deleteClusterForward()
-	case OpDeleteWordBackward:
-		c.deleteWordBackward()
-	case OpDeleteWordForward:
-		c.deleteWordForward()
-	case OpDeleteAfterCursor:
-		if c.col >= len(c.cur()) {
-			c.joinBelow()
-		} else {
-			c.deleteRange(c.col, len(c.cur()))
-		}
-	case OpDeleteBeforeCursor:
-		if c.col == 0 {
-			c.joinAbove()
-		} else {
-			c.deleteRange(0, c.col)
+	case OpYank:
+		if len(c.killed) > 0 {
+			c.deleteSelection()
+			c.insert(slices.Clone(c.killed))
 		}
 	case OpCapitalizeWordForward:
 		c.wordForward(func(i int, r rune) rune {
@@ -202,6 +219,67 @@ func (c *Composer) press(k Key) Action { //nolint:gocyclo,cyclop // a dispatch s
 	}
 
 	return ActionNone
+}
+
+// kills reports whether op deletes text that ctrl+y can yank back: a word,
+// or the line after or before the cursor.
+func kills(op Op) bool {
+	switch op {
+	case OpDeleteWordBackward, OpDeleteWordForward, OpDeleteAfterCursor, OpDeleteBeforeCursor:
+		return true
+	}
+
+	return false
+}
+
+// kill applies a kill and keeps what it deleted for ctrl+y. A kill right
+// after another adds to its text, after it for a kill forward and before
+// it for one backward, as Emacs does, so ctrl+k ctrl+k yanks both.
+func (c *Composer) kill(op Op, after bool) {
+	before := []rune(c.Value())
+	switch op {
+	case OpDeleteWordBackward:
+		c.deleteWordBackward()
+	case OpDeleteWordForward:
+		c.deleteWordForward()
+	case OpDeleteAfterCursor:
+		if c.col >= len(c.cur()) {
+			c.joinBelow()
+		} else {
+			c.deleteRange(c.col, len(c.cur()))
+		}
+	case OpDeleteBeforeCursor:
+		if c.col == 0 {
+			c.joinAbove()
+		} else {
+			c.deleteRange(0, c.col)
+		}
+	}
+	at := c.cursorOffset()
+	gone := before[at : at+len(before)-len([]rune(c.Value()))]
+	if len(gone) == 0 {
+		c.killing = after
+		return
+	}
+	switch {
+	case !after:
+		c.killed = slices.Clone(gone)
+	case op == OpDeleteWordBackward || op == OpDeleteBeforeCursor:
+		c.killed = append(slices.Clone(gone), c.killed...)
+	default:
+		c.killed = append(c.killed, gone...)
+	}
+	c.killing = true
+}
+
+// cursorOffset is the cursor's rune offset in Value.
+func (c *Composer) cursorOffset() int {
+	n := c.col
+	for _, l := range c.lines[:c.row] {
+		n += len(l.text) + 1
+	}
+
+	return n
 }
 
 // edits reports whether op deletes text, so that it deletes the selection
