@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/cmdparse"
 	"github.com/viktordanov/uah/internal/codereview"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/tui/render"
 )
 
@@ -29,42 +31,70 @@ import (
 // not one, or NO_COLOR, gets plain text.
 
 // step prints one of the reviewer's tool events on stderr: a call when it
-// starts, and its end when it failed.
+// starts, and its end when it failed, with why when the command's output
+// says. A search that exits 1 with no output found nothing, as the TUI
+// reads it; the output may come before or after the end, so such a search
+// waits for it, and is reported if it comes.
 func (o *reviewOutput) step(ev core.Event) {
+	if o.calls == nil {
+		o.calls = map[string]*reviewCall{}
+	}
 	switch e := ev.(type) {
 	case core.ToolCalled:
 		label, text := o.shape(e.Name, e.Arguments, e.Label)
-		if o.calls == nil {
-			o.calls = map[string]reviewCall{}
-		}
-		o.calls[e.CallID] = reviewCall{label: label, text: text, grep: label == cmdparse.LabelSearch && greps(command(e.Arguments, e.Label))}
+		o.calls[e.CallID] = &reviewCall{label: label, text: text}
 		o.progress.say(fmt.Sprintf("  → %-8s%s", label, oneLine(text, 160)))
-	case core.ToolFinished:
-		call, ok := o.calls[e.CallID]
-		delete(o.calls, e.CallID)
-		if e.OK || !ok || (call.grep && e.Detail == "exit 1") {
-			return // rg or grep that found nothing did not fail
+	case engine.ToolOutput:
+		c, ok := o.calls[e.CallID]
+		if !ok {
+			return
 		}
-		o.progress.say(fmt.Sprintf("  ✗ %-8s%s  (%s, %.1fs)", call.label, oneLine(call.text, 160), e.Detail, e.Duration.Seconds()))
+		c.why = cmp.Or(lastLine(e.Error), lastLine(e.Output))
+		if c.done != nil {
+			o.failed(e.CallID, c)
+		}
+	case core.ToolFinished:
+		c, ok := o.calls[e.CallID]
+		switch {
+		case !ok:
+		case e.OK:
+			delete(o.calls, e.CallID)
+		default:
+			c.done = &e
+			if c.why != "" || c.label != cmdparse.LabelSearch || e.Detail != "exit 1" {
+				o.failed(e.CallID, c)
+			}
+		}
 	}
 }
 
-// reviewCall is a running call's label and text, and whether it is rg or
-// grep, whose exit 1 means no match rather than a failure.
+// failed prints a call that failed, and forgets it.
+func (o *reviewOutput) failed(id string, c *reviewCall) {
+	delete(o.calls, id)
+	why := ""
+	if c.why != "" {
+		why = ": " + oneLine(c.why, 160)
+	}
+	o.progress.say(fmt.Sprintf("  ✗ %-8s%s  (%s, %.1fs)%s", c.label, oneLine(c.text, 160), c.done.Detail, c.done.Duration.Seconds(), why))
+}
+
+// reviewCall is one of the reviewer's calls: its label and text, why it
+// failed when its output says, and its end once it failed.
 type reviewCall struct {
-	label, text string
-	grep        bool
+	label, text, why string
+	done             *core.ToolFinished
 }
 
-// greps reports whether a command is a search whose exit 1 means it found
-// nothing: rg, grep, or git grep. find, for one, exits 1 on an error.
-func greps(command string) bool {
-	f := strings.Fields(cmdparse.Strip(command))
-	if len(f) > 1 && f[0] == "git" {
-		f = f[1:]
+// lastLine is the last line of text with a letter or a digit.
+func lastLine(text string) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	for _, l := range slices.Backward(lines) {
+		if l = strings.TrimSpace(l); strings.ContainsFunc(l, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+			return l
+		}
 	}
 
-	return len(f) > 0 && slices.Contains([]string{"rg", "grep", "egrep", "fgrep"}, f[0])
+	return ""
 }
 
 // command is a Bash call's command, from its arguments, else its label.

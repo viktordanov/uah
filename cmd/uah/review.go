@@ -175,7 +175,7 @@ type reviewOutput struct {
 	// env is where the reviewer's commands run, for their paths.
 	env cmdparse.Env
 	// calls are the reviewer's running calls, by ID.
-	calls    map[string]reviewCall
+	calls    map[string]*reviewCall
 	started  session.ReviewStarted
 	finished session.ReviewFinished
 }

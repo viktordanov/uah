@@ -14,6 +14,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/cmdparse"
 	"github.com/viktordanov/uah/internal/codereview"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/session"
 )
 
@@ -49,7 +50,9 @@ func TestReviewPrint(t *testing.T) {
 }
 
 // TestReviewSteps prints the reviewer's calls shaped as the TUI's tool
-// lines, and the ones that failed; a search that found nothing did not.
+// lines, and the ones that failed with why; a search that exits 1 with no
+// output found nothing, and one whose output comes after its end is
+// reported then.
 func TestReviewSteps(t *testing.T) {
 	var buf bytes.Buffer
 	o := reviewOutput{progress: newPrinter(&buf, false), env: cmdparse.Env{Workspace: "/w"}}
@@ -61,7 +64,9 @@ func TestReviewSteps(t *testing.T) {
 	o.step(core.ToolFinished{CallID: "3", OK: false, Detail: "exit 1", Duration: 4 * time.Second})
 	o.step(core.ToolCalled{CallID: "4", Name: "Bash", Arguments: `{"command":"find /w/missing -name '*.go'"}`})
 	o.step(core.ToolFinished{CallID: "4", OK: false, Detail: "exit 1"})
+	o.step(engine.ToolOutput{CallID: "4", Output: "find: /w/missing: No such file or directory\n"})
 	o.step(core.ToolCalled{CallID: "5", Name: "Bash", Arguments: `{"command":"rg -n '(' /w"}`})
+	o.step(engine.ToolOutput{CallID: "5", Output: "rg: regex parse error\n"})
 	o.step(core.ToolFinished{CallID: "5", OK: false, Detail: "exit 2"})
 	var lines []string
 	for l := range strings.Lines(buf.String()) {
@@ -73,11 +78,11 @@ func TestReviewSteps(t *testing.T) {
 		"  → RAN     go test ./...",
 		"  ✗ RAN     go test ./...  (exit 1, 4.0s)",
 		"  → SEARCH  *.go in missing",
-		"  ✗ SEARCH  *.go in missing  (exit 1, 0.0s)",
+		"  ✗ SEARCH  *.go in missing  (exit 1, 0.0s): find: /w/missing: No such file or directory",
 		"  → SEARCH  ( in .",
-		"  ✗ SEARCH  ( in .  (exit 2, 0.0s)",
-	}, lines, "find's exit 1 and rg's exit 2 are failures; rg's exit 1 found nothing")
-	assert.Empty(t, o.calls, "ended calls are forgotten")
+		"  ✗ SEARCH  ( in .  (exit 2, 0.0s): rg: regex parse error",
+	}, lines)
+	assert.Len(t, o.calls, 1, "only the search that found nothing still waits for output")
 }
 
 // TestReviewPrintEmpty says the reviewer gave nothing, as Codex's text
