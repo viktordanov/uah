@@ -1,0 +1,90 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭──────────────────────────────────────╮
+│ λ uah                                │
+│                                      │
+│ model:     gpt-6-sol high   /model … │
+│ directory: /workspace/proj           │
+╰──────────────────────────────────────╯
+
+  REVIEW changes against 'main'
+    gpt-6-astra high · 2m 10s · 5 steps
+    140.1k tokens
+    6 findings (2 P1 · 2 P2 · 1 P3)
+    patch is incorrect · confidence 82%
+    The loader hides a failure and can
+    panic on an empty list.
+
+    P1     Return the parse error  82%
+           internal/config/load.go:41-44
+           parse drops the error, so a
+           bad file loads as empty.
+
+    P1     Close the file on error  55%
+           internal/config/load.go:30-31
+           The early return leaks the
+           handle.
+
+    P2     Guard the empty list  70%
+           internal/config/list.go:12-15
+           An empty list reaches xs[0].
+
+           1. Load an empty file.
+           2. Call First.
+           … +3 lines (ctrl+t to view)
+
+    P2     Maybe drop the retry  30% ·
+           low confidence
+           internal/config/retry.go:3-9
+           The retry might be needed
+           after all.
+
+    P3     Name the timeout  60%
+           /elsewhere/x.go:7
+           A named constant would say
+           what 30 is.
+
+           Mention the default  90%
+           internal/config/doc.go:1
+           The doc comment leaves the
+           default out.
+
+
+λ
+
+ gpt-6-sol… ctrl+t details · / commands

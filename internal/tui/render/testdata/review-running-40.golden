@@ -1,0 +1,90 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭──────────────────────────────────────╮
+│ λ uah                                │
+│                                      │
+│ model:     gpt-6-sol high   /model … │
+│ directory: /workspace/proj           │
+╰──────────────────────────────────────╯
+
+  REVIEW changes against 'main'
+    gpt-6-astra high · 42s · 5 steps
+    39.1k tokens
+    ✓ SEARCH ParseConfig in…  no matches
+    ✗ RAN    go test ./internal…  exit 1
+    ✓ LIST   internal/config
+    ⠋ RUN    git diff 1a2b3c4
+
+
+λ
+
+ gpt-6-sol… ctrl+t details · / commands

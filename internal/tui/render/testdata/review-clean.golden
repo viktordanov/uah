@@ -5,6 +5,8 @@
 
 
 
+
+
 ╭────────────────────────────────────────────────╮
 │ λ uah                                          │
 │                                                │
@@ -12,11 +14,9 @@
 │ directory: /workspace/proj                     │
 ╰────────────────────────────────────────────────╯
 
-  REVIEW changes against 'main'  gpt-6-astra high · 42s · 5 steps · 39.1k tokens
-    ✓ SEARCH ParseConfig in internal  no matches
-    ✗ RAN    go test ./internal/config  exit 1
-    ✓ LIST   internal/config
-    ⠋ RUN    git diff 1a2b3c4
+  REVIEW changes against 'main'  gpt-6-astra high · 2m 10s · 5 steps · 140.1k tokens
+    no findings · patch is correct · confidence 90%
+    The change is sound.
 
 
 λ

@@ -25,6 +25,16 @@ const (
 
 // onToolCalled adds a tool call's line.
 func (s *State) onToolCalled(e core.ToolCalled) {
+	it := s.toolCall(e)
+	if e.Name == toolSkill {
+		s.joinSkill(&it)
+	}
+	s.put(it)
+}
+
+// toolCall is a tool call's line, shaped: a command's summary, an MCP
+// call's parts, the agent's questions.
+func (s *State) toolCall(e core.ToolCalled) Item {
 	it := Item{Kind: KindTool, Key: "call:" + e.CallID, Name: e.Name, Label: s.eventLabel(e), Tool: ToolCalled, Started: e.At}
 	switch {
 	case e.Name == toolBash:
@@ -33,12 +43,11 @@ func (s *State) onToolCalled(e core.ToolCalled) {
 		it.Verb, it.Parts = sum.Label, sum.Parts
 	case isMCP(e.Name):
 		it.Parts = mcpParts(e.Name, e.Arguments)
-	case e.Name == toolSkill:
-		s.joinSkill(&it)
 	case e.Name == engine.QuestionToolName:
 		it.Verb, it.Parts = "ASK", []cmdparse.Part{{Text: questionParts(e.Arguments)}}
 	}
-	s.put(it)
+
+	return it
 }
 
 // pathEnv is where the session's commands run, for their paths.

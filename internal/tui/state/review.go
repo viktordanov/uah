@@ -3,6 +3,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,19 +19,24 @@ import (
 // (the menu after "/review " picks it, reviewmenu.go) and shows its
 // findings.
 
-// Review is a /review's item: what it looks at, its reviewer's latest
-// tool call while it runs, and then its findings, or how it ended.
+// Review is a /review's item: what it looks at, the reviewer's steps (its
+// tool calls) while it runs and after, and then its findings, or how it
+// ended.
 type Review struct {
 	Hint    string
 	Running bool
 	Started time.Time
 	Ended   time.Time
-	// Doing is the reviewer's latest tool call while it runs.
-	Doing       string
+	// Steps are the reviewer's latest tool calls, oldest first, shaped as
+	// the session's own (KindTool items), at most maxReviewSteps; StepCount
+	// counts every call it made.
+	Steps       []Item
+	StepCount   int
 	Output      codereview.Output
 	Interrupted bool
 	Err         string
-	// Model and Effort are the reviewer's, and Tokens what it used.
+	// Model and Effort are the reviewer's, and Tokens what it used: the sum
+	// of its model responses while it runs, then its run's total.
 	Model, Effort string
 	Tokens        core.Tokens
 	// Workspace is the session's, so paths can show relative to it.
@@ -115,22 +121,62 @@ func (s *State) onReview(ev any) bool {
 			Hint: e.Hint, Running: true, Started: e.At, Model: e.Model, Effort: e.Effort, Workspace: s.Settings.Workspace,
 		}})
 	case session.ReviewActivity:
-		if c, ok := e.Event.(core.ToolCalled); ok {
-			s.updateReview(e.ID, func(r *Review) { r.Doing = s.callLabel(c.Name, c.Label) })
-		}
+		s.updateReview(e.ID, func(r *Review) { s.reviewStep(r, e.Event) })
 	case session.ReviewFinished:
 		if s.Reviewing == e.ID {
 			s.Reviewing = ""
 		}
 		s.updateReview(e.ID, func(r *Review) {
-			r.Running, r.Ended, r.Doing = false, e.At, ""
-			r.Output, r.Interrupted, r.Err, r.Tokens = e.Output, e.Interrupted, e.Err, e.Tokens
+			r.Running, r.Ended = false, e.At
+			r.Output, r.Interrupted, r.Err = e.Output, e.Interrupted, e.Err
+			if e.Tokens != (core.Tokens{}) {
+				r.Tokens = e.Tokens // else the sum so far: a run that ended without a result
+			}
+			r.Steps = slices.Clone(r.Steps)
+			for i := range r.Steps {
+				if r.Steps[i].Tool == ToolCalled || r.Steps[i].Tool == ToolRunning {
+					r.Steps[i].Tool = ToolStopped
+				}
+			}
 		})
 	default:
 		return false
 	}
 
 	return true
+}
+
+// maxReviewSteps is how many of the reviewer's latest tool calls a review
+// keeps for the detailed view.
+const maxReviewSteps = 100
+
+// reviewStep folds one of the reviewer's events into the review: a tool
+// call as a new step, its start and end into that step, and a model
+// response's tokens into the running total. Steps is copied before it
+// changes, so an earlier state keeps its own.
+func (s *State) reviewStep(r *Review, ev core.Event) {
+	step := func(callID string, fn func(*Item)) {
+		if i := slices.IndexFunc(r.Steps, func(it Item) bool { return it.Key == "call:"+callID }); i >= 0 {
+			r.Steps = slices.Clone(r.Steps)
+			fn(&r.Steps[i])
+		}
+	}
+	switch e := ev.(type) {
+	case core.ToolCalled:
+		steps := r.Steps[max(len(r.Steps)-maxReviewSteps+1, 0):]
+		r.Steps = append(slices.Clip(steps), s.toolCall(e))
+		r.StepCount++
+	case core.ToolStarted:
+		step(e.CallID, func(it *Item) { it.Tool, it.Started = ToolRunning, e.At })
+	case core.ToolFinished:
+		state := ToolOK
+		if !e.OK {
+			state = ToolFailed
+		}
+		step(e.CallID, func(it *Item) { it.Tool, it.Detail, it.Duration = state, e.Detail, e.Duration })
+	case core.ModelResponded:
+		r.Tokens = r.Tokens.Add(e.Usage)
+	}
 }
 
 // updateReview changes a review's item in place; the item's Review is

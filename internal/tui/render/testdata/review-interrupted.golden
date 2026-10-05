@@ -8,7 +8,6 @@
 
 
 
-
 ╭────────────────────────────────────────────────╮
 │ λ uah                                          │
 │                                                │
@@ -16,7 +15,8 @@
 │ directory: /workspace/proj                     │
 ╰────────────────────────────────────────────────╯
 
-  REVIEW changes against 'main'  interrupted  gpt-6-astra high · 20.3k tokens
+  REVIEW changes against 'main'  gpt-6-astra high · 1m 00s · 5 steps · 20.3k tokens
+    interrupted
 
 
 λ
