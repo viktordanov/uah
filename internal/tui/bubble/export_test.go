@@ -26,3 +26,6 @@ func ComposerRows(h int) int { return composerRows(h) }
 
 // EdgeScrolling reports whether a drag's edge scroll waits for its tick.
 func (m Model) EdgeScrolling() bool { return m.edgeTicking }
+
+// Workspace is the open session's workspace.
+func (m Model) Workspace() string { return m.st.Settings.Workspace }

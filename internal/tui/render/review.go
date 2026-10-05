@@ -31,7 +31,7 @@ func (st *Styles) gitDiffLines(d *gitdiff.Diff, w int) []string {
 	}
 	out := []string{"", st.accent.Render("  DIFF   ") + st.dim.Render(files) + st.counts(d.Added(), d.Removed())}
 	for _, f := range d.Files {
-		head := st.dim.Render("  └ ") + diffPath(f.FileDiff) + " "
+		head := st.dim.Render("  └ ") + st.diffPath(f.FileDiff, d.Root) + " "
 		switch {
 		case f.Note != "":
 			out = append(out, ansi.Truncate(head+st.dim.Render(f.Note+", not shown"), w, "…"))
@@ -41,11 +41,11 @@ func (st *Styles) gitDiffLines(d *gitdiff.Diff, w int) []string {
 			head += st.dim.Render("untracked ")
 		case f.Op == "add":
 			head += st.dim.Render("added ")
-		case f.Op == "delete":
+		case f.Op == opDelete:
 			head += st.dim.Render("deleted ")
 		}
 		out = append(out, ansi.Truncate(head+st.counts(f.Added, f.Removed), w, "…"))
-		out = append(out, st.diffBlock([]patch.FileDiff{f.FileDiff}, w, 0)...)
+		out = append(out, st.diffBlockIn(d.Root, []patch.FileDiff{f.FileDiff}, w, 0)...)
 	}
 	if d.MoreUntracked > 0 {
 		out = append(out, st.dim.Render(fmt.Sprintf("  └ %d more untracked files, not shown", d.MoreUntracked)))
@@ -302,6 +302,21 @@ const (
 // shows.
 const findingBodyLines = 3
 
+// findingPlace is a finding's place, dim, as a link to its lines.
+func (st *Styles) findingPlace(f codereview.Finding, workspace string) string {
+	place := codereview.Clean(f.Place(workspace))
+	loc := f.CodeLocation
+	if loc.AbsoluteFilePath == "" || place != f.Place(workspace) {
+		return st.dim.Render(place) // no file, or one with controls in its name
+	}
+	end := loc.LineRange.End
+	if end <= loc.LineRange.Start {
+		end = 0
+	}
+
+	return st.linked(place, st.dim, st.fileLink(loc.AbsoluteFilePath, loc.LineRange.Start, end))
+}
+
 // findingLines draws one finding: "P0  title" with its confidence ("91%")
 // at the row's right end (P0 and P1 in the bad color, P2 in the warning
 // color, P3 dim), its place relative to the workspace, and its body as
@@ -346,7 +361,7 @@ func (st *Styles) findingLines(f codereview.Finding, workspace string, w int, de
 		}
 		out = append(out, ansi.Truncate(line, w, "…"))
 	}
-	out = append(out, ansi.Truncate(st.dim.Render(findingIndent+codereview.Clean(f.Place(workspace))), w, "…"))
+	out = append(out, ansi.Truncate(findingIndent+st.findingPlace(f, workspace), w, "…"))
 	body := strings.TrimSpace(codereview.Clean(f.Body))
 	if body == "" {
 		return out

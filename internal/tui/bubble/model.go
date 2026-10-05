@@ -99,6 +99,13 @@ type Deps struct {
 	// History is the prompt history file for ↑ and ctrl+r (nil: this
 	// process's prompts only).
 	History *history.File
+	// FileLinks is what a click on a file path does, [tui] file_links:
+	// "peek", "editor", "open", or "off" ("" too: no links).
+	FileLinks string
+	// Launch runs a program of its own for a file link, the system's
+	// opener or a windowed editor, and waits for it (default: in a process
+	// group of its own); tests catch the command.
+	Launch func(ctx context.Context, args []string) error
 }
 
 // Model is the TUI's term.Model.
@@ -158,6 +165,8 @@ func New(ctx context.Context, deps Deps) Model {
 	st := state.New(deps.Now())
 	st.Details, st.Mouse, st.Title, st.Windows = deps.Details, deps.Mouse, deps.Title, deps.Windows
 	st.Home, _ = os.UserHomeDir()
+	st.Host, _ = os.Hostname()
+	st.FileLinks = deps.FileLinks
 
 	m := Model{
 		ctx: ctx, deps: deps, st: st,
@@ -236,10 +245,8 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 		return m, nil
 	case term.BackgroundColorMsg, term.KeyboardEnhancementsMsg:
 		return m.onTerminalReport(msg)
-	case term.MouseWheelMsg:
-		return m.onWheel(msg)
-	case term.MouseClickMsg, term.MouseMotionMsg, term.MouseReleaseMsg, edgeMsg:
-		return m.onMouse(msg)
+	case term.MouseWheelMsg, term.MouseClickMsg, term.MouseMotionMsg, term.MouseReleaseMsg, edgeMsg:
+		return m.onPointer(msg)
 	case term.KeyPressMsg:
 		return m.now().onKey(msg)
 	case term.PasteMsg:
@@ -288,6 +295,8 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 		return m.dispatch(msg)
 	case state.UsageLoaded, state.CacheLoaded, state.Copied, state.DiffShown, state.ReviewTargetsLoaded, state.PromptsLoaded:
 		return m.dispatch(msg)
+	case state.LinksResolved, state.PeekLoaded, state.FileOpened:
+		return m.dispatch(msg)
 	}
 
 	return m, nil
@@ -299,12 +308,19 @@ func (m Model) onOpened(msg openedMsg) (term.Model, term.Cmd) {
 	m.sess = msg.sess
 	m.st.Priority = msg.sess.Priority()
 	m.st.Yolo = msg.sess.Yolo()
+	var cmds []term.Cmd
 	if len(msg.history) > 0 {
-		m.st, _ = state.Reduce(m.st, state.HistoryLoaded{SessionID: msg.sess.ID(), Runs: msg.history})
+		var effects []state.Effect
+		m.st, effects = state.Reduce(m.st, state.HistoryLoaded{SessionID: msg.sess.ID(), Runs: msg.history})
+		for _, e := range effects {
+			if _, ok := e.(state.EffResolveLinks); ok { // the loaded messages' file links
+				cmds = append(cmds, m.run(e))
+			}
+		}
 	}
 	batches := make(chan []core.Event)
 	go batch(msg.sess.Events(), batches)
-	cmds := []term.Cmd{next(m.gen, batches)}
+	cmds = append(cmds, next(m.gen, batches))
 	for _, e := range m.held {
 		cmds = append(cmds, m.run(e))
 	}
@@ -395,7 +411,7 @@ func (m Model) View() term.View {
 	v.Mouse = m.st.Mouse
 	// term clears the title when the program ends.
 	v.WindowTitle = m.st.WindowTitle()
-	if c := m.composerCursor(); c != nil && composerRow >= 0 {
+	if c := m.composerCursor(); c != nil && composerRow >= 0 && m.st.Peek == nil {
 		c.Y += composerRow
 		v.Cursor = c
 		m.searchCursor(c, composerRow)

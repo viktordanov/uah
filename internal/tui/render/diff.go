@@ -3,6 +3,7 @@ package render
 import (
 	"cmp"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -67,15 +68,46 @@ func (st *Styles) diffSummary(files []patch.FileDiff) string {
 	}
 	verb := cmp.Or(map[string]string{"add": "Added", "delete": "Deleted"}[files[0].Op], "Edited")
 
-	return st.dim.Render(verb+" ") + diffPath(files[0]) + " " + st.counts(added, removed)
+	return st.dim.Render(verb+" ") + st.diffPath(files[0], "") + " " + st.counts(added, removed)
 }
 
-func diffPath(f patch.FileDiff) string {
+// opDelete is a deleted file's FileDiff.Op.
+const opDelete = "delete"
+
+// diffPath is a changed file's path, "old → new" for a move, as a link to
+// its first changed line; root is the directory a relative path is in (""
+// for the workspace).
+func (st *Styles) diffPath(f patch.FileDiff, root string) string {
+	target := f.Path
 	if f.MovePath != "" {
-		return f.Path + " → " + f.MovePath
+		target = f.MovePath
+	}
+	if root != "" && !filepath.IsAbs(target) {
+		target = filepath.Join(root, target)
+	}
+	link := st.fileLink(target, firstChange(f), 0)
+	if f.Op == opDelete {
+		link = state.FileLink{} // nothing to open
+	}
+	if f.MovePath != "" {
+		return f.Path + " → " + st.linked(f.MovePath, lipgloss.NewStyle(), link)
 	}
 
-	return f.Path
+	return st.linked(f.Path, lipgloss.NewStyle(), link)
+}
+
+// firstChange is the first line a file's diff adds or removes, in the new
+// file (0: none).
+func firstChange(f patch.FileDiff) int {
+	for _, h := range f.Hunks {
+		for _, l := range h.Lines {
+			if l.Kind != " " {
+				return max(l.New, l.Old)
+			}
+		}
+	}
+
+	return 0
 }
 
 // counts is "(+3 -1)" with the numbers in the diff's colors.
@@ -87,13 +119,19 @@ func (st *Styles) counts(added, removed int) string {
 // when there are several. With limit > 0 it stops after that many lines
 // and says how many more ctrl+t shows.
 func (st *Styles) diffBlock(files []patch.FileDiff, w, limit int) []string {
+	return st.diffBlockIn("", files, w, limit)
+}
+
+// diffBlockIn is diffBlock for files whose relative paths are in root (""
+// for the workspace).
+func (st *Styles) diffBlockIn(root string, files []patch.FileDiff, w, limit int) []string {
 	gw := gutterWidth(files)
 	var out []string
 	shown, total := 0, 0
 	for _, f := range files {
 		total += f.Omitted
 		if len(files) > 1 && (limit == 0 || shown < limit) {
-			out = append(out, st.dim.Render("  └ ")+diffPath(f)+" "+st.counts(f.Added, f.Removed))
+			out = append(out, ansi.Truncate(st.dim.Render("  └ ")+st.diffPath(f, root)+" "+st.counts(f.Added, f.Removed), w, "…"))
 		}
 		for i, h := range f.Hunks {
 			total += len(h.Lines)

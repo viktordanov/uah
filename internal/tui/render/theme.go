@@ -122,6 +122,10 @@ type Styles struct {
 	diffStyles map[string]diffStyle
 	// markdown draws agent messages and keeps their finished blocks.
 	markdown *markdown.Renderer
+	// links is how file paths are drawn as links, and linkGen counts its
+	// changes, which the cache's lines carry (links.go).
+	links   linkConf
+	linkGen int
 }
 
 // NewStyles builds a theme's styles.

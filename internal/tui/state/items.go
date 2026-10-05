@@ -85,6 +85,10 @@ type Item struct {
 	// Streaming means the model is still writing a KindAssistant or
 	// KindReasoning item (stream.go).
 	Streaming bool
+	// Links are the words of a KindAssistant message that name files in
+	// the workspace (links.go), and linked the text they were looked up in.
+	Links  map[string]FileLink
+	linked string
 
 	// KindRun
 	RunID  string

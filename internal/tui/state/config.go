@@ -183,8 +183,8 @@ func (s *State) commitTyped() []Effect {
 // save writes the value, shows it at once, and applies it to the running
 // session where that works live: the model, effort, fast mode, adaptive
 // effort, and permission mode through the session (as /model, /effort,
-// /fast, /adaptive, and shift+tab do), the details view and the mouse in
-// the TUI.
+// /fast, /adaptive, and shift+tab do), the details view, the mouse, and
+// file links in the TUI.
 func (s *State) save(key string, value any) []Effect {
 	p := s.Config
 	p.Values[key] = ConfigValue{Value: valueText(value), Source: SourceUser}
@@ -212,6 +212,15 @@ func (s *State) save(key string, value any) []Effect {
 		s.Details, _ = value.(bool)
 	case keyMouse:
 		s.Mouse, _ = value.(bool)
+	case keyFileLinks:
+		was := s.linksOn()
+		s.FileLinks, _ = value.(string)
+		if s.FileLinks == "" {
+			s.FileLinks = LinksPeek // removed: the default
+		}
+		if !was {
+			s.relinkAll()
+		}
 	}
 	if next != s.Settings && (key != keyFast || s.Priority) {
 		effects = append(effects, EffSetSettings{Settings: next})
@@ -250,7 +259,7 @@ func (s *State) configSaved(e ConfigSaved) []Effect {
 // appliesWhen says when a saved key takes effect.
 func appliesWhen(key string, fastLive bool) string {
 	switch {
-	case key == keyDetails || key == keyMouse:
+	case key == keyDetails || key == keyMouse || key == keyFileLinks:
 		return "applies now"
 	case key == keyFast && !fastLive:
 		return "applies to new sessions on a provider with fast mode"

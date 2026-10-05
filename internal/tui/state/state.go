@@ -171,6 +171,20 @@ type State struct {
 	// (selection.go); click counts double and triple clicks.
 	Selection *Selection
 	click     clicks
+	// FileLinks is what a click on a file path does: LinksPeek,
+	// LinksEditor, LinksOpen, or LinksOff, which draws no links ("" too).
+	// The shell sets it from [tui] file_links (links.go).
+	FileLinks string
+	// Host is this machine's name, for the links' file:// URLs. The shell
+	// sets it.
+	Host string
+	// Peek, when set, is a file shown in the overlay (peek.go).
+	Peek *Peek
+	// pressed is the link under the mouse's press, opened by a release
+	// that selected nothing; unlinked are the agent's messages whose words
+	// are not looked up yet (links.go).
+	pressed  *FileLink
+	unlinked []string
 
 	// Toast is a short note drawn over the transcript's corner for a
 	// moment, such as the copy's (toast.go).

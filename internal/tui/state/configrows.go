@@ -35,6 +35,7 @@ const (
 	keyMode         = "permission_mode"
 	keyDetails      = "tui.details"
 	keyMouse        = "tui.mouse"
+	keyFileLinks    = "tui.file_links"
 	keyWebSearch    = "web_search"
 	keyAdaptive     = "adaptive_effort"
 )
@@ -81,6 +82,7 @@ var configKeys = []struct {
 	{keyWebSearch, "Web search", rowChoice, ""},
 	{keyDetails, "Details view", rowToggle, ""},
 	{keyMouse, "Mouse", rowToggle, ""},
+	{keyFileLinks, "File links", rowChoice, fileLinksHelp},
 }
 
 // autoPercents are the auto-compact choices; 0 is off.
@@ -98,6 +100,9 @@ const shownOff = "off"
 
 // adaptiveHelp says what adaptive effort does.
 const adaptiveHelp = "Adaptive effort: think one or two effort levels less on follow-up turns after tool results, and start a new session with the workspace's context"
+
+// fileLinksHelp says what a click on a file path does.
+const fileLinksHelp = "File links: a click on a file path peeks at it in an overlay, opens it in $VISUAL or $EDITOR at its line, or with the system's default app; off draws paths as plain text"
 
 // sessionModel is the compaction model's choice for "the session's model".
 const sessionModel = "session model"
@@ -161,6 +166,8 @@ func (s State) next(row ConfigRow, delta int) (value any, ok bool) {
 		return cycle(webSearchModes, current, delta), true
 	case keyAdaptive:
 		return cycle(session.AdaptiveEfforts, current, delta), true
+	case keyFileLinks:
+		return cycle(LinksModes, current, delta), true
 	}
 	percent, _ := strconv.Atoi(current)
 	i := slices.Index(autoPercents, percent)

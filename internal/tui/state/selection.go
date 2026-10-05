@@ -38,11 +38,13 @@ type Selection struct {
 type (
 	// MousePress is a press of the left button on the transcript at At,
 	// whose line reads Text (without styles); When is its time, which
-	// tells a double or triple click.
+	// tells a double or triple click. Link is the file link under it, which
+	// a click opens (links.go).
 	MousePress struct {
 		At   TextPos
 		Text string
 		When time.Time
+		Link *FileLink
 	}
 	// MouseDrag moves the pressed mouse to At.
 	MouseDrag struct{ At TextPos }

@@ -86,6 +86,7 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		Details:     st.Config.TUI.Details,
 		Mouse:       st.Config.TUI.MouseOn(),
 		Title:       st.Config.TUI.TitleOn(),
+		FileLinks:   st.Config.TUI.FileLinksMode(),
 		History:     &prompts,
 		Version:     buildVersion(),
 		Config:      tuiConfig(cmd),

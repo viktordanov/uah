@@ -8,6 +8,23 @@ import (
 	"github.com/viktordanov/uah/internal/tui/term"
 )
 
+// onPointer sends the mouse to the peek overlay while it is open, else the
+// wheel to scrolling and the buttons, and the edge scroll's tick, to
+// onMouse.
+func (m Model) onPointer(msg term.Msg) (term.Model, term.Cmd) {
+	if _, ok := msg.(edgeMsg); ok {
+		return m.onMouse(msg) // the edge scroll's tick stops by itself
+	}
+	if m.st.Peek != nil {
+		return m.onPeekMouse(msg)
+	}
+	if wheel, ok := msg.(term.MouseWheelMsg); ok {
+		return m.onWheel(wheel)
+	}
+
+	return m.onMouse(msg)
+}
+
 // onMouse turns the reported mouse into selection intents: the left
 // button's press, drag, and release on the transcript (state/selection.go).
 // A press elsewhere clears the selection; the composer keeps its own
@@ -36,8 +53,12 @@ func (m Model) onMouse(msg term.Msg) (term.Model, term.Cmd) {
 
 			return m.dispatch(state.ClearSelection{})
 		}
+		press := state.MousePress{At: at, Text: text, When: m.deps.Now()}
+		if l, ok := m.cache.LinkAt(msg.X, msg.Y); ok {
+			press.Link = &l // a click opens it (state/links.go)
+		}
 
-		return m.dispatch(state.MousePress{At: at, Text: text, When: m.deps.Now()})
+		return m.dispatch(press)
 	case term.MouseMotionMsg:
 		return m.drag(msg.X, msg.Y)
 	case term.MouseReleaseMsg:

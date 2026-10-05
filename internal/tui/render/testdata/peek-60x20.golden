@@ -1,0 +1,20 @@
+╭─ internal/tui/state/peek.go:30-32 ───────────────────────╮
+│  24     x24 := step(24) // line 24    with a tab         │
+│  25     x25 := step(25) // line 25    with a tab         │
+│  26     x26 := step(26) // line 26    with a tab         │
+│  27     x27 := step(27) // line 27    with a tab         │
+│  28     x28 := step(28) // line 28    with a tab         │
+│  29     x29 := step(29) // line 29    with a tab         │
+│  30     x30 := step(30) // line 30    with a tab         │
+│  31     x31 := step(31) // line 31    with a tab         │
+│  32     x32 := step(32) // line 32    with a tab         │
+│  33     x33 := step(33) // line 33    with a tab         │
+│  34     x34 := step(34) // line 34    with a tab         │
+│  35     x35 := step(35) // line 35    with a tab         │
+│  36     x36 := step(36) // line 36    with a tab         │
+│  37     x37 := step(37) // line 37    with a tab         │
+│  38     x38 := step(38) // line 38    with a tab         │
+│  39     x39 := step(39) // line 39    with a tab         │
+│  40     x40 := step(40) // line 40    with a tab         │
+│  41     x41 := step(41) // line 41    with a tab         │
+╰─ 24-41 of 100 · ↑↓ pgup pgdn g G scroll · e editor · … ──╯

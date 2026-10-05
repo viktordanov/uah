@@ -48,11 +48,12 @@ func (st *Styles) compactLines(it state.Item, w int, now time.Time) ([]string, b
 		return st.agentLines(it, w, now), true
 	case state.KindAssistant:
 		mark := st.accent.Render("• ")
+		lines := st.linkWords(st.markdownLines(it.Text, w, mark, "  "), it.Links)
 		if it.Final {
-			return append([]string{""}, st.markdownLines(it.Text, w, mark, "  ")...), true
+			return append([]string{""}, lines...), true
 		}
 
-		return st.markdownLines(it.Text, w, mark, "  "), true
+		return lines, true
 	case state.KindNotice:
 		if it.Level == state.LevelDebug {
 			return nil, true

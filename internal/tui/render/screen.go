@@ -28,11 +28,22 @@ type Frame struct {
 	Version string
 }
 
-// Screen draws the whole screen and returns the row where the composer starts.
+// Screen draws the whole screen and returns the row where the composer
+// starts; a file peeked at is drawn over it (peek.go).
 func Screen(s state.State, c *Cache, f Frame) (string, int) {
+	out, row := screen(s, c, f)
+	if s.Peek == nil || s.Mode == state.ModePicker || out == "" {
+		return out, row
+	}
+
+	return strings.Join(c.styles.overlayPeek(strings.Split(out, "\n"), s, f.Width, f.Height), "\n"), row
+}
+
+func screen(s state.State, c *Cache, f Frame) (string, int) {
 	if f.Width <= 0 || f.Height <= 0 {
 		return "", 0
 	}
+	c.styles.setLinks(s)
 	if len(s.Items) == 0 && len(c.entries) > 0 {
 		c.entries = map[string]cacheEntry{} // /clear, /new, or a reload: the old lines go
 	}

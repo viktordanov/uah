@@ -3,9 +3,11 @@ package render
 import (
 	"cmp"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/viktordanov/uah/internal/cmdparse"
@@ -112,11 +114,26 @@ func (st *Styles) parts(parts []cmdparse.Part) string {
 		case cmdparse.Faint:
 			b.WriteString(st.comment.Render(text))
 		case cmdparse.Plain:
-			b.WriteString(text)
+			if p.Path == "" {
+				b.WriteString(text)
+
+				continue
+			}
+			from, to := lineRange(p.Lines)
+			b.WriteString(st.linked(text, lipgloss.NewStyle(), st.fileLink(p.Path, from, to)))
 		}
 	}
 
 	return b.String()
+}
+
+// lineRange reads a read's lines, "1-360" or "12" (0: none).
+func lineRange(lines string) (from, to int) {
+	a, b, _ := strings.Cut(lines, "-")
+	from, _ = strconv.Atoi(a)
+	to, _ = strconv.Atoi(b)
+
+	return from, to
 }
 
 // noMatches is a search that found nothing: rg and grep exit 1 with no
