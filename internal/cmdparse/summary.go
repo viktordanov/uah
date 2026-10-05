@@ -2,6 +2,7 @@ package cmdparse
 
 import (
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,10 +19,14 @@ const (
 	Faint
 )
 
-// Part is a run of a summary's text in one style.
+// Part is a run of a summary's text in one style. A file a command reads
+// also has its Path, absolute when the Env has a workspace, and the line
+// range it reads ("1-360"), so the TUI can link it.
 type Part struct {
 	Text  string
 	Style Style
+	Path  string
+	Lines string
 }
 
 // Summary is how the TUI shows a command: a label for the tool column
@@ -104,7 +109,7 @@ func readParts(parsed []Parsed, env Env) []Part {
 			shown = path.Base(file)
 		}
 		prevDir = path.Dir(file)
-		parts = append(parts, Part{Text: shown, Style: Plain})
+		parts = append(parts, Part{Text: shown, Style: Plain, Path: Absolute(p.Path, env), Lines: p.Lines})
 		if p.Lines != "" {
 			parts = append(parts, Part{Text: ":" + p.Lines, Style: Dim})
 		}
@@ -159,6 +164,24 @@ func paths(ps []string, env Env) string {
 	}
 
 	return strings.Join(out, ", ")
+}
+
+// Absolute is p made absolute: under the home directory for ~ and ~/, and
+// under the workspace when relative. Without the directory it needs, p
+// comes back as it is.
+func Absolute(p string, env Env) string {
+	switch {
+	case p == "~" || strings.HasPrefix(p, "~/"):
+		if env.Home == "" {
+			return p
+		}
+
+		return filepath.Join(env.Home, p[1:])
+	case filepath.IsAbs(p) || env.Workspace == "":
+		return filepath.Clean(p)
+	}
+
+	return filepath.Join(env.Workspace, p)
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }

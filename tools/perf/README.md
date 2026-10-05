@@ -43,7 +43,7 @@ Numbers vary with the machine and its load. Compare runs from one machine, with 
 <!-- memoria:section id="scenarios" files="perf/scenarios.go perf/memory.go perf/tui.go perf/workload.go" -->
 ## Scenarios
 
-Each scenario builds its session in a fresh scratch home, measures one block, and cleans up. Scenarios marked "per size" run on each size of `-sizes` and on each copied real session; the others run on the small fixture.
+Each scenario builds its session in a fresh scratch home, measures one block, and cleans up. Scenarios marked "per size" run on each size of `-sizes` and on each copied real session; the others run on the small fixture. The TUI scenarios run the TUI with `[tui] file_links = "peek"`, uah's default, so paths are drawn as links and the agent's messages are looked up for them.
 
 | Scenario | Per size | Block | Its own measurements |
 | --- | --- | --- | --- |

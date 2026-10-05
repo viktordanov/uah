@@ -31,6 +31,13 @@ type Cache struct {
 	rows   []state.TextPos
 	window []string
 	top    int
+	// bottom is the transcript line on the window's bottom row and scrolled
+	// the lines below it, which the shell reports back while the window is
+	// pinned (Anchor); pill is where the new-output pill was drawn
+	// (overlay.go).
+	bottom   state.TextPos
+	scrolled int
+	pill     cells
 }
 
 // MaxScroll is how far the last frame's transcript could scroll up, or -1
@@ -38,9 +45,9 @@ type Cache struct {
 func (c *Cache) MaxScroll() int { return c.maxScroll }
 
 type cacheEntry struct {
-	version, width     int
-	reasoning, details bool
-	lines              []string
+	version, width, links int
+	reasoning, details    bool
+	lines                 []string
 }
 
 // NewCache is a render cache that draws with the theme's styles. A new
@@ -62,11 +69,11 @@ func (c *Cache) lines(it state.Item, width int, now time.Time, v view) []string 
 	if it.Live() {
 		return c.styles.itemLines(it, width, now, v)
 	}
-	if e, ok := c.entries[it.Key]; ok && e.version == it.Version && e.width == width && e.reasoning == v.reasoning && e.details == v.details {
+	if e, ok := c.entries[it.Key]; ok && e.version == it.Version && e.width == width && e.reasoning == v.reasoning && e.details == v.details && e.links == c.styles.linkGen {
 		return e.lines
 	}
 	lines := c.styles.itemLines(it, width, now, v)
-	c.entries[it.Key] = cacheEntry{version: it.Version, width: width, reasoning: v.reasoning, details: v.details, lines: lines}
+	c.entries[it.Key] = cacheEntry{version: it.Version, width: width, reasoning: v.reasoning, details: v.details, links: c.styles.linkGen, lines: lines}
 
 	return lines
 }
@@ -127,10 +134,10 @@ func (st *Styles) itemLines(it state.Item, w int, now time.Time, v view) []strin
 		return st.reviewLines(it, w, now, v.details)
 	case state.KindAssistant:
 		if it.Final {
-			return append([]string{"", st.accent.Render("● answer")}, st.markdownLines(it.Text, w, "  ", "  ")...)
+			return append([]string{"", st.accent.Render("● answer")}, st.linkWords(st.markdownLines(it.Text, w, "  ", "  "), it.Links)...)
 		}
 
-		return st.markdownLines(it.Text, w, st.dim.Render("  · "), "    ")
+		return st.linkWords(st.markdownLines(it.Text, w, st.dim.Render("  · "), "    "), it.Links)
 	case state.KindReasoning:
 		if !reasoning {
 			return nil

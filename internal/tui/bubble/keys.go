@@ -24,6 +24,9 @@ const (
 // its next tool call, and tab at the end of the run. Shift+Enter and ctrl+j
 // add a line.
 func (m Model) onKey(msg term.KeyPressMsg) (term.Model, term.Cmd) { //nolint:gocyclo // a dispatch switch over a closed set; see docs/documentation/architecture.md
+	if m.st.Peek != nil && m.st.Mode == state.ModeChat {
+		return m.onPeekKey(msg)
+	}
 	if m.st.Mode == state.ModePicker {
 		return m.onPickerKey(msg)
 	}

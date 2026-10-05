@@ -57,11 +57,13 @@ func TestTUI_ConfigSavesToTheUserFile(t *testing.T) {
 	assert.Regexp(t, `› Auto-compact +on at 90% +default`, dr.view())
 	assert.Regexp(t, `Effort +high +user file`, dr.view())
 
-	dr.key(term.KeyUp, 0) // wraps to Mouse
+	dr.key(term.KeyUp, 0) // wraps to File links
+	dr.key(term.KeyUp, 0) // Mouse
 	dr.key(term.KeySpace, 0)
 	dr.waitFor("saved tui.mouse = false") // on by default
 	assert.False(t, dr.m.View().Mouse, "the mouse is off at once")
 
+	dr.key(term.KeyDown, 0)
 	dr.key(term.KeyDown, 0)
 	dr.key(term.KeyDown, 0) // the token limit
 	dr.key(term.KeyEnter, 0)

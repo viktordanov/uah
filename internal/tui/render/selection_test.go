@@ -131,7 +131,7 @@ func TestSelectedText(t *testing.T) {
 
 // TestAt: the last frame maps a screen cell to the transcript line it
 // shows, with the line's text; the rows outside the transcript map to
-// nothing, and Edge tells above from below.
+// nothing, and Edge tells above from below and how far.
 func TestAt(t *testing.T) {
 	s, msg, _ := selectRun(t)
 	c := render.NewCache(render.Amber)
@@ -152,7 +152,8 @@ func TestAt(t *testing.T) {
 
 	_, _, ok = c.At(0, len(out)-1, false)
 	assert.False(t, ok, "the footer")
-	assert.Equal(t, 1, c.Edge(len(out)-1))
+	assert.Greater(t, c.Edge(len(out)-1), 1, "a row more for each row past the transcript")
+	assert.Equal(t, c.Edge(len(out)-1)-1, c.Edge(len(out)-2))
 	got, _, ok = c.At(3, len(out)-1, true)
 	require.True(t, ok, "clamped to the transcript's last line")
 	assert.Equal(t, 3, got.Col)

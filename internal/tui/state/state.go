@@ -112,9 +112,22 @@ type State struct {
 	// compact, Codex-like view.
 	Details bool
 	Scroll  int // lines scrolled up from the bottom
-	Picker  Picker
-	Menu    Menu
-	Now     time.Time
+	// Anchor, while the window is pinned (scrolled up, or a selection
+	// being dragged), is the transcript line on its bottom row; the
+	// renderer keeps that line there as the transcript grows below it or
+	// changes above it, and the shell reports the window back (Anchored;
+	// scroll.go).
+	Anchor TextPos
+	// NewBelow says output arrived below the pinned window, which the
+	// renderer shows as a pill over its last row until the window follows
+	// the bottom again.
+	NewBelow bool
+	// anchorLayout is the layout Anchor was reported in, so a resize or a
+	// change of view does not count as new output.
+	anchorLayout layout
+	Picker       Picker
+	Menu         Menu
+	Now          time.Time
 	// Windows finds a model's context window in the session's model
 	// catalog, for the footer's "N% context left" (nil: the default
 	// window). The shell sets it; the reducer only calls it.
@@ -158,11 +171,32 @@ type State struct {
 	// (selection.go); click counts double and triple clicks.
 	Selection *Selection
 	click     clicks
+	// FileLinks is what a click on a file path does: LinksPeek,
+	// LinksEditor, LinksOpen, or LinksOff, which draws no links ("" too).
+	// The shell sets it from [tui] file_links (links.go).
+	FileLinks string
+	// Host is this machine's name, for the links' file:// URLs. The shell
+	// sets it.
+	Host string
+	// Peek, when set, is a file shown in the overlay (peek.go).
+	Peek *Peek
+	// pressed is the link under the mouse's press, opened by a release
+	// that selected nothing; unlinked are the agent's messages whose words
+	// are not looked up yet (links.go).
+	pressed  *FileLink
+	unlinked []string
+	// waiting is a clicked link that opens unless a second click comes
+	// (LinkTimer with linkSeq).
+	waiting *FileLink
+	linkSeq int
+
+	// Toast is a short note drawn over the transcript's corner for a
+	// moment, such as the copy's (toast.go).
+	Toast *Toast
 
 	// Status is a transient hint in the footer, such as a pending confirmation.
 	Status      string
 	escArmed    time.Time
-	copied      time.Time // when Status became the copy notice
 	quitArmed   time.Time
 	Quitting    bool
 	nextNoticeN int

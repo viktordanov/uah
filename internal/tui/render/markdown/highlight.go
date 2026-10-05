@@ -63,26 +63,54 @@ func (r *Renderer) colorize(lang, code string) []string {
 	if lexer == nil || r.st.CodeStyle == nil || tooLarge(code, plain) {
 		return r.plainCode(plain)
 	}
-	it, err := lexer.Tokenise(nil, code)
-	if err != nil {
+	out, ok := format(lexer, r.st.CodeStyle, code, len(plain))
+	if !ok {
 		return r.plainCode(plain)
 	}
-	// Each line is formatted on its own, so its colors end with it.
-	out := make([]string, 0, len(plain))
+
+	return out
+}
+
+// format colors code with a lexer and a style, a string per line, each
+// line's colors ending with it; ok is false when chroma fails.
+func format(lexer chroma.Lexer, style *chroma.Style, code string, n int) (out []string, ok bool) {
+	it, err := lexer.Tokenise(nil, code)
+	if err != nil {
+		return nil, false
+	}
+	out = make([]string, 0, n)
 	var b strings.Builder
 	for _, tokens := range chroma.SplitTokensIntoLines(it.Tokens()) {
 		b.Reset()
-		if err := formatters.TTY16m.Format(&b, r.st.CodeStyle, chroma.Literator(tokens...)); err != nil {
-			return r.plainCode(plain)
+		if err := formatters.TTY16m.Format(&b, style, chroma.Literator(tokens...)); err != nil {
+			return nil, false
 		}
 		out = append(out, strings.ReplaceAll(b.String(), "\n", ""))
 	}
 	// The lexer may end the code with a newline of its own.
-	for len(out) < len(plain) {
+	for len(out) < n {
 		out = append(out, "")
 	}
 
-	return out[:len(plain)]
+	return out[:n], true
+}
+
+// Highlight colors a file's lines by the language its name says, with
+// style; text chroma has no lexer for, or too large to highlight (as a
+// code block), comes back plain. It keeps no cache, so any goroutine may
+// call it.
+func Highlight(style *chroma.Style, name string, lines []string) []string {
+	code := strings.Join(lines, "\n")
+	lexer := lexers.Match(name)
+	if lexer == nil || style == nil || tooLarge(code, lines) {
+		return lines
+	}
+	out, ok := format(chroma.Coalesce(lexer), style, code, len(lines))
+	if !ok {
+		return lines
+	}
+
+	return out
 }
 
 func (r *Renderer) plainCode(lines []string) []string {

@@ -3,6 +3,7 @@ package render
 import (
 	"cmp"
 	"fmt"
+	"math"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -27,11 +28,22 @@ type Frame struct {
 	Version string
 }
 
-// Screen draws the whole screen and returns the row where the composer starts.
+// Screen draws the whole screen and returns the row where the composer
+// starts; a file peeked at is drawn over it (peek.go).
 func Screen(s state.State, c *Cache, f Frame) (string, int) {
+	out, row := screen(s, c, f)
+	if s.Peek == nil || s.Mode == state.ModePicker || out == "" {
+		return out, row
+	}
+
+	return strings.Join(c.styles.overlayPeek(strings.Split(out, "\n"), s, f.Width, f.Height), "\n"), row
+}
+
+func screen(s state.State, c *Cache, f Frame) (string, int) {
 	if f.Width <= 0 || f.Height <= 0 {
 		return "", 0
 	}
+	c.styles.setLinks(s)
 	if len(s.Items) == 0 && len(c.entries) > 0 {
 		c.entries = map[string]cacheEntry{} // /clear, /new, or a reload: the old lines go
 	}
@@ -91,37 +103,23 @@ func transcript(s state.State, c *Cache, w, height int, head []string) []string 
 	if scroll, ok := backtrackScroll(s, c, w, height); ok {
 		s.Scroll = scroll
 	}
-	need := height + s.Scroll
-	var rev [][]string
-	var keys []string // each of rev's items
-	// below and selected place the message selected to go back to: the
-	// lines under it and its own.
-	count, below, selected := 0, -1, 0
-	i := len(s.Items) - 1
-	for ; i >= 0 && count < need; i-- {
-		lines := c.transcriptLines(s, i, w)
-		if len(lines) == 0 {
-			continue
-		}
-		if s.Backtrack != nil && s.Items[i].Key == s.Backtrack.Key {
-			below, selected = count, len(lines)
-		}
-		rev, keys = append(rev, lines), append(keys, s.Items[i].Key)
-		count += len(lines)
-	}
-	all := make([]string, 0, count)
-	for _, lines := range slices.Backward(rev) {
+	d := c.gather(s, w, height)
+	all := make([]string, 0, d.count)
+	for _, lines := range slices.Backward(d.rev) {
 		all = append(all, lines...)
 	}
 	c.maxScroll = -1
-	if i < 0 {
+	if d.whole {
 		if n := len(head); n > 0 && head[n-1] == "" && len(all) > 0 && all[0] == "" {
 			head = head[:n-1] // one blank line between the banner and an item that starts with one
 		}
 		all = append(slices.Clip(head), all...)
 		c.maxScroll = max(len(all)-height, 0)
+		if n := len(all) - d.count; d.banner >= 0 && n > 0 {
+			d.scroll = len(all) - 1 - min(d.banner, n-1) // anchored in the banner
+		}
 	}
-	end := len(all) - min(s.Scroll, max(len(all)-height, 0))
+	end := len(all) - min(d.scroll, max(len(all)-height, 0))
 	start := max(end-height, 0)
 	window := all[start:end]
 	out := make([]string, 0, height)
@@ -132,11 +130,75 @@ func transcript(s state.State, c *Cache, w, height int, head []string) []string 
 		out = append(out, ansi.Truncate(l, w, ""))
 	}
 	if s.Backtrack != nil {
-		c.styles.fade(out[height-len(window):], start, len(all)-below-selected, selected)
+		c.styles.fade(out[height-len(window):], start, len(all)-d.below-d.selected, d.selected)
 	}
-	c.selectWindow(s, out, rowRefs(keys, rev, len(all)-count)[start:end])
+	refs := rowRefs(d.keys, d.rev, len(all)-d.count)[start:end]
+	c.scrolled, c.bottom = len(all)-end, state.TextPos{}
+	if len(refs) > 0 {
+		c.bottom = refs[len(refs)-1]
+	}
+	c.selectWindow(s, out, refs)
+	c.notes(s, out, w)
 
 	return out
+}
+
+// gathered are the items a window draws, from the bottom up.
+type gathered struct {
+	rev  [][]string // each item's lines, bottom item first
+	keys []string   // each of rev's items
+	// count is their lines, and scroll how many of them lie below the
+	// window; whole says every item is drawn.
+	count, scroll int
+	whole         bool
+	// banner is the anchor's line when it is in the banner, else -1.
+	banner int
+	// below and selected place the message selected to go back to: the
+	// lines under it and its own.
+	below, selected int
+}
+
+// gather draws the items from the bottom up until the window is full. A
+// pinned window ends at its anchor (state/scroll.go): the lines below the
+// anchor are the scroll, however many arrived since.
+func (c *Cache) gather(s state.State, w, height int) gathered {
+	anchor := -2 // the anchor's item, or -2 for none
+	if s.Backtrack == nil && s.Anchor.Key != "" && s.Pinned() {
+		anchor = s.Order(s.Anchor.Key)
+	}
+	d := gathered{scroll: s.Scroll, below: -1, banner: -1}
+	need := height + d.scroll
+	if anchor == -1 {
+		d.banner = s.Anchor.Line
+	}
+	if anchor >= -1 {
+		need = math.MaxInt // until the anchor is found, the banner after every item
+	}
+	i := len(s.Items) - 1
+	for ; i >= 0 && d.count < need; i-- {
+		lines := c.transcriptLines(s, i, w)
+		if len(lines) == 0 {
+			continue
+		}
+		if i <= anchor {
+			// The anchor's line; an item the view does not draw anchors at
+			// the end of the drawn item above it.
+			line := len(lines) - 1
+			if i == anchor {
+				line = min(s.Anchor.Line, line)
+			}
+			d.scroll, anchor = d.count+len(lines)-1-line, -2
+			need = d.scroll + height
+		}
+		if s.Backtrack != nil && s.Items[i].Key == s.Backtrack.Key {
+			d.below, d.selected = d.count, len(lines)
+		}
+		d.rev, d.keys = append(d.rev, lines), append(d.keys, s.Items[i].Key)
+		d.count += len(lines)
+	}
+	d.whole = i < 0
+
+	return d
 }
 
 func (st *Styles) headerLine(s state.State, w int) string {

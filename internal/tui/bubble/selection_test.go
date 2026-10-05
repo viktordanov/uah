@@ -3,12 +3,15 @@ package bubble_test
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/viktordanov/uah/internal/tui/bubble"
 	"github.com/viktordanov/uah/internal/tui/term"
 )
 
@@ -99,9 +102,9 @@ func TestTUI_SelectAndCopy(t *testing.T) {
 	assert.Empty(t, copies)
 }
 
-// TestTUI_SelectWhileScrolling: dragging to the transcript's top row
-// scrolls it and the selection grows with it, and so does the wheel during
-// a drag; the copy has every line selected.
+// TestTUI_SelectWhileScrolling: a drag held on the transcript's top row
+// scrolls it on a tick and the selection grows with it, and so does the
+// wheel during a drag; the copy has every line selected.
 func TestTUI_SelectWhileScrolling(t *testing.T) {
 	d, copies := copyDeps(t)
 	d.send(term.WindowSizeMsg{Width: 100, Height: 60})
@@ -116,11 +119,9 @@ func TestTUI_SelectWhileScrolling(t *testing.T) {
 
 	x, y := d.at("second message")
 	d.press(x+6, y)
-	for range 16 {
-		d.move(0, 0) // the top row: each move scrolls a line
-	}
+	d.move(0, 0) // the top row: held there, it scrolls
+	d.waitFor("first message")
 	assert.Contains(t, d.view(), "scrolled up")
-	assert.Contains(t, d.view(), "first message")
 	d.release(0, 0)
 	text := d.copied(copies, "copied ")
 	assert.True(t, strings.HasSuffix(text, "second"), text)
@@ -135,4 +136,132 @@ func TestTUI_SelectWhileScrolling(t *testing.T) {
 	text = d.copied(copies, "copied ")
 	assert.True(t, strings.HasSuffix(text, "second message"), "the wheel moved the text under the mouse: %q", text)
 	assert.Greater(t, strings.Count(text, "\n"), 0, text)
+}
+
+// TestTUI_EdgeScroll: a drag held below the transcript scrolls down, faster
+// further out, and stops at the bottom; held on the top row it scrolls up
+// to the top and stops there, so no tick runs while the mouse rests.
+func TestTUI_EdgeScroll(t *testing.T) {
+	d, copies := copyDeps(t)
+	d.send(term.WindowSizeMsg{Width: 100, Height: 60})
+	for i, text := range []string{"first message", "second message", "third message"} {
+		d.typeText(text)
+		d.key(term.KeyEnter, 0)
+		d.until("the answer", func() bool { return strings.Count(d.view(), "• hello") == i+1 })
+		d.waitIdle()
+	}
+	d.send(term.WindowSizeMsg{Width: 100, Height: 20})
+	for range 30 {
+		d.send(term.MouseWheelMsg{Button: term.MouseWheelUp})
+	}
+	require.Contains(t, d.view(), "first message", "at the top")
+
+	x, y := d.at("first message")
+	d.press(x, y)
+	_, below := d.at("Ask uah to do anything") // the composer, well below the transcript
+	d.move(x, below)
+	d.until("the bottom", func() bool { return !strings.Contains(d.view(), "scrolled up") })
+	assert.Contains(t, d.view(), "third message")
+	d.until("the tick stops", func() bool { return !d.m.(bubble.Model).EdgeScrolling() })
+	d.release(x, below)
+	text := d.copied(copies, "copied ")
+	assert.True(t, strings.HasPrefix(text, "first message"), text)
+	assert.Contains(t, text, "third message")
+
+	x, y = d.at("third message")
+	d.press(x+5, y)
+	d.move(x, 0)
+	d.waitFor("first message")
+	d.until("the tick stops at the top", func() bool { return !d.m.(bubble.Model).EdgeScrolling() })
+	d.release(x, 0)
+	text = d.copied(copies, "copied ")
+	assert.Contains(t, text, "first message")
+	assert.True(t, strings.HasSuffix(text, "third"), text)
+}
+
+// TestTUI_CopyToast: the copy's toast is drawn over the transcript's last
+// row and goes after two seconds: no other row moves, and the footer and
+// the status line stay as they were.
+func TestTUI_CopyToast(t *testing.T) {
+	var elapsed atomic.Int64 // the clock, which commands read in their goroutines
+	start0 := time.Now()
+	dp := deps(t, "simple.jsonl")
+	dp.Mouse, dp.Now = true, func() time.Time { return start0.Add(time.Duration(elapsed.Load())) }
+	copies := make(chan string, 8)
+	dp.CopyText = func(_ context.Context, text string) error { copies <- text; return nil }
+	d := start(t, dp)
+	d.typeText("hi there")
+	d.key(term.KeyEnter, 0)
+	d.waitFor("• hello")
+	d.waitIdle()
+	before := strings.Split(d.view(), "\n")
+
+	x, y := d.at("hi there")
+	d.press(x, y)
+	d.move(x+7, y)
+	d.release(x+7, y)
+	d.copied(copies, "copied 1 line")
+	after := strings.Split(d.view(), "\n")
+	require.Len(t, after, len(before))
+	changed := 0
+	for i := range before {
+		if before[i] != after[i] {
+			changed++
+			assert.True(t, strings.HasSuffix(strings.TrimRight(after[i], " "), "copied 1 line"), "the toast's row: %q", after[i])
+		}
+	}
+	assert.Equal(t, 1, changed, "only the toast's row")
+
+	elapsed.Store(int64(2 * time.Second))
+	d.until("the toast goes", func() bool { return !strings.Contains(d.view(), "copied") })
+	assert.Equal(t, before, strings.Split(d.view(), "\n"))
+}
+
+// TestTUI_ScrolledUpStaysPut: scrolled up, output that arrives below (a
+// command's) moves nothing on the screen but the pill over the
+// transcript's last row, and a click on the pill returns to the bottom.
+func TestTUI_ScrolledUpStaysPut(t *testing.T) {
+	d, _ := copyDeps(t)
+	d.typeText("hi")
+	d.key(term.KeyEnter, 0)
+	d.waitFor("• hello")
+	d.waitIdle()
+	for range 3 {
+		d.typeText("/help")
+		d.key(term.KeyEnter, 0)
+	}
+	for range 4 {
+		d.send(term.MouseWheelMsg{Button: term.MouseWheelUp})
+	}
+	before := strings.Split(d.view(), "\n")
+	require.Contains(t, d.view(), "scrolled up")
+
+	d.typeText("/help")
+	d.key(term.KeyEnter, 0)
+	after := strings.Split(d.view(), "\n")
+	require.Len(t, after, len(before))
+	pill := -1
+	for i := range before {
+		if before[i] != after[i] {
+			assert.Contains(t, after[i], "New activity · ↓ Back to bottom · end", "only the pill's row changes")
+			pill = i
+		}
+	}
+	require.GreaterOrEqual(t, pill, 0, "the pill shows")
+
+	x, _ := d.at("New activity")
+	d.press(x+2, pill)
+	assert.NotContains(t, d.view(), "scrolled up", "the click returned to the bottom")
+	assert.NotContains(t, d.view(), "New activity")
+
+	// A resize that changes no line below the window is still a new
+	// layout: output after it shows the pill.
+	for range 4 {
+		d.send(term.MouseWheelMsg{Button: term.MouseWheelUp})
+	}
+	d.send(term.WindowSizeMsg{Width: 99, Height: 30})
+	require.NotContains(t, d.view(), "New activity")
+	d.typeText("/help")
+	d.key(term.KeyEnter, 0)
+	assert.Contains(t, d.view(), "New activity")
 }

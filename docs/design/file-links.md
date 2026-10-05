@@ -1,0 +1,59 @@
+# File links and the peek overlay
+
+Status: built (ledger item 138), for v1.9.5. The [TUI README](../../internal/tui/README.md#file-links) holds the current contract; this record keeps the research and the decisions.
+
+The owner, 2026-10-05: "Rendering file paths as links that just open with the default editor. Potentially that could be configurable, because clicking on a file could also open a window that's like an overlay (centered, not full screen, above the current session) that just renders that file's content for quick peeking. That can be a global configuration option."
+
+1. [What Codex does](#what-codex-does)
+2. [What terminals do](#what-terminals-do)
+3. [The design](#the-design)
+4. [Decisions](#decisions)
+5. [Open](#open)
+
+## What Codex does
+
+Checked against Codex rust-v0.160.0. Paths are under `codex-rs/`.
+
+- **OSC 8 links, carried beside the text.** `tui/src/terminal_hyperlinks.rs`: a line's links are kept as column ranges next to its text (`HyperlinkLine`), so layout measures and wraps plain text, and the OSC 8 bytes are added only when the text reaches the terminal buffer or the scrollback writer. A destination over 8 KiB is left as text.
+- **What is linked.** Web links (`http`, `https` with a host) in Markdown. File links only as "trusted workspace files", from generated visualizations and spoken artifacts (`history_cell/spoken_artifacts.rs`): a relative path with no `..`, no part starting with a dot, one of 17 source and text extensions, that canonicalizes to an existing regular file inside the canonical workspace. "General Markdown never promotes file URLs." Tool lines and patch headers are not linked.
+- **No clicks of its own.** Codex captures the mouse only on Windows (`tui/alternate_screen.rs`); elsewhere the terminal's own cmd+click or ctrl+click opens a link. There is no overlay to read a file in.
+- **`file_opener`** (`config/defaults.toml`, `"vscode"` by default; also `vscode-insiders`, `windsurf`, `cursor`, `none`): the URI scheme Codex rewrites the model's file citations into, so the terminal opens them in that editor. It is about citations in the answer, not a click action.
+
+## What terminals do
+
+- **OSC 8** (`ESC ] 8 ; params ; URI ST`): iTerm2, kitty, WezTerm, Ghostty, Alacritty, foot, VTE terminals (GNOME Terminal, Tilix), Windows Terminal, and VS Code's terminal open a link on cmd+click or ctrl+click; Apple's Terminal shows the text without the link. tmux passes it on from 3.4 with `terminal-features` `hyperlinks`. The params are `key=value` pairs separated by `:`; `id` is the only key defined, and terminals ignore the others.
+- **With the mouse reported**, a plain click goes to the program; the terminal's own link click needs its modifier, as its selection does (Option in iTerm2 and Terminal, Shift in most others).
+- **The link is part of the pen**: like a color, it stays on until it is ended (an empty URI), so a link left open runs into whatever is written next, also on another row, and an erase may carry it.
+
+## The design
+
+- **The links are in the lines** (`render/links.go`). Where a path is drawn it is wrapped in an OSC 8 hyperlink to `file://host/path` and underlined: a READ line's files (`cmdparse.Part.Path`, made absolute against the workspace, with the read's lines), a patch's and `/diff`'s file headers (at the first changed line; a deleted file is no link), a review finding's place (its lines), and the words of the agent's messages that name a file. The link's line or range is the hyperlink's parameter `line=12-20`. A link is drawn only where the line is cut, so `ansi.Truncate` keeps its end; a Markdown word the wrap splits is linked on both of its lines. Every width measure in `render` and `term` skips escape sequences, so the links move nothing; the cache keeps them with each item's lines and nothing is computed per frame or while idle. With `file_links = "off"`, or in a state without it, no link is drawn.
+- **The click finds the link in the line under it** (`Cache.LinkAt`): it decodes the last frame's line at that row up to the cell and reads the hyperlink in force there. The shell passes it with the press (`state.MousePress.Link`). A release that selected nothing starts the double click's window (half a second, `EffLinkTimer`); with no second press in it, the link opens (`LinkTimer`, `state/links.go`); any other press first, on the pill or the composer too, or a key or a paste, cancels it (`CancelLink`), so the overlay never opens over typing. So a drag over a path selects it and a double click selects the word, as before, and opens nothing. Feedback is a toast (`State.ShowToast`): "opened a.go in code", or "can't open a.go: …".
+- **The agent's words are looked up off the loop.** When a message of the agent's is finished (not streaming), the reducer queues it; after the event, `EffResolveLinks` carries its candidate words (`state.LinkWord`: inline code or plain words with a slash or an extension, with an optional `:12`, `:12-20`, or `#L12`, outside fenced code, at most 64). The shell resolves each under the workspace (`~` under home), follows symlinks, and keeps only regular files whose resolved path is inside the resolved workspace (`bubble/links.go`); `LinksResolved` puts them on the message (`Item.Links`), which the renderer links by the same `LinkWord`. A resumed session's messages go once, after it opens.
+- **The renderer ends every link with its row** (`term/screen.go`, `writeClipped`): a written row that holds `ESC ] 8 ;` ends with an empty link, so a link cut at the row's edge, or left open, never reaches another row. A row whose unchanged start holds a link is written whole, since only SGR sequences count as safe before a change; a link after the change is written from the change.
+- **The peek overlay** (`state/peek.go`, `render/peek.go`): `Peek` holds the link, the file's lines, a note, and the first line shown. The shell reads the file in a command and answers with `PeekLoaded`, with the overlay's height so the link's line starts near its top third. `render.Screen` draws the screen as usual and then replaces the overlay's cells, row by row, so nothing under it moves and the session goes on. It is the panel's frame (the accent border, the title in its top edge, the keys in its bottom one), 80% of the screen each way and at least 60x20, or the whole screen below that; the title is the path relative to the workspace (or under `~`) and the link's lines; the body is the file's lines with their numbers, the link's lines on the band, highlighted by the file's name with the code blocks' chroma style (`markdown.Highlight`, called where the file is read, off the loop).
+- **Reading a file** (`readPeek`): the path's symlinks are resolved, a path under `/dev`, `/proc`, or `/sys` is refused, and the file must be regular; it is opened without blocking and checked again once open, so a FIFO swapped in after the check does not hang the read. At most 2 MB and 20,000 lines are read, cut at the last whole line with a note; a line longer than 4 KB is cut; a NUL byte in the first 8 KB makes it "binary file, not shown". Control characters (but tab) and invalid UTF-8 become U+FFFD, so no escape sequence in a file reaches the terminal.
+- **The editor** (`editFile`): `$VISUAL`, else `$EDITOR`, split as ctrl+g splits it. `+12 path` for vi, vim, nvim, nano, emacs, emacsclient, micro, and kak; `--goto path:12` for code, code-insiders, codium, cursor, and windsurf; `path:12` for zed, subl, and helix (`hx`); the path alone for any other. Terminal editors run as ctrl+g's does, through `term.Exec`, with the terminal released and taken back; code, cursor, codium, windsurf, zed, and subl start on their own, without `--wait`, in a process group of their own, and outlive uah.
+- **The system's opener** (`openFile`): `open` on macOS, `xdg-open` elsewhere, started on its own. A file the opener would run rather than show is refused: one with an execute bit, or a launcher by its extension (`.command`, `.tool`, `.terminal`, `.app`, `.scpt`, `.applescript`, `.workflow`, `.desktop`, `.jar`, `.webloc`, `.inetloc`, `.fileloc`).
+
+## Decisions
+
+- **Default `peek`.** It keeps the user in the session, works the same over ssh and in tmux (where `open` and a windowed editor act on the remote machine, or nothing), starts no program on a click, and reads a file without changing it. `editor` and `open` are one setting away, and `e` and `o` in the overlay reach them from a peek.
+- **Links inside the lines, not beside them.** Codex carries links beside the text and adds them at the terminal; uah's renderer is a line renderer whose lines are strings with SGR, and `x/ansi` measures, cuts, and strips OSC 8 as it does SGR, so the links ride in the lines with no second structure to keep in step, the cache keeps them, and the click reads them back. The cost: a row with a link before its change is written whole, and an overlay or a selection that cuts through a link keeps it well formed but split.
+- **OSC 8 on whenever links are.** The renderer stays correct with it: the comparison with `x/vt` now checks every cell's link too, over the real frames and 4,800 random ones with links among the styles, and a test cuts links at the row's edge and leaves one open. So there is no separate switch: `file_links = "off"` draws neither.
+- **The line in the parameters.** `file://` URLs have no line; a fragment (`#L12`) breaks `open` and some terminals' handling, while unknown parameters are ignored by every terminal checked.
+- **A ";" in a path is `%3B`** in the URL: some parsers (`x/vt`, ultraviolet) split the sequence at every `;`.
+- **Always underlined, no hover.** The mouse is reported in mode 1002, which sends motion only while a button is down; hover needs mode 1003, a motion event for every cell the pointer crosses. The underline marks what a click opens.
+- **Markdown links stay conservative**: only words that name an existing regular file inside the workspace, never one outside it, never a guess at a bare name without a slash or an extension, nothing in fenced code. Tool lines, headers, and review places link wherever the path is (also outside the workspace), since the agent or the reviewer named that file and the click checks it again.
+- **No flag.** `[tui] mouse` and `title` have none, so `file_links` has none either; `/config` changes it, at once.
+- **A click waits half a second.** Opening on the first release made a double click open the overlay (or start the editor) before its second press arrived, which then landed in the overlay instead of selecting the word. Waiting the double click's window costs that much delay before the overlay opens.
+- **Text from paths and errors is made printable** (`state.Printable`): the overlay's title and note and the toasts show a path's control characters as U+FFFD, as a file's lines do, since a symlink's target or an error message can carry an escape sequence.
+- **The overlay draws only with room for its frame and a line** (3 rows and 4 columns), and a wide character its right edge cuts leaves a space, so the columns after it stay in place.
+- **The overlay takes every key** until it closes, also while an approval or the agent's questions wait; its bottom edge then says "waiting for you below". A click outside it closes it; the wheel scrolls it.
+- **Helix, zed, and subl take `path:12`**, not `+12` or `--goto`: their command lines read a line after the path, and `--goto` is VS Code's.
+
+## Open
+
+- Links in the detailed view's command lines (the raw command, not its READ summary), in the agent view's clicks (its lines carry links for the terminal, but a click there selects), and in notices.
+- A path with spaces in the agent's text is not found (words split at spaces).
+- Highlighting stops at 512 KB or 10,000 lines, as code blocks do; a larger file shows plain.

@@ -61,6 +61,7 @@ func fileSettings(workspace string, l config.Layers, r Resolved, cfg config.Conf
 		added(l, "tui.details", cfg.TUI.Details, func(c config.Config) any { return c.TUI.Details }),
 		overridden(l, "tui.mouse", cfg.TUI.MouseOn(), func(c config.Config) any { return c.TUI.Mouse }),
 		overridden(l, "tui.title", cfg.TUI.TitleOn(), func(c config.Config) any { return c.TUI.Title }),
+		overridden(l, "tui.file_links", cfg.TUI.FileLinksMode(), func(c config.Config) any { return c.TUI.FileLinks }),
 		overridden(l, "history.persistence", first(cfg.History.Persistence, string(history.SaveAll)), func(c config.Config) any { return c.History.Persistence }),
 		overridden(l, "history.max_bytes", historyMaxBytes(cfg.History), func(c config.Config) any { return c.History.MaxBytes }),
 		overridden(l, "features.goals", !r.Goals.Disabled, func(c config.Config) any { return c.Features.Goals }),

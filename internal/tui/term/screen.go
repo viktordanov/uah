@@ -3,6 +3,7 @@ package term
 import (
 	"bytes"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
@@ -16,6 +17,11 @@ import (
 // column), and every write erases what was there first, so one it counts
 // narrower leaves nothing behind. A line wider than the row by uah's own
 // count is cut to the row (clip).
+//
+// A line may hold OSC 8 hyperlinks: they take no cells in any measure,
+// a row that holds one before its change is written whole (only SGR
+// sequences count as safe before a change), and each written row ends any
+// link it opened.
 //
 // Three things keep a frame small:
 //   - Rows whose line did not change are not written.
@@ -119,8 +125,7 @@ func (s *Screen) rows(lines []string) {
 			s.writeRow(y, s.shown[y], line)
 		} else if line != "" {
 			s.move(y, 0)
-			s.buf.WriteString(clip(line, s.w))
-			s.buf.WriteString("\x1b[m")
+			s.writeClipped(line, s.w)
 		}
 		s.shown[y] = line
 	}
@@ -163,15 +168,24 @@ func (s *Screen) writeRow(y int, old, line string) {
 			s.move(y, col)
 			s.buf.WriteString("\x1b[m\x1b[K")
 			s.buf.WriteString(sgr)
-			s.buf.WriteString(clip(line[at:], s.w-col))
-			s.buf.WriteString("\x1b[m")
+			s.writeClipped(line[at:], s.w-col)
 
 			return
 		}
 	}
 	s.move(y, 0)
 	s.buf.WriteString("\x1b[m\x1b[2K")
-	s.buf.WriteString(clip(line, s.w))
+	s.writeClipped(line, s.w)
+}
+
+// writeClipped writes line cut to w cells, then ends its styles and any
+// hyperlink (OSC 8) it opened, so a link cut with the row, or left open,
+// does not run on into the next row written.
+func (s *Screen) writeClipped(line string, w int) {
+	s.buf.WriteString(clip(line, w))
+	if strings.Contains(line, "\x1b]8;") {
+		s.buf.WriteString("\x1b]8;;\x1b\\")
+	}
 	s.buf.WriteString("\x1b[m")
 }
 

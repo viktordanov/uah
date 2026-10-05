@@ -26,6 +26,10 @@ func Reduce(s State, ev any) (State, []Effect) {
 		ev = DraftChanged{}
 	}
 	s, effects := reduce(s, ev)
+	s.follow()
+	if len(s.unlinked) > 0 {
+		effects = append(effects, s.resolveLinks()...)
+	}
 
 	return s, append(effects, recorded...)
 }
@@ -34,7 +38,7 @@ func reduce(s State, ev any) (State, []Effect) {
 	if s.index == nil {
 		s.index = map[string]int{}
 	}
-	if effects, ok := s.onSelectionOrShell(ev); ok {
+	if effects, ok := s.onPointer(ev); ok {
 		return s, effects
 	}
 	if s.onReview(ev) {
@@ -52,6 +56,7 @@ func reduce(s State, ev any) (State, []Effect) {
 	case Tick:
 		s.Now = e.Now
 		s.expireConfirmations()
+		s.expireToast()
 		if s.View != nil {
 			s.View.St.Now = e.Now
 			s.View.St.expireConfirmations()
@@ -274,9 +279,11 @@ func (s *State) onIntent(ev any) (State, []Effect) { //nolint:gocyclo // a dispa
 	case ToggleDetails:
 		s.Details = !s.Details
 	case ScrollBy:
-		s.Scroll = max(0, s.Scroll+e.Lines)
+		s.Scroll, s.Anchor = max(0, s.Scroll+e.Lines), TextPos{} // the shell reports the new window
 	case ScrollToBottom:
-		s.Scroll = 0
+		s.Scroll, s.Anchor = 0, TextPos{} // also during a drag, which keeps the window pinned
+	case Anchored:
+		s.anchored(e)
 	case StepEffort:
 		return s.stepEffort(e.Delta)
 	case CycleAdaptive:
@@ -350,14 +357,13 @@ func (s *State) put(it Item) {
 	if i, ok := s.index[it.Key]; ok {
 		it.Version = s.Items[i].Version + 1
 		s.Items[i] = it
+		s.noteLinks(&s.Items[i])
 
 		return
 	}
 	s.index[it.Key] = len(s.Items)
 	s.Items = append(s.Items, it)
-	if s.Scroll > 0 {
-		s.Scroll++ // keep the view anchored while the user reads back
-	}
+	s.noteLinks(&s.Items[len(s.Items)-1])
 }
 
 // update changes the item with key in place and reports whether it exists.
@@ -368,6 +374,7 @@ func (s *State) update(key string, fn func(*Item)) bool {
 	}
 	fn(&s.Items[i])
 	s.Items[i].Version++
+	s.noteLinks(&s.Items[i])
 
 	return true
 }

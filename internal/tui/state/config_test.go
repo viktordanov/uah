@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/viktordanov/uagent/core"
+
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
@@ -25,6 +27,7 @@ func configValues() map[string]state.ConfigValue {
 		"adaptive_effort":                {Value: "off", Source: "default"},
 		"tui.details":                    {Value: "false", Source: "default"},
 		"tui.mouse":                      {Value: "false", Source: "user file"},
+		"tui.file_links":                 {Value: "peek", Source: "default"},
 	}
 }
 
@@ -53,7 +56,7 @@ func TestConfig_OpensAndShowsValuesWithSources(t *testing.T) {
 
 	s, _ = apply(s, state.ConfigLoaded{Path: "/cfg.toml", Values: configValues()})
 	rows := s.ConfigRows()
-	require.Len(t, rows, 11)
+	require.Len(t, rows, 12)
 	got := map[string][2]string{}
 	for _, r := range rows {
 		got[r.Label] = [2]string{r.Value, r.Source}
@@ -65,6 +68,7 @@ func TestConfig_OpensAndShowsValuesWithSources(t *testing.T) {
 	assert.Equal(t, [2]string{"off", "user file"}, got["Mouse"])
 	assert.Equal(t, [2]string{"live", "default"}, got["Web search"])
 	assert.Equal(t, [2]string{"off", "default"}, got["Adaptive effort"], "off is shown as is")
+	assert.Equal(t, [2]string{"peek", "default"}, got["File links"])
 
 	s, _ = apply(s, state.ConfigEsc{})
 	assert.Nil(t, s.Config, "esc closes")
@@ -85,6 +89,28 @@ func TestConfig_TogglesAndAppliesLive(t *testing.T) {
 	s = openConfig(t, opened(), "Details view")
 	s, _ = apply(s, state.ConfigEnter{})
 	assert.True(t, s.Details)
+}
+
+// TestConfig_FileLinks: the row cycles peek, editor, open, and off, applies
+// at once, and turning links on looks up the words of the messages shown.
+func TestConfig_FileLinks(t *testing.T) {
+	s := opened()
+	s.FileLinks = state.LinksOff
+	s, _ = apply(s, core.AssistantMessage{Text: "See `main.go`.", Final: true})
+	s = openConfig(t, s, "File links")
+	s, effects := apply(s, state.ConfigChange{Delta: 1})
+	assert.Equal(t, state.EffSaveConfig{Key: "tui.file_links", Value: "editor"}, effects[0])
+	assert.Equal(t, state.LinksEditor, s.FileLinks, "applies at once")
+	require.Len(t, effects, 2, "links on: the shown messages are looked up")
+	assert.Equal(t, []string{"main.go"}, effects[1].(state.EffResolveLinks).Messages[0].Words)
+
+	for _, want := range []string{"open", "off", "peek"} {
+		s, effects = apply(s, state.ConfigChange{Delta: 1})
+		assert.Equal(t, state.EffSaveConfig{Key: "tui.file_links", Value: want}, effects[0])
+		assert.Equal(t, want, s.FileLinks)
+	}
+	s, _ = apply(s, state.ConfigSaved{Key: "tui.file_links", Value: "peek"})
+	assert.Contains(t, s.Items[len(s.Items)-1].Text, "saved tui.file_links = peek to /home/me/.config/uagent/config.toml; applies now")
 }
 
 // TestConfig_WebSearch: the row cycles web_search's values and applies to

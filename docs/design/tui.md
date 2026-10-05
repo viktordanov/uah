@@ -137,6 +137,16 @@ Run inspector (`tab` on a finished run, or `uah --view <run-dir>`): the statisti
 
 Model and effort dialog: provider default, recently used models, and a free-text row, then the effort list. The footer says whether the change applies now or at the next run.
 
+### Scrolling back
+
+Added 2026-10-05 (ledger row 137, the owner: "when we scroll up and new content comes in, it shouldn't keep pushing the screen"). The transcript is virtualized, drawn from the bottom up, so a window scrolled up by a count of lines moved up with every line that arrived below it; only a whole new item was counted back. Now the window holds its text, as Codex's owned transcript does (`codex-rs/tui/src/transcript_view/follow_control.rs` on `main`, 2026-10-05):
+
+- **The anchor.** While the window is pinned (scrolled up, or a drag selecting text), `State.Anchor` names the transcript line on its bottom row: an item's key and a line of its drawing. The renderer draws from the bottom up until it reaches that item and ends the window there, so the lines below the anchor are the scroll, however many arrived. An item above the window that grows, a resize, ctrl+t, and `/reasoning` leave the anchor's line on the bottom row; an item the view does not draw anchors at the drawn item above it; an anchor whose item left (a stream reset) falls back to the lines scrolled. A rewind's cut and sending a message return to the bottom.
+- **The report.** The state cannot measure lines, so the shell lays out the frame after each update while the window is pinned and reports it back (`state.Anchored`: the bottom row's line, the lines below it, the width; `bubble/scroll.go`). More lines below the same anchor in the same layout are new output (`State.NewBelow`). Laying out in `Update` costs nothing extra: the frame that follows finds every item in the cache.
+- **The pill.** New output below shows as Codex's control, ` New activity · ↓ Back to bottom · end ` (shorter at narrow widths, down to ` ↓ end `), centered over the window's last row on the accent. It is an overlay, not a row, so nothing moves when it comes or goes. It stays until the window follows the bottom again (end, scrolling down, sending), hides while a drag selects, and a click on it goes to the bottom. Codex's key is esc; uah's esc interrupts and goes back, so the pill names end.
+- **Toasts.** The copy's notice took the status line's row and moved the screen; it is now a toast (`State.Toast`, two seconds) over the window's last row on the right, or its first row while the pill shows. The working line and the status line are untouched. `render.Styles.Note` draws any one-row overlay, for other notes later.
+- **Edge scroll.** A drag held on the transcript's top row or below it scrolls on a 50 ms tick, faster further out, as Codex scrolls a row a frame; the tick runs only while the mouse is held there and the transcript can still move, so the idle TUI still does not wake up (`idle/tui` about 2 wakeups a second).
+
 ## Input and steering
 
 What Enter does depends on the session state and the engine (see [harness.md](harness.md#two-engines)):

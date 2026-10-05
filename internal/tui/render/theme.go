@@ -97,6 +97,9 @@ type Styles struct {
 	// notice is information notices' gray; comment is the code comments'
 	// color, which an MCP call's result and a heredoc's body take.
 	notice, comment lipgloss.Style
+	// chip is a note drawn over the transcript (overlay.go): the band's
+	// color on the accent, as the header, so it stands out on the band too.
+	chip lipgloss.Style
 	// yoloChip is yolo mode in the header: the warning color on the band,
 	// since the header's background is the accent.
 	yoloChip lipgloss.Style
@@ -119,6 +122,10 @@ type Styles struct {
 	diffStyles map[string]diffStyle
 	// markdown draws agent messages and keeps their finished blocks.
 	markdown *markdown.Renderer
+	// links is how file paths are drawn as links, and linkGen counts its
+	// changes, which the cache's lines carry (links.go).
+	links   linkConf
+	linkGen int
 }
 
 // NewStyles builds a theme's styles.
@@ -134,7 +141,7 @@ func NewStyles(t Theme) *Styles {
 	st.italic = lipgloss.NewStyle().Foreground(t.Dim).Italic(true)
 	st.header = lipgloss.NewStyle().Foreground(t.Band).Background(t.Accent)
 	st.yoloChip = lipgloss.NewStyle().Foreground(t.Warn).Background(t.Band).Bold(true)
-	st.selected = st.header
+	st.selected, st.chip = st.header, st.header
 	st.tool = lipgloss.NewStyle().Foreground(t.Accent)
 	st.ok = lipgloss.NewStyle().Foreground(t.Good)
 	st.codeSpan = lipgloss.NewStyle().Foreground(t.Name)

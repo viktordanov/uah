@@ -45,6 +45,9 @@ func (m Model) run(e state.Effect) term.Cmd { //nolint:gocyclo // a dispatch swi
 	if cmd, ok := m.runMCP(e); ok {
 		return cmd
 	}
+	if cmd, ok := m.runLinks(e); ok {
+		return cmd
+	}
 	ctx, store := m.ctx, m.deps.Images
 	switch e := e.(type) {
 	case state.EffSubmit:
