@@ -1,0 +1,29 @@
+REVIEW  changes against 'main'
+        5 findings (1 P0 · 2 P1 · 1 P3) · ✗ patch is incorrect · confidence 82% · 2m 10s · gpt-6-astra high · 140.1k tokens
+
+Two bugs, one blocking.
+
+P0  Relative commondir escapes the check  91%
+    sandbox/worktree.go:88-104
+    A crafted file escapes.
+
+P1  Check the error  82%
+    c.go:4-9
+    It is dropped:
+
+    - in load
+    - in save
+
+P1  Maybe  30% · low confidence
+    b.go:2-3
+    Perhaps.
+
+    Or not.
+
+P3  Name it  60%
+    a.go:1
+    A name.
+
+    Mention the default  90%
+    /elsewhere/d.go:7
+    Say it.

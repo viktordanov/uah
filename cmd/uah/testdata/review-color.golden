@@ -1,0 +1,29 @@
+[1;38;2;255;196;0mREVIEW[m  changes against 'main'
+        [1m5 findings (1 P0 · 2 P1 · 1 P3)[m[38;2;160;140;100m · [m[38;2;255;90;60m✗ patch is incorrect[m[38;2;160;140;100m · [m[38;2;160;140;100mconfidence 82%[m[38;2;160;140;100m · [m[38;2;160;140;100m2m 10s[m[38;2;160;140;100m · [m[38;2;160;140;100mgpt-6-astra high[m[38;2;160;140;100m · [m[38;2;160;140;100m140.1k tokens[m
+
+Two bugs, one blocking.
+
+[38;2;255;90;60mP0[m  [1mRelative commondir escapes the check[m  [38;2;160;140;100m91%[m
+[38;2;160;140;100m    sandbox/worktree.go:88-104[m
+    A crafted file escapes.
+
+[38;2;255;90;60mP1[m  [1mCheck the error[m  [38;2;160;140;100m82%[m
+[38;2;160;140;100m    c.go:4-9[m
+    It is dropped:
+
+    - in load
+    - in save
+
+[38;2;160;140;100mP1[m  [38;2;160;140;100mMaybe[m  [38;2;160;140;100m30% · low confidence[m
+[38;2;160;140;100m    b.go:2-3[m
+    [38;2;160;140;100mPerhaps.[m
+
+    [38;2;160;140;100mOr not.[m
+
+[38;2;160;140;100mP3[m  [1mName it[m  [38;2;160;140;100m60%[m
+[38;2;160;140;100m    a.go:1[m
+    A name.
+
+[38;2;160;140;100m  [m  [1mMention the default[m  [38;2;160;140;100m90%[m
+[38;2;160;140;100m    /elsewhere/d.go:7[m
+    Say it.

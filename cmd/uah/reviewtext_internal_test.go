@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"flag"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -10,6 +13,7 @@ import (
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uagent/core"
 
@@ -19,34 +23,55 @@ import (
 	"github.com/viktordanov/uah/internal/session"
 )
 
-// TestReviewPrint writes a finished review: the findings sorted by
-// priority and confidence, a low-confidence one marked, the places
-// relative to the workspace; in color on a terminal, plain otherwise.
-func TestReviewPrint(t *testing.T) {
-	t0 := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
-	o := reviewOutput{
-		env:     cmdparse.Env{Workspace: "/w"},
-		started: session.ReviewStarted{At: t0, Hint: "current changes", Model: "gpt-6-astra", Effort: "high"},
-		finished: session.ReviewFinished{At: t0.Add(130 * time.Second), Tokens: core.Tokens{InputTokens: 138_000, OutputTokens: 2_100}, Output: codereview.Parse(`{"findings":[
-{"title":"[P3] Name it","body":"A name.","confidence_score":0.6,"code_location":{"absolute_file_path":"/w/a.go","line_range":{"start":1,"end":1}}},
-{"title":"[P1] Maybe","body":"Perhaps.\n\nOr not.","confidence_score":0.3,"code_location":{"absolute_file_path":"/w/b.go","line_range":{"start":2,"end":3}}},
-{"title":"[P1] Check the error","body":"It is dropped.","confidence_score":0.82,"code_location":{"absolute_file_path":"/w/c.go","line_range":{"start":4,"end":9}}}],
-"overall_correctness":"patch is incorrect","overall_explanation":"Two bugs.","overall_confidence_score":0.7}`)},
+// reviewGolden compares got with testdata/<name>.golden, which -update
+// (the flag main_test registers in the same binary) rewrites.
+func reviewGolden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", name+".golden")
+	if f := flag.Lookup("update"); f != nil && f.Value.String() == "true" {
+		require.NoError(t, os.WriteFile(path, []byte(got), 0o600))
 	}
+	want, err := os.ReadFile(path)
+	require.NoError(t, err, "run go test ./cmd/uah -update")
+	assert.Equal(t, string(want), got)
+}
+
+// finishedReview is a review with findings out of order: a P3, a P1 of
+// low confidence, a P1, a P0, and one without a priority.
+func finishedReview() reviewOutput {
+	t0 := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+
+	return reviewOutput{
+		env:     cmdparse.Env{Workspace: "/w"},
+		started: session.ReviewStarted{At: t0, Hint: "changes against 'main'", Model: "gpt-6-astra", Effort: "high"},
+		finished: session.ReviewFinished{At: t0.Add(130 * time.Second), Tokens: core.Tokens{InputTokens: 138_000, OutputTokens: 2_100}, Output: codereview.Parse(`{"findings":[
+{"title":"[P3] Name it","body":"A name.","confidence_score":0.6,"priority":3,"code_location":{"absolute_file_path":"/w/a.go","line_range":{"start":1,"end":1}}},
+{"title":"[P1] Maybe","body":"Perhaps.\n\nOr not.","confidence_score":0.3,"priority":1,"code_location":{"absolute_file_path":"/w/b.go","line_range":{"start":2,"end":3}}},
+{"title":"[P1] Check the error","body":"It is dropped:\n\n- in load\n- in save","confidence_score":0.82,"priority":1,"code_location":{"absolute_file_path":"/w/c.go","line_range":{"start":4,"end":9}}},
+{"title":"[P0] Relative commondir escapes the check","body":"A crafted file escapes.","confidence_score":0.91,"priority":0,"code_location":{"absolute_file_path":"/w/sandbox/worktree.go","line_range":{"start":88,"end":104}}},
+{"title":"Mention the default","body":"Say it.","confidence_score":0.9,"code_location":{"absolute_file_path":"/elsewhere/d.go","line_range":{"start":7,"end":7}}}],
+"overall_correctness":"patch is incorrect","overall_explanation":"Two bugs, one blocking.","overall_confidence_score":0.82}`)},
+	}
+}
+
+// TestReviewPrint writes a finished review: the counts by priority, the
+// verdict, the confidence, the time, the reviewer, and the tokens; the
+// explanation; the findings sorted by priority and confidence, a
+// low-confidence one marked, the places relative to the workspace. Plain
+// off a terminal, in the TUI's colors on one, the same text either way.
+func TestReviewPrint(t *testing.T) {
+	o := finishedReview()
 	var plain bytes.Buffer
 	o.print(colorprofile.NewWriter(&plain, nil))
-	assert.Equal(t, "REVIEW  current changes\n"+
-		"        3 findings (2 P1 · 1 P3) · ✗ patch is incorrect · confidence 70% · 2m 10s · gpt-6-astra high · 140.1k tokens\n\n"+
-		"Two bugs.\n\n"+
-		"P1  Check the error  82%\n    c.go:4-9\n    It is dropped.\n\n"+
-		"P1  Maybe  30% · low confidence\n    b.go:2-3\n    Perhaps.\n\n    Or not.\n\n"+
-		"P3  Name it  60%\n    a.go:1\n    A name.\n", plain.String())
+	reviewGolden(t, "review-plain", plain.String())
+	assert.NotContains(t, plain.String(), "\x1b", "no escape off a terminal")
 
 	var color bytes.Buffer
 	w := colorprofile.NewWriter(&color, nil)
 	w.Profile = colorprofile.TrueColor
 	o.print(w)
-	assert.NotEqual(t, color.String(), plain.String(), "colors on a terminal")
+	reviewGolden(t, "review-color", color.String())
+	assert.Contains(t, color.String(), "\x1b[")
 	assert.Equal(t, plain.String(), ansi.Strip(color.String()), "the same text")
 }
 
