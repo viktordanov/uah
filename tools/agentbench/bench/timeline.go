@@ -116,6 +116,12 @@ func summarize(s string) string {
 	return s
 }
 
+// The agent tools that wait for subagents and close one.
+const (
+	toolWaitAgent  = "wait_agent"
+	toolCloseAgent = "close_agent"
+)
+
 // Call kinds.
 const (
 	KindTool  = "tool"  // does work: a command, an edit, a search
@@ -126,9 +132,9 @@ const (
 // callKind classifies a tool by name.
 func callKind(name string) string {
 	switch strings.ToLower(name) {
-	case "wait", "wait_agent", "await", "wait_for":
+	case "wait", toolWaitAgent, "await", "wait_for":
 		return KindWait
-	case "spawn_agent", "send_input", "close_agent", "resume_agent", "agent", "task", "collab_tool_call":
+	case "spawn_agent", "send_input", toolCloseAgent, "resume_agent", "agent", "task", "collab_tool_call":
 		return KindAgent
 	}
 

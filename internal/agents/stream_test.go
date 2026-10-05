@@ -28,7 +28,7 @@ func TestAgents_ChildrenDoNotStream(t *testing.T) {
 	_, err := s.Submit("delegate")
 	require.NoError(t, err)
 	assert.Equal(t, "parent answer", ev.finished().Answer)
-	assert.Contains(t, lastOutputs(e), `{"completed":"child answer"}`)
+	assert.Contains(t, answers(e), `{"completed":"child answer"}`)
 
 	var streamed string
 	for _, x := range ev.all {

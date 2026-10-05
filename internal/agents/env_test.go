@@ -218,6 +218,15 @@ func lastParent(e *env) fakellm.Request {
 
 func lastOutputs(e *env) string { return strings.Join(lastParent(e).ToolOutputs, "\n") }
 
+// answers are the parent's last request's tool results and developer
+// messages: a child that finishes before the parent's wait_agent gives its
+// answer in a <subagent_notification> in the run, and the wait points at it.
+func answers(e *env) string {
+	last := lastParent(e)
+
+	return strings.Join(slices.Concat(last.ToolOutputs, last.DeveloperTexts), "\n")
+}
+
 // childOutputs are the tool results in the requests of the child whose
 // first message starts with prefix.
 func childOutputs(e *env, prefix string) string {

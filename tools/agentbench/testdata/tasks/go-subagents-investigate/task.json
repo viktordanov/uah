@@ -1,0 +1,8 @@
+{
+  "prompt": "CI is red in three packages of this repo: pricing, inventory, and schedule each have one failing test, and each package's suite takes about half a minute. I don't want fixes yet, only the diagnosis. Use subagents for this: one per package, all three at once, each finding which test fails and which function holds the bug, without changing any code. When they are done, write findings.json at the repo root, an object with one key per package, each `{\"test\": <the failing test's name>, \"function\": <the buggy function's name>, \"file\": <the file that function is in, relative to the repo root>}`.",
+  "check": "python3 check_findings.py findings.json && git diff --quiet HEAD -- '*.go'",
+  "check_timeout": "1m",
+  "timeout": "20m",
+  "exercises": "three independent diagnoses of 30-second suites by three subagents the user asks for, merged by the main agent into one JSON file: work where the main agent's job is to wait",
+  "tags": ["go", "slow", "investigate", "subagents"]
+}

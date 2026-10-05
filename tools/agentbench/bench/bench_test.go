@@ -279,7 +279,7 @@ func TestFixtureReadmes(t *testing.T) {
 			})
 		}
 	})
-	assert.EqualValues(t, 37, seen.Load(), "every fixture README, the vendored project's nested ones too")
+	assert.EqualValues(t, 39, seen.Load(), "every fixture README, the vendored project's nested ones too")
 }
 
 // checkFixtureReadmes prepares task's workspace and checks its READMEs,

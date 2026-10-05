@@ -49,13 +49,21 @@ type child struct {
 	// their result tells the parent, so no notification is sent.
 	waiters int
 	// held takes back the parent's held notification; waited is the gen a wait returned (unhold).
-	held           func()
-	waited         int
+	held   func()
+	waited int
+	// told is the gen whose notification went into the parent's live run,
+	// so a wait that returns that status need not repeat its answer; noting
+	// is the gen whose notification is on its way, until hold decides.
+	told, noting   int
 	pending, early map[string]bool
 	// last is the last run's result; failed is a run that did not start;
 	// cause is the last error the run reported, such as the provider's.
 	last          *core.Result
 	failed, cause string
+	// answers are the answers of the runs since the child was last idle:
+	// a message sent while it works starts another run, and its status
+	// keeps every answer, not only the last.
+	answers []string
 	// asks ends the child's open approvals when it is interrupted or
 	// closed; cancel ends it and a new one follows.
 	asks   context.Context
@@ -255,6 +263,9 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 	case core.RunFinished:
 		r := e.Result
 		c.last, c.failed = &r, ""
+		if r.Status == core.StatusOK && strings.TrimSpace(r.Answer) != "" {
+			c.answers = append(c.answers, r.Answer)
+		}
 	case session.Notice:
 		if e.Level == session.LevelError {
 			c.failed = e.Message
@@ -264,13 +275,13 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 			return false, nil
 		}
 		if c.review { // its review ends it (endReviewer), not a run's end
-			c.last, c.failed, c.cause = nil, "", ""
+			c.last, c.failed, c.cause, c.answers = nil, "", "", nil
 			clear(c.early)
 
 			return false, nil
 		}
 		status := c.final()
-		c.last, c.failed, c.cause = nil, "", ""
+		c.last, c.failed, c.cause, c.answers = nil, "", "", nil
 		clear(c.early)
 		if status.State == engine.AgentCompleted && !c.review && m.tmpl.Hooks.Has(hooks.SubagentStop, "") {
 			return false, &stopCheck{gen: c.gen, status: status}
@@ -287,7 +298,7 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 func (c *child) final() Status {
 	switch {
 	case c.last != nil && c.last.Status == core.StatusOK:
-		return Status{State: engine.AgentCompleted, Message: c.last.Answer}
+		return Status{State: engine.AgentCompleted, Message: strings.Join(c.answers, "\n\n")}
 	case c.last != nil && c.last.Status == core.StatusInterrupted:
 		return Status{State: engine.AgentInterrupted}
 	case c.last != nil && c.cause != "":
@@ -325,7 +336,11 @@ func (m *Manager) notify(c *child) {
 	// shows the child ended, a message sent after that carries the note.
 	if note != "" && parent.Inject != nil {
 		gen := c.gen
-		m.outboxOf(c.parent).push(func() { m.hold(c, gen, parent.Inject(note)) })
+		c.noting = gen // a wait that finds the status now waits for hold
+		m.outboxOf(c.parent).push(func() {
+			withdraw, live := parent.Inject(note)
+			m.hold(c, gen, withdraw, live)
+		})
 	}
 	if parent.Emit != nil && current {
 		m.outboxOf(c.parent).push(func() { parent.Emit(update) })
@@ -345,16 +360,17 @@ func (m *Manager) outboxOf(parentID string) *outbox {
 
 // completionNote is Codex's <subagent_notification> for a child that just
 // reached a final status, once per message it was sent; "" otherwise. A
-// child the parent closed itself, or one a pending wait_agent returns, is
-// not reported, since the parent learns it anyway.
+// child the parent closed itself, or one a pending wait_agent returns or a
+// wait already returned (between the status and this note), is not
+// reported, since the parent learns it anyway.
 // It holds m.mu.
 func (m *Manager) completionNote(c *child, current bool) string {
 	if !current || c.review || !c.status.Final() || c.status.State == engine.AgentShutdown || c.notified == c.gen {
 		return ""
 	}
 	c.notified = c.gen
-	if c.waiters > 0 {
-		return "" // a pending wait_agent returns this status
+	if c.waiters > 0 || c.waited >= c.gen {
+		return "" // a pending wait_agent returns this status, or one already did
 	}
 	note, err := engine.SubagentNotification(c.id, c.status)
 	if err != nil {
@@ -364,12 +380,22 @@ func (m *Manager) completionNote(c *child, current bool) string {
 	return note
 }
 
-// hold keeps the withdraw of gen's notification, or uses it if a wait returned that status.
-func (m *Manager) hold(c *child, gen int, withdraw func()) {
+// hold keeps the withdraw of gen's notification, or uses it if a wait
+// returned that status; a notification that went into the parent's live
+// run is not held.
+func (m *Manager) hold(c *child, gen int, withdraw func(), live bool) {
 	m.mu.Lock()
 	returned := c.waited >= gen
-	if !returned {
+	switch {
+	case live:
+		c.told, withdraw = gen, nil
+	case !returned:
 		c.held = withdraw
+	}
+	if c.noting == gen {
+		c.noting = 0
+		close(m.changed) // wake the waits that held back for the decision
+		m.changed = make(chan struct{})
 	}
 	m.mu.Unlock()
 	if returned && withdraw != nil {

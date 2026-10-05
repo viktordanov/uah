@@ -179,7 +179,7 @@ func TestAgents_ResumeAcrossProcesses(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "second done", ev.finished().Answer)
 
-	outputs := lastOutputs(e)
+	outputs := answers(e)
 	assert.Contains(t, outputs, "is not loaded; resume it with resume_agent first")
 	assert.Contains(t, outputs, `{"status":"pending_init"}`)
 	assert.Contains(t, outputs, `{"completed":"second answer"}`)

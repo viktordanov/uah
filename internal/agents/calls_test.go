@@ -43,6 +43,21 @@ func TestCall_WaitUnknownID(t *testing.T) {
 	assert.JSONEq(t, `{"status":{"missing":"not_found"},"timed_out":false}`, out)
 }
 
+// TestCall_WaitTimedOutSaysTheAgentsAreFine: a wait that times out tells
+// the parent the agents are still working and to wait again, and a wait
+// that returns a status adds nothing.
+func TestCall_WaitTimedOutSaysTheAgentsAreFine(t *testing.T) {
+	var out struct {
+		TimedOut bool   `json:"timed_out"`
+		Note     string `json:"note"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(agents.WaitResult(map[string]agents.Status{}, true)), &out))
+	assert.True(t, out.TimedOut)
+	assert.Contains(t, out.Note, "still working, and nothing is wrong")
+	assert.Contains(t, out.Note, "call wait_agent again")
+	assert.JSONEq(t, `{"status":{"a":"not_found"},"timed_out":false}`, agents.WaitResult(map[string]agents.Status{"a": {State: "not_found"}}, false))
+}
+
 // TestTools_Offered offers Codex's v1 tools while the depth allows it, and
 // resolves the name uah used before.
 func TestTools_Offered(t *testing.T) {

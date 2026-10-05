@@ -31,6 +31,7 @@ func Report(results []Result, price Price) string {
 		fmt.Fprintf(&b, "\n## %s\n", g)
 		summary(&b, rs)
 		behaviorTable(&b, rs)
+		agentUseTable(&b, rs)
 		perTask(&b, rs)
 		variantTables(&b, rs)
 		perRun(&b, rs)
@@ -242,5 +243,41 @@ func behaviorTable(b *strings.Builder, rs []Result) {
 			h, pct(t.OutputReasoning), pct(t.OutputPatch), pct(t.OutputToolArgs), pct(t.OutputText),
 			t.RitualRequests, s(t.RitualMS), t.PatchThenVerify, t.Escalations, t.EscalationsRefused, s(t.ReviewMS), med, t.ApprovalWaits, s(t.ApprovalWaitMS),
 			t.Aborted, s(t.AbortedMS), t.Compactions, s(t.CompactionMS), strings.Join(es, ", "))
+	}
+}
+
+// agentUseTable sums, per harness, how the uah runs' main agents treated
+// their subagents; nothing when no run spawned one.
+func agentUseTable(b *strings.Builder, rs []Result) {
+	header := false
+	for _, h := range harnesses(rs) {
+		var t AgentUse
+		runs := 0
+		for _, r := range pick(rs, func(r Result) bool { return r.Label() == h && r.AgentUse != nil }) {
+			x := r.AgentUse
+			runs++
+			t.Spawns += x.Spawns
+			t.Messages += x.Messages
+			t.Interrupts += x.Interrupts
+			t.ToRunning += x.ToRunning
+			t.Closes += x.Closes
+			t.ClosedRunning += x.ClosedRunning
+			t.Waits += x.Waits
+			t.WaitsTimedOut += x.WaitsTimedOut
+			t.Notes += x.Notes
+			t.BusyRequests += x.BusyRequests
+			t.AgentOnlyRequests += x.AgentOnlyRequests
+			t.BusyTokens = t.BusyTokens.Add(x.BusyTokens)
+		}
+		if runs == 0 {
+			continue
+		}
+		if !header {
+			b.WriteString("\n### Subagents, per harness\n\nSums over the uah runs whose main agent spawned subagents: its agent calls (messages and interrupts with send_input; \"to running\" reached a child while it worked), waits and how many timed out, the notifications it got, and its model requests while a child worked, with those that only waited or messaged, and their input and output tokens.\n\n| Harness | Runs | Spawns | Messages | Interrupts | To running | Closes (running) | Waits (timed out) | Notes | Requests while children ran (agent-only) | Their input | Their output |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+			header = true
+		}
+		fmt.Fprintf(b, "| %s | %d | %d | %d | %d | %d | %d (%d) | %d (%d) | %d | %d (%d) | %d | %d |\n",
+			h, runs, t.Spawns, t.Messages, t.Interrupts, t.ToRunning, t.Closes, t.ClosedRunning, t.Waits, t.WaitsTimedOut, t.Notes,
+			t.BusyRequests, t.AgentOnlyRequests, t.BusyTokens.Input, t.BusyTokens.Output)
 	}
 }

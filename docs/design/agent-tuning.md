@@ -18,9 +18,10 @@ This record collects every measurement made with the agent benchmark ([`tools/ag
 10. [Parallel approvals](#parallel-approvals)
 11. [Network commands escalated up front](#network-commands-escalated-up-front)
 12. [Adaptive effort in chats](#adaptive-effort-in-chats)
-13. [Decisions](#decisions)
-14. [Still running and next](#still-running-and-next)
-15. [For release notes](#for-release-notes)
+13. [Leaving subagents alone](#leaving-subagents-alone)
+14. [Decisions](#decisions)
+15. [Still running and next](#still-running-and-next)
+16. [For release notes](#for-release-notes)
 
 ## How runs are measured
 
@@ -317,6 +318,25 @@ Over the 30 sessions, against off, at the bench prices:
 
 Next: the sticky rule behind an experiment switch, checked for quality on these chats and on the reading and judgment tasks of [One step or two](#one-step-or-two). All-medium passed 30/30 here, but the branch review has been sensitive to effort. R0 stays until then: in chats it is still −16% (1 step) and −31% (2 steps) in cost, and −31% and −45% in wall time.
 
+## Leaving subagents alone
+
+The owner's sessions showed parents micromanaging their subagents: 46 waits, 21 of them timed out; 36 messages, 22 of them status checks, "hurry", or re-asks; and 194 parent requests while children worked. The causes and the changes are in [the subagents record](subagents.md#round-4-leaving-agents-alone): the completion notification now reaches the parent's live run, a wait lasts 4.5 minutes and says a timeout is normal, a child's status keeps every answer, a wait does not repeat an answer the parent was told, and the tool text says to leave a running agent alone. agentbench now counts the main agent's subagent use (`agent_use`), and has three tasks that ask for subagents (`go-subagents-*`).
+
+v1.9.5 (A) against the change as built (C), 4 tasks × 8 runs each, in the same window: gpt-6.1-sol at high effort in auto mode, owner's environment, adaptive effort at 2 steps ([raw](../../tools/agentbench/history/2026-10-06-subagentcalm.jsonl)).
+
+| | A | C | Change |
+| --- | ---: | ---: | ---: |
+| Passed | 31/32 | 31/32 | |
+| Wall (sum of task medians) | 1177 s | 1193 s | +1% |
+| Input tokens | 12.57M | 11.19M | −11% |
+| Output tokens | 138k | 133k | −4% |
+| Estimated cost | $5.14 | $4.83 | −6% |
+| Waits (timed out) | 90 (39) | 68 (1) | |
+| Messages and interrupts to a working agent | 2 | 1 | |
+| Parent requests while agents worked | 140 | 95 | −32% |
+
+An earlier window, with the change before its last step (B), gave the same against 36 more runs of A: the pass rate level or better, wall time level, input −10%, and no timed-out waits against 33. Kept.
+
 ## Decisions
 
 | Date | Decision | Ledger |
@@ -333,6 +353,7 @@ Next: the sticky rule behind an experiment switch, checked for quality on these 
 | 2026-10-02 | Lean mode is renamed adaptive effort and becomes a session setting like the effort: the session keeps it in its sidecar, `--adaptive-effort` wins, `adaptive_effort` is the default for new sessions, and `/adaptive` or `/config` changes the current session from its next model request | [92](../ledger.md) |
 | 2026-10-02 | The approvals of one response's calls run at once: hooks, auto-reviews, and prompts start when the response is stored, an interrupt ends them, and "don't ask again" settles the other open prompts it covers ([Parallel approvals](#parallel-approvals)) | [94](../ledger.md) |
 | 2026-10-03 | Without network in the sandbox, `Bash`'s description tells the model that a network command, localhost included, fails there and should ask for `require_escalated` from the first try; the clause asking for separate calls in one response is left out, since it slowed tasks without network ([Network commands escalated up front](#network-commands-escalated-up-front)) | [106](../ledger.md) |
+| 2026-10-06 | Subagents are left alone: the completion notification goes into the parent's live run, `wait_agent` waits 4.5 minutes (at least 1) and says a timeout is normal, a child's status keeps every answer, a wait does not repeat an answer the parent was told, and the tool text says to message a running agent only with news from the user, an answer, or a failure ([Leaving subagents alone](#leaving-subagents-alone)) | [140](../ledger.md) |
 
 ## Still running and next
 
@@ -346,4 +367,5 @@ Next: the sticky rule behind an experiment switch, checked for quality on these 
 - New setting, adaptive effort (`/adaptive`, `/config`, `--adaptive-effort`, `adaptive_effort`; off by default): the model thinks one or two effort levels less on turns that only follow tool results, and a new session starts with the workspace's context. A session keeps it, as it keeps its effort. On the full suite (35 × 10) at 1 step, uah is 22% faster and 31% cheaper than Codex, and faster on 33 of 35 tasks. On 12 tasks × 3, against off, 1 step cut wall time by 27% and cost by 16%, and 2 steps by 35% and 25%, at the same pass rate. Raising the effort again after failures was measured and left out: no quality gain, and it cost prompt-cache hits.
 - Escalations the model asks for together are reviewed together: four auto-reviews in one response now take about one review's time (3.5 s against 11.9 s), −24% wall time on that task, and an interrupt during reviews stops them at once.
 - Network commands go out of the sandbox on the first try: the `Bash` tool now tells the model that the sandbox blocks the network, localhost included, so it asks for the escalation up front instead of after a failed run. On a task of four API calls whose prompt does not mention the sandbox, −26% wall time and one model request fewer; no change on tasks without network.
+- Subagents are left alone: the main agent now hears that one finished during its own turn, waits instead of polling, and no longer messages running agents for status. On four subagent tasks × 8 against v1.9.5: no timed-out waits (39 of 90 before), 32% fewer parent requests while agents work, 11% fewer input tokens, the same pass rate and wall time.
 - The agent benchmark has 40 tasks, including a 27,000-line open-source repo, follow-up prompts, and a session long enough to compact ([ledger P7](../ledger.md), [agentbench](../../tools/agentbench/README.md)); its smoke run passed all 9 runs.

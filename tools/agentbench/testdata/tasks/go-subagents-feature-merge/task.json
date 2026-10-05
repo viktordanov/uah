@@ -1,0 +1,6 @@
+{
+  "prompt": "textkit needs its three packages written: slug, wrap, and initials are stubs, and docs/ has the spec of each. Use subagents for this: one per package, all three at once, each implementing its package to the spec with tests. While they work, wire the three into the `textkit` command in cmd/textkit (its README section says how it should behave). When everything is in, run all the tests and tell me what you did.",
+  "check": "go vet ./... && go test ./...",
+  "exercises": "three packages written by three subagents the user asks for while the main agent wires them into a command: delegate, do the non-overlapping part, then wait and integrate",
+  "tags": ["go", "feature", "subagents"]
+}

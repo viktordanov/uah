@@ -50,7 +50,7 @@ exit 2
 	require.NoError(t, err)
 	ev.finished()
 
-	assert.Contains(t, lastOutputs(e), `{"completed":"answer with tests"}`, "wait_agent returned after the hook let the child finish")
+	assert.Contains(t, answers(e), `{"completed":"answer with tests"}`, "wait_agent returned after the hook let the child finish")
 	var last fakellm.Request
 	for _, r := range e.llm.Requests() {
 		if isChild(r) {

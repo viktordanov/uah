@@ -96,7 +96,7 @@ func TestFork_ChildStartsWithTheParentsRequest(t *testing.T) {
 	assertSharedPrefix(t, parent, child, "CHILD-FORK go on from here")
 	assert.Contains(t, child.ToolNames, "spawn_agent", "a forked child keeps the spawn tools")
 	assert.Contains(t, childOutputs(e, "CHILD-FORK"), "Agent depth limit reached. Solve the task yourself.")
-	assert.Contains(t, lastOutputs(e), `{"completed":"forked answer"}`)
+	assert.Contains(t, answers(e), `{"completed":"forked answer"}`)
 }
 
 // TestFork_KeepsTheParentsCompaction forks a parent whose context was
@@ -177,7 +177,8 @@ func TestFork_DoesNotRunTheParentsWorkAgain(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "done", ev.finished().Answer)
 
-	assert.Contains(t, lastOutputs(e), `{"completed":"nothing to do"}`)
+	last := lastParent(e)
+	assert.Contains(t, strings.Join(last.DeveloperTexts, "\n")+lastOutputs(e), `{"completed":"nothing to do"}`, "the wait or the notification gives the answer")
 	fileText := func(t *testing.T, name string) string {
 		t.Helper()
 		b, err := os.ReadFile(filepath.Join(e.Workspace, name))
