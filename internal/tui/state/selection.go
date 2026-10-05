@@ -2,7 +2,6 @@ package state
 
 import (
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/rivo/uniseg"
@@ -52,7 +51,8 @@ type (
 	// ClearSelection drops the selection, as a click outside the
 	// transcript does.
 	ClearSelection struct{}
-	// Copied reports the selection written to the clipboard at At.
+	// Copied reports the selection written to the clipboard at At, which
+	// a toast says.
 	Copied struct {
 		Lines int
 		At    time.Time
@@ -80,7 +80,7 @@ type clicks struct {
 
 // onSelection handles the mouse's intents; ok is false for other events.
 // Esc clears a selection and does nothing else; typing, sending, and
-// changing the view clear it and go on; a tick ends the copy notice.
+// changing the view clear it and go on.
 func (s *State) onSelection(ev any) (effects []Effect, ok bool) {
 	switch e := ev.(type) {
 	case MousePress:
@@ -94,7 +94,7 @@ func (s *State) onSelection(ev any) (effects []Effect, ok bool) {
 	case ClearSelection:
 		s.Selection = nil
 	case Copied:
-		s.Status, s.copied = copiedText(e.Lines), e.At
+		s.ShowToast(copiedText(e.Lines), e.At)
 	case Esc:
 		if s.Selection == nil {
 			return nil, false
@@ -102,15 +102,6 @@ func (s *State) onSelection(ev any) (effects []Effect, ok bool) {
 		s.Selection = nil
 	case DraftChanged, Submit, Steer, ToggleDetails:
 		s.Selection = nil
-
-		return nil, false
-	case Tick:
-		if !s.copied.IsZero() && e.Now.Sub(s.copied) >= confirmWindow {
-			if strings.HasPrefix(s.Status, "copied ") {
-				s.Status = ""
-			}
-			s.copied = time.Time{}
-		}
 
 		return nil, false
 	default:
@@ -196,7 +187,7 @@ func (s State) SelectedCols(key string, line int) (from, to int, ok bool) {
 // none, while a press has not moved yet, or when an item it names is gone.
 func (s State) SelectedRange() (start, end TextPos, ok bool) {
 	sel := s.Selection
-	if sel == nil || !sel.moved || s.order(sel.Anchor.Key) < -1 || s.order(sel.Head.Key) < -1 {
+	if sel == nil || !sel.moved || s.Order(sel.Anchor.Key) < -1 || s.Order(sel.Head.Key) < -1 {
 		return TextPos{}, TextPos{}, false
 	}
 	start, end = sel.Anchor, sel.Head
@@ -207,9 +198,9 @@ func (s State) SelectedRange() (start, end TextPos, ok bool) {
 	return start, end, true
 }
 
-// order is an item's place in the transcript: -1 for the banner, and -2
+// Order is an item's place in the transcript: -1 for the banner, and -2
 // for a key no item has.
-func (s State) order(key string) int {
+func (s State) Order(key string) int {
 	if key == BannerKey {
 		return -1
 	}
@@ -222,7 +213,7 @@ func (s State) order(key string) int {
 
 // before reports whether a comes before b in the transcript.
 func (s State) before(a, b TextPos) bool {
-	if oa, ob := s.order(a.Key), s.order(b.Key); oa != ob {
+	if oa, ob := s.Order(a.Key), s.Order(b.Key); oa != ob {
 		return oa < ob
 	}
 	if a.Line != b.Line {

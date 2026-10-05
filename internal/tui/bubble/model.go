@@ -215,6 +215,15 @@ func (m Model) onTerminalReport(msg term.Msg) (term.Model, term.Cmd) {
 }
 
 func (m Model) Update(msg term.Msg) (term.Model, term.Cmd) {
+	next, cmd := m.update(msg)
+	if nm, ok := next.(Model); ok {
+		next = nm.anchor()
+	}
+
+	return next, cmd
+}
+
+func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 	switch msg := msg.(type) {
 	case term.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
@@ -352,7 +361,7 @@ func (m Model) now() Model {
 
 // afterChange keeps the clock ticking while anything moves on screen.
 func (m *Model) afterChange() term.Cmd {
-	moving := m.st.Busy || m.st.Live != nil || m.st.Status != "" || m.st.AgentsRunning() || m.st.ShellRunning() || m.st.ReviewRunning()
+	moving := m.st.Busy || m.st.Live != nil || m.st.Status != "" || m.st.Toast != nil || m.st.AgentsRunning() || m.st.ShellRunning() || m.st.ReviewRunning()
 	if v := m.st.View; v != nil {
 		moving = moving || v.St.Busy || v.St.Live != nil // the viewed agent's spinner
 	}

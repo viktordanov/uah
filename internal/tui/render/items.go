@@ -31,6 +31,13 @@ type Cache struct {
 	rows   []state.TextPos
 	window []string
 	top    int
+	// bottom is the transcript line on the window's bottom row and scrolled
+	// the lines below it, which the shell reports back while the window is
+	// pinned (Anchor); pill is where the new-output pill was drawn
+	// (overlay.go).
+	bottom   state.TextPos
+	scrolled int
+	pill     cells
 }
 
 // MaxScroll is how far the last frame's transcript could scroll up, or -1

@@ -26,6 +26,7 @@ func Reduce(s State, ev any) (State, []Effect) {
 		ev = DraftChanged{}
 	}
 	s, effects := reduce(s, ev)
+	s.follow()
 
 	return s, append(effects, recorded...)
 }
@@ -52,6 +53,7 @@ func reduce(s State, ev any) (State, []Effect) {
 	case Tick:
 		s.Now = e.Now
 		s.expireConfirmations()
+		s.expireToast()
 		if s.View != nil {
 			s.View.St.Now = e.Now
 			s.View.St.expireConfirmations()
@@ -274,9 +276,11 @@ func (s *State) onIntent(ev any) (State, []Effect) { //nolint:gocyclo // a dispa
 	case ToggleDetails:
 		s.Details = !s.Details
 	case ScrollBy:
-		s.Scroll = max(0, s.Scroll+e.Lines)
+		s.Scroll, s.Anchor = max(0, s.Scroll+e.Lines), TextPos{} // the shell reports the new window
 	case ScrollToBottom:
 		s.Scroll = 0
+	case Anchored:
+		s.anchored(e)
 	case StepEffort:
 		return s.stepEffort(e.Delta)
 	case CycleAdaptive:
@@ -355,9 +359,6 @@ func (s *State) put(it Item) {
 	}
 	s.index[it.Key] = len(s.Items)
 	s.Items = append(s.Items, it)
-	if s.Scroll > 0 {
-		s.Scroll++ // keep the view anchored while the user reads back
-	}
 }
 
 // update changes the item with key in place and reports whether it exists.

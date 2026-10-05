@@ -166,15 +166,26 @@ func TestSelection_FollowsTheText(t *testing.T) {
 	assert.False(t, ok, "its items are gone")
 }
 
-// TestSelection_CopiedNotice: the footer says how many lines were copied,
-// for two seconds.
-func TestSelection_CopiedNotice(t *testing.T) {
-	s, _ := apply(opened(), state.Copied{Lines: 3, At: t0})
-	assert.Equal(t, "copied 3 lines", s.Status)
+// TestSelection_CopiedToast: a toast says how many lines were copied, for
+// two seconds, and leaves the status line and the working line alone.
+func TestSelection_CopiedToast(t *testing.T) {
+	s, _ := apply(opened(), // a run, and a status line
+		session.InputQueued{At: t0, Input: core.UserInput{ID: "m1", Text: "hi"}},
+		core.RunStarted{At: t0, RunID: "r1"},
+		state.Esc{},
+	)
+	status, live := s.Status, s.Live
+	require.NotEmpty(t, status)
+
+	s, _ = apply(s, state.Copied{Lines: 3, At: t0})
+	require.NotNil(t, s.Toast)
+	assert.Equal(t, "copied 3 lines", s.Toast.Text)
+	assert.Equal(t, status, s.Status, "the status line is not the copy's")
+	assert.Same(t, live, s.Live)
 	s, _ = apply(s, state.Tick{Now: t0.Add(time.Second)})
-	assert.Equal(t, "copied 3 lines", s.Status)
+	require.NotNil(t, s.Toast)
 	s, _ = apply(s, state.Tick{Now: t0.Add(2 * time.Second)})
-	assert.Empty(t, s.Status)
-	s, _ = apply(s, state.Copied{Lines: 1, At: t0})
-	assert.Equal(t, "copied 1 line", s.Status)
+	assert.Nil(t, s.Toast, "gone after two seconds")
+	s, _ = apply(s, state.Copied{Lines: 1, At: t0.Add(2 * time.Second)})
+	assert.Equal(t, "copied 1 line", s.Toast.Text)
 }

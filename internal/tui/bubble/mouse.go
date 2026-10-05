@@ -19,6 +19,9 @@ func (m Model) onMouse(msg term.Msg) (term.Model, term.Cmd) {
 		if msg.Button != term.MouseLeft {
 			return m, nil
 		}
+		if m.cache.OnPill(msg.X, msg.Y) {
+			return m.dispatch(state.ScrollToBottom{})
+		}
 		at, text, ok := m.cache.At(msg.X, msg.Y, false)
 		if !ok {
 			if m.st.Selection == nil {
@@ -67,7 +70,7 @@ func (m Model) drag(x, y int) (term.Model, term.Cmd) {
 
 // copySelection writes the selected text to the clipboard twice: as OSC 52,
 // which the terminal handles (also over ssh), and with the system's own
-// tool (Deps.CopyText), for terminals that ignore OSC 52. Then the footer
+// tool (Deps.CopyText), for terminals that ignore OSC 52. Then a toast
 // says how many lines.
 func (m Model) copySelection() term.Cmd {
 	text, lines := render.SelectedText(m.st, m.cache, m.frame())
