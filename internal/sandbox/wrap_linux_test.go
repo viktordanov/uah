@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -255,4 +256,25 @@ func TestLinuxShellScriptsStayReadOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, string(want), string(got))
 	assert.NoDirExists(t, home+".moved")
+}
+
+// TestLinuxSignals: a sandboxed command can stop its own children, but it
+// cannot see a process an earlier sandboxed command started: each runs in
+// a new PID namespace. The engine runs a kill of the session's own
+// commands outside the sandbox for that (internal/engine/embedded/commands.go).
+func TestLinuxSignals(t *testing.T) {
+	r := newLinuxRun(t)
+	p := r.policy(sandbox.ReadOnly, false)
+
+	code, out := sh(t, p, "sleep 30 & kill $!; wait $!; echo status=$?")
+	require.Equal(t, 0, code, out)
+	assert.Contains(t, out, "status=143", "its own child stopped")
+
+	argv, err := p.Wrap([]string{"/bin/sh", "-c", "exec sleep 30"})
+	require.NoError(t, err)
+	earlier := exec.Command(argv[0], argv[1:]...)
+	require.NoError(t, earlier.Start())
+	t.Cleanup(func() { _ = earlier.Process.Kill(); _ = earlier.Wait() })
+	code, out = sh(t, p, "kill "+strconv.Itoa(earlier.Process.Pid))
+	assert.NotEqual(t, 0, code, "another command's process is out of reach: %s", out)
 }

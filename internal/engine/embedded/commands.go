@@ -146,8 +146,12 @@ func (c *commands) note(op operation.Operation) {
 
 		return
 	}
-	if state, err := operation.DecodeShellState(op); err == nil && state.ProcessGroupID > 1 {
+	switch state, err := operation.DecodeShellState(op); {
+	case err != nil:
+	case state.ProcessGroupID > 1:
 		c.groups[op.ID] = state.ProcessGroupID
+	default: // its group is gone, as while its output is collected
+		delete(c.groups, op.ID)
 	}
 }
 

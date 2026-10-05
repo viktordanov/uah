@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -378,4 +379,28 @@ func TestSeatbeltShellScriptsCaseAliases(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, string(want), string(got), root)
 	}
+}
+
+// TestWrapSeatbeltSignals: a sandboxed command can stop its own children
+// (Codex's `signal (target same-sandbox)`), but not a process an earlier
+// sandboxed command started, since each command runs in a sandbox of its
+// own. The engine runs a kill of the session's own commands outside the
+// sandbox for that (internal/engine/embedded/commands.go).
+func TestWrapSeatbeltSignals(t *testing.T) {
+	p := sandbox.Policy{Mode: sandbox.ReadOnly, Workspace: workspace(t, false)}
+
+	code, out := run(t, p, "sleep 30 & kill $!; wait $!; echo status=$?", nil, nil)
+	require.Equal(t, 0, code, out)
+	assert.Contains(t, out, "status=143", "its own child stopped")
+
+	earlier := exec.Command("/bin/sh", "-c", "exec sleep 30")
+	argv, err := p.Wrap(earlier.Args)
+	require.NoError(t, err)
+	earlier = exec.Command(argv[0], argv[1:]...)
+	require.NoError(t, earlier.Start())
+	t.Cleanup(func() { _ = earlier.Process.Kill(); _ = earlier.Wait() })
+	time.Sleep(200 * time.Millisecond) // sandbox-exec has execed sleep
+	code, out = run(t, p, "kill "+strconv.Itoa(earlier.Process.Pid), nil, nil)
+	assert.NotEqual(t, 0, code)
+	assert.Contains(t, out, "not permitted", "another sandbox's process")
 }

@@ -221,12 +221,8 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	if err != nil {
 		return refuse(tool.ErrorStatus(err.Error(), 0))
 	}
-	if kill, own := b.commands.ownKill(args.Command); sandboxed && own && !b.forbidden(args.Command) {
-		if arguments, ok := withCommand(call.Arguments, kill); ok {
-			call.Arguments = arguments
-
-			return func(tc tool.Context) tool.CallStatus { return b.Translator.Translate(tc, call) }
-		}
+	if run, ok := b.killOwn(call, args.Command, sandboxed); ok {
+		return run
 	}
 	d := b.approver.Decide(ctx, approval.Request{
 		Command: args.Command, Cwd: b.cwd, Justification: args.Justification, PrefixRule: args.PrefixRule,
@@ -255,6 +251,30 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	}
 
 	return refuse(tool.CallStatus{Error: d.Reason})
+}
+
+// killOwn runs a kill of the session's own commands outside the sandbox
+// (commands.ownKill), unless a forbid rule refuses it: the checked command,
+// checked again as it runs, since a prefetched decision may be older than
+// a target's exit. ok is false for any other command.
+func (b sandboxedBash) killOwn(call llm.ToolCall, command string, sandboxed bool) (submit, bool) {
+	kill, own := b.commands.ownKill(command)
+	if !sandboxed || !own || b.forbidden(command) {
+		return nil, false
+	}
+	arguments, ok := withCommand(call.Arguments, kill)
+	if !ok {
+		return nil, false
+	}
+	call.Arguments = arguments
+
+	return func(tc tool.Context) tool.CallStatus {
+		if again, own := b.commands.ownKill(command); !own || again != kill {
+			return tool.ErrorStatus("the command it would stop has ended, so nothing was signalled", 0)
+		}
+
+		return b.Translator.Translate(tc, call)
+	}, true
 }
 
 // withCommand is a Bash call's arguments with another command; the rest
