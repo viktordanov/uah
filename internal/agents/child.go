@@ -56,6 +56,10 @@ type child struct {
 	// cause is the last error the run reported, such as the provider's.
 	last          *core.Result
 	failed, cause string
+	// answers are the answers of the runs since the child was last idle:
+	// a message sent while it works starts another run, and its status
+	// keeps every answer, not only the last.
+	answers []string
 	// asks ends the child's open approvals when it is interrupted or
 	// closed; cancel ends it and a new one follows.
 	asks   context.Context
@@ -255,6 +259,9 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 	case core.RunFinished:
 		r := e.Result
 		c.last, c.failed = &r, ""
+		if r.Status == core.StatusOK && strings.TrimSpace(r.Answer) != "" {
+			c.answers = append(c.answers, r.Answer)
+		}
 	case session.Notice:
 		if e.Level == session.LevelError {
 			c.failed = e.Message
@@ -264,13 +271,13 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 			return false, nil
 		}
 		if c.review { // its review ends it (endReviewer), not a run's end
-			c.last, c.failed, c.cause = nil, "", ""
+			c.last, c.failed, c.cause, c.answers = nil, "", "", nil
 			clear(c.early)
 
 			return false, nil
 		}
 		status := c.final()
-		c.last, c.failed, c.cause = nil, "", ""
+		c.last, c.failed, c.cause, c.answers = nil, "", "", nil
 		clear(c.early)
 		if status.State == engine.AgentCompleted && !c.review && m.tmpl.Hooks.Has(hooks.SubagentStop, "") {
 			return false, &stopCheck{gen: c.gen, status: status}
@@ -287,7 +294,7 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 func (c *child) final() Status {
 	switch {
 	case c.last != nil && c.last.Status == core.StatusOK:
-		return Status{State: engine.AgentCompleted, Message: c.last.Answer}
+		return Status{State: engine.AgentCompleted, Message: strings.Join(c.answers, "\n\n")}
 	case c.last != nil && c.last.Status == core.StatusInterrupted:
 		return Status{State: engine.AgentInterrupted}
 	case c.last != nil && c.cause != "":

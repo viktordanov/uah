@@ -116,6 +116,29 @@ func TestAgents_SendInput(t *testing.T) {
 	assert.Contains(t, outputs, `{"completed":"second answer"}`)
 }
 
+// TestAgents_AMessageWhileRunningKeepsBothAnswers sends a running child a
+// second message, which it reads after its first run: its completed status
+// holds both runs' answers, so the parent does not lose the first.
+func TestAgents_AMessageWhileRunningKeepsBothAnswers(t *testing.T) {
+	gate := make(chan struct{})
+	e := newEnv(t, agents.Config{},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-Q first task"}`)}},
+		callWith("send_input", `{"target":"ID","message":"one more thing"}`),
+		callWith("wait_agent", `{"targets":["ID"]}`),
+		fakellm.Reply{Text: "both done"},
+	)
+	e.llm.Route("CHILD-Q", fakellm.Reply{Gate: gate, Text: "the inventory"}, fakellm.Reply{Text: "the addendum"})
+	s, ev := e.open(t, false)
+	_, err := s.Submit("delegate")
+	require.NoError(t, err)
+	awaitRequests(t, e, "CHILD-Q", 1)
+	require.Eventually(t, func() bool { return strings.Contains(lastOutputs(e), "submission_id") }, waitTimeout, time.Millisecond)
+	close(gate)
+
+	assert.Equal(t, "both done", ev.finished().Answer)
+	assert.Contains(t, lastOutputs(e), `{"completed":"the inventory\n\nthe addendum"}`)
+}
+
 // TestAgents_LimitAndClose refuses a spawn over the limit and accepts it
 // once an agent is closed.
 func TestAgents_LimitAndClose(t *testing.T) {
