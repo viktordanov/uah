@@ -372,6 +372,9 @@ func (m *Manager) wait(ctx context.Context, parentID string, ids []string, timeo
 			switch {
 			case !ok:
 				out[id] = Status{State: engine.AgentNotFound}
+			case c.status.Final() && c.noting == c.gen && c.noting > 0:
+				// Its notification is on its way: the next change says
+				// whether it reached the live run.
 			case c.status.Final():
 				out[id] = c.reported()
 				if w := c.unhold(); w != nil {

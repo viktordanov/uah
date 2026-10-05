@@ -54,7 +54,7 @@ const toldNote = "(its final answer is in the <subagent_notification> you alread
 // its answer again. It holds m.mu.
 func (c *child) reported() Status {
 	s := c.status
-	if c.told == c.gen && s.State == engine.AgentCompleted && s.Message != "" {
+	if !c.review && c.told > 0 && c.told == c.gen && s.State == engine.AgentCompleted && s.Message != "" {
 		s.Message = toldNote
 	}
 

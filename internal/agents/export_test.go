@@ -1,8 +1,8 @@
 package agents
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/viktordanov/uah/internal/contextusage"
