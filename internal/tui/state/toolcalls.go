@@ -114,14 +114,22 @@ func (s *State) unmerge(key string) {
 func (s *State) onToolOutput(e engine.ToolOutput) {
 	s.update("call:"+e.CallID, func(it *Item) {
 		switch {
-		case e.Error != "":
-			it.ErrorLine = lastLine(e.Error)
-		case e.Output != "":
-			it.ErrorLine = lastLine(e.Output)
+		case e.Error != "" || e.Output != "":
+			it.ErrorLine = errorLine(e)
 		case isMCP(it.Name):
 			it.Result = resultSummary(e.Result, e.Size)
 		}
 	})
+}
+
+// errorLine is why a call failed: the last line of its error, else of its
+// output.
+func errorLine(e engine.ToolOutput) string {
+	if e.Error != "" {
+		return lastLine(e.Error)
+	}
+
+	return lastLine(e.Output)
 }
 
 // attachApproval puts the auto-reviewer's approval under the call it

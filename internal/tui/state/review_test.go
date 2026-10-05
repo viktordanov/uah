@@ -12,6 +12,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/codereview"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/gitdiff"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/state"
@@ -166,6 +167,9 @@ func TestReview_Steps(t *testing.T) {
 	assert.Equal(t, state.ToolFailed, r.Steps[0].Tool)
 	assert.Equal(t, "exit 2", r.Steps[0].Detail)
 	assert.Equal(t, 3*time.Second, r.Steps[0].Duration)
+	s, _ = apply(s, act(engine.ToolOutput{At: t0, CallID: "c0", Output: "sed: a.go: No such file\n\n"}))
+	r = s.Items[0].Review
+	assert.Equal(t, "sed: a.go: No such file", r.Steps[0].ErrorLine, "why it failed, from its output")
 	assert.Equal(t, core.Tokens{InputTokens: 3_000, OutputTokens: 120}, r.Tokens, "the tokens so far")
 	assert.Equal(t, state.ToolRunning, first.Steps[0].Tool, "an earlier Review keeps its own steps")
 

@@ -256,9 +256,12 @@ func (st *Styles) reviewStep(it state.Item, now time.Time, details bool, w int) 
 	if len(tail) > 0 {
 		end = "  " + strings.Join(tail, st.dim.Render(" · "))
 	}
-	room := max(w-ansi.StringWidth(head)-ansi.StringWidth(end), 8)
+	text := ""
+	if room := w - ansi.StringWidth(head) - ansi.StringWidth(end); room > 1 {
+		text = ansi.Truncate(st.parts(toolParts(it)), room, "…")
+	}
 
-	return head + ansi.Truncate(st.parts(toolParts(it)), room, "…") + end
+	return head + text + end
 }
 
 // flow lays styled parts out after first: gap before the first part, a

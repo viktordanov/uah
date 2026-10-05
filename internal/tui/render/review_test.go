@@ -15,6 +15,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/codereview"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/gitdiff"
 	"github.com/viktordanov/uah/internal/patch"
 	"github.com/viktordanov/uah/internal/session"
@@ -219,13 +220,17 @@ func TestScreens_ReviewNarrow(t *testing.T) {
 		session.ReviewActivity{At: t0, ID: "r1", Event: reviewerBash("c9", "go test ./internal/config/... -run TestLoadEverythingWithAVeryLongName -count 1")},
 		session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolFinished{At: t0, CallID: "c9", Name: "Bash", OK: false, Detail: "exit 2", Duration: 3 * time.Second}},
 		session.ReviewActivity{At: t0, ID: "r1", Event: reviewerBash("c10", "rg -n SomethingLongEnoughToFillTheRow internal/config/deeper/package")},
-		session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolFinished{At: t0, CallID: "c10", Name: "Bash", OK: false, Detail: "exit 1"}},
+		session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolFinished{At: t0, CallID: "c10", Name: "Bash", OK: false, Detail: "exit 1", Duration: 3 * time.Second}},
+		session.ReviewActivity{At: t0, ID: "r1", Event: reviewerBash("c11", "find internal/config/deeper/package/that/is/missing -name x")},
+		session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolFinished{At: t0, CallID: "c11", Name: "Bash", OK: false, Detail: "exit 1"}},
+		session.ReviewActivity{At: t0, ID: "r1", Event: engine.ToolOutput{At: t0, CallID: "c11", Output: "find: internal/config/deeper: No such file or directory"}},
 		session.ReviewFinished{At: t0.Add(time.Minute), ID: "r1", Interrupted: true},
 		state.ToggleDetails{},
 	)
 	got := screenWidth(long, 40)
 	assert.Contains(t, got, "…  exit 2 · 3.0s", "a long command is cut, not how it ended")
-	assert.Contains(t, got, "…  no matches")
+	assert.Contains(t, got, "…  no matches · 3.0s", "the whole tail, even at 40 columns")
+	assert.Regexp(t, `SEARCH .*…  exit 1\n`, got, "a search whose output says why failed")
 	assert.Contains(t, got, "git diff 1a2b3c4  stopped")
 	golden(t, "review-60", screenWidth(reviewed(codereview.Parse(findings)), 60))
 	golden(t, "review-40", screenWidth(reviewed(codereview.Parse(findings)), 40))

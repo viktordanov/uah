@@ -10,6 +10,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/codereview"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/gitdiff"
 	"github.com/viktordanov/uah/internal/session"
 )
@@ -152,7 +153,9 @@ const maxReviewSteps = 100
 
 // reviewStep folds one of the reviewer's events into the review: a tool
 // call as a new step, its start and end into that step, and a model
-// response's tokens into the running total. Steps is copied before it
+// response's tokens into the running total; a failed command's output
+// gives its step the line that says why (and tells a search that failed
+// from one that found nothing). Steps is copied before it
 // changes, so an earlier state keeps its own.
 func (s *State) reviewStep(r *Review, ev core.Event) {
 	step := func(callID string, fn func(*Item)) {
@@ -179,6 +182,8 @@ func (s *State) reviewStep(r *Review, ev core.Event) {
 			state = ToolFailed
 		}
 		step(e.CallID, func(it *Item) { it.Tool, it.Detail, it.Duration = state, e.Detail, e.Duration })
+	case engine.ToolOutput:
+		step(e.CallID, func(it *Item) { it.ErrorLine = errorLine(e) })
 	case core.ModelResponded:
 		r.Tokens = r.Tokens.Add(e.Usage)
 	}
