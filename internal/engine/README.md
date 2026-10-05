@@ -139,7 +139,7 @@ Upstream's coordinator wakes the model for each finished tool call a second afte
 - A call still running after 5 minutes (the longest wait of Codex's `write_stdin` on a running command, codex-rs `main`, checked 2026-10-02) wakes the model with "Still running after 5 minutes" and the tail of its output so far (`bash.Progress`); the call goes on, and its result wakes the model when it finishes.
 - An inbox input, such as a user message or the 10-minute heartbeat, ends the wait at once.
 
-`Config.WakeHold` replaces the 5 minutes; tests shorten it.
+`Config.WakeHold` replaces the 5 minutes; tests shorten it. The output so far ends with how to stop the call (`progress`): `uah: it runs as process group N; to stop it, run kill -- -N`, a kill of the session's own command, which runs outside the sandbox (below), since inside it a command cannot signal another command's processes on macOS, nor see them on Linux.
 
 On six slow-test tasks × 3 (the agent benchmark, gpt-6.1-sol, high effort), the medians against the old wake: model time −19%, requests −25%, cost −19%, wall time unchanged; on edit tasks, unchanged. `wake_test.go` runs a quick and a slow command in one turn and checks that both results arrive in one request; uah-core's `coordinator/wake_test.go` checks the hold and the valve.
 
