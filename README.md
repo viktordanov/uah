@@ -112,6 +112,7 @@ Keys worth knowing:
 | ctrl+t | The detailed view: turns, tokens, and each tool's result |
 | ctrl+g | Edit the prompt in `$VISUAL` or `$EDITOR` (vim by default); the saved text comes back as the prompt, with its images. The draft file lives in `~/.uah/editor`, where sandboxed commands cannot reach it |
 | drag, double click, triple click | Select transcript text, a word, or a line, and copy it to the clipboard. `[tui] mouse = false` leaves selection to the terminal |
+| wheel, pgup / pgdn, end | Scroll the transcript; end returns to the bottom. Scrolled up, the screen stays on what you read while output arrives, and `New activity · ↓ Back to bottom · end` shows over its last row (a click on it returns too) |
 
 The [TUI README](internal/tui/README.md) lists every key and command.
 
@@ -179,7 +180,7 @@ Prompts are kept in one file, `~/.uah/history.jsonl`, private to you, in Codex's
 
 ### Select and copy text
 
-Drag over the transcript to select text; double click selects a word and triple click a line. Letting go copies the selection to the clipboard, and the footer says how many lines. Dragging to the top row scrolls, and the wheel keeps scrolling during a drag. Esc or a click clears the selection. The copy leaves out the `λ` and `•` columns and the padding around code, so a code block pastes as code. uah copies with OSC 52, which also works over ssh, and with `pbcopy`, `wl-copy`, or `xclip`. To use the terminal's own selection, hold Option (iTerm2, Terminal) or Shift (most others), or set `[tui] mouse = false`. See the [selection design](docs/design/selection.md).
+Drag over the transcript to select text; double click selects a word and triple click a line. Letting go copies the selection to the clipboard, and a short note in the transcript's corner says how many lines; nothing else on the screen moves. Hold the mouse on the top row, or below the transcript, to scroll while you select (faster further out), and the wheel keeps scrolling during a drag. While you select, new output does not move the text under the mouse. Esc or a click clears the selection. The copy leaves out the `λ` and `•` columns and the padding around code, so a code block pastes as code. uah copies with OSC 52, which also works over ssh, and with `pbcopy`, `wl-copy`, or `xclip`. To use the terminal's own selection, hold Option (iTerm2, Terminal) or Shift (most others), or set `[tui] mouse = false`. See the [selection design](docs/design/selection.md).
 
 The terminal's title shows the session's state and its workspace: `uah · api` when idle, `uah · working · api` while the agent works, and `uah · approve? · api` while an approval waits, `uah · answer? · api` while the agent's questions wait, which helps to find a pane among many. `[tui] title = false` turns it off.
 
