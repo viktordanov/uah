@@ -79,12 +79,14 @@ func (st *Styles) reviewLines(it state.Item, w int, now time.Time, details bool)
 			meta = append(meta, plural(r.StepCount, "step"))
 		}
 		meta = append(meta, used, elapsed(now.Sub(r.Started)))
-		out := append([]string{""}, st.flow(st.accent.Render("  REVIEW  ")+r.Hint, st.dim.Render("  · "), styleLines(compact(meta), st.dim), reviewHang, w)...)
+		parts := st.withNote(styleLines(compact(meta), st.dim), r.WaitingOn(now), false)
+		out := append([]string{""}, st.flow(st.accent.Render("  REVIEW  ")+r.Hint, st.dim.Render("  · "), parts, reviewHang, w)...)
 
 		return append(out, st.reviewSteps(r, w, now, details)...)
 	}
 	out := []string{"", ansi.Truncate(st.dim.Render("  REVIEW  ")+r.Hint, w, "…")}
 	stats := styleLines(compact(append([]string{elapsed(r.Ended.Sub(r.Started))}, append(meta, used)...)), st.dim)
+	stats = st.withNote(stats, r.LimitNote(), true)
 	switch {
 	case r.Err != "":
 		out = append(out, st.verdictLines([]string{st.bad.Render("✗ failed: " + oneLine(r.Err))}, stats, w)...)
@@ -123,6 +125,19 @@ func (st *Styles) reviewLines(it state.Item, w int, now time.Time, details bool)
 	}
 
 	return out
+}
+
+// withNote adds a note in the warning color to a review's parts, first or
+// last; an empty note adds nothing.
+func (st *Styles) withNote(parts []string, note string, first bool) []string {
+	switch {
+	case note == "":
+		return parts
+	case first:
+		return append([]string{st.warn.Render(note)}, parts...)
+	}
+
+	return append(parts, st.warn.Render(note))
 }
 
 // compact drops the empty parts.

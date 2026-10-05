@@ -7,7 +7,7 @@ import (
 )
 
 func TestWakePolicyHolds(t *testing.T) {
-	p := wakePolicy()
+	p := wakePolicy(0)
 	assert.Equal(t, wakeHold, p.Hold)
 	assert.NotNil(t, p.Progress)
 }

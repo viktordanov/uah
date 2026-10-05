@@ -90,10 +90,14 @@ const (
 		`},"required":["id"],"additionalProperties":false}`
 )
 
-// The other tools' descriptions, Codex's v1.
+// userAgentNote ends the descriptions of the tools that reach a running
+// agent: a /review's reviewer is the user's (reviewagent.go).
+const userAgentNote = " An agent a /review started (role review) is the user's: leave it alone unless the user asks you to act on it."
+
+// The other tools' descriptions, Codex's v1, with userAgentNote.
 const (
-	sendDescription   = "Send a message to an existing agent. Use interrupt=true to redirect work immediately. You should reuse the agent by send_input if you believe your assigned task is highly dependent on the context of a previous task."
+	sendDescription   = "Send a message to an existing agent. Use interrupt=true to redirect work immediately. You should reuse the agent by send_input if you believe your assigned task is highly dependent on the context of a previous task." + userAgentNote
 	waitDescription   = "Wait for agents to reach a final status. Completed statuses may include the agent's final message. Returns empty status when timed out. Other work continues while you wait. It returns as soon as an agent finishes, so a long timeout costs nothing: prefer the default or a longer timeout to short polls, which waste turns."
-	closeDescription  = "Close an agent and any open descendants when they are no longer needed, and return the target agent's previous status before shutdown was requested. Completed agents remain open and count toward the concurrency limit until closed. Don't keep agents open for too long if they are not needed anymore."
+	closeDescription  = "Close an agent and any open descendants when they are no longer needed, and return the target agent's previous status before shutdown was requested. Completed agents remain open and count toward the concurrency limit until closed. Don't keep agents open for too long if they are not needed anymore. Closing a /review's reviewer stops the review." + userAgentNote
 	resumeDescription = "Resume a previously closed agent by id so it can receive send_input and wait_agent calls. Agents from an earlier session of this conversation must be resumed before other calls reach them."
 )

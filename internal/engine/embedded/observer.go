@@ -19,13 +19,14 @@ import (
 // the runner prints it. It also emits the diff of each applied patch, the
 // output of each failed command and finished MCP call, and the answers to
 // each request_user_input call, read from the same line, so the live view
-// and a reloaded one agree.
+// and a reloaded one agree, and each model response that called no tool
+// (engine.Answered).
 type observer struct {
 	sessionID session.ID
 	out       io.Writer
 	cancel    context.CancelFunc
-	// emit, when set, receives engine.PatchApplied, engine.ToolOutput, and
-	// engine.QuestionsAnswered.
+	// emit, when set, receives engine.PatchApplied, engine.ToolOutput,
+	// engine.QuestionsAnswered, and engine.Answered.
 	emit func(core.Event)
 	// early are the items recorded before the run started, written first.
 	early []sessionstore.Item
@@ -74,6 +75,9 @@ func (o *observer) write(item sessionstore.Item) []core.Event {
 		events = append(events, ev)
 	}
 	if ev, ok := engine.QuestionsFromItem(line); ok && once(&o.answered, ev.CallID) {
+		events = append(events, ev)
+	}
+	if ev, ok := engine.AnswerFromItem(line); ok {
 		events = append(events, ev)
 	}
 

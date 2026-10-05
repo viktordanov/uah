@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	"github.com/viktordanov/uagent/core"
 	"github.com/viktordanov/uagent/harness"
@@ -62,6 +63,9 @@ type Config struct {
 	// Compaction configures automatic compaction and the summary call; its
 	// zero value never compacts automatically.
 	Compaction compaction.Settings
+	// WakeHold is how long a turn's results wait for a call still running
+	// before it wakes the model (wake.go); 0 is 5 minutes. Tests shorten it.
+	WakeHold time.Duration
 	// ContextWindow overrides the model catalog's context window (tokens).
 	ContextWindow int64
 	// Models is the model catalog: context windows and whether a model

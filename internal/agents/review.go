@@ -1,12 +1,11 @@
 package agents
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/codereview"
@@ -37,27 +36,34 @@ func (m *Manager) ReviewSettings(parent session.Settings) session.Settings {
 // Review runs one /review as Codex runs its review thread: a fresh
 // session beside the parent with no history and the reviewer's settings
 // (ReviewSettings), whose approvals are never asked. It sends the prompt,
-// waits for the answer, and closes the session. The session is a child of
-// the parent (its sidecar says so, and `uah sessions` lists it), but not
-// one of the parent's agents: the agent tools and /agents never see it.
+// waits for the answer, and closes the session. Unlike in Codex, the
+// reviewer is one of the parent's agents while it runs (reviewagent.go),
+// marked as the user's, so the main agent can reach it with the agent
+// tools when the user asks; its sidecar marks it as a review. The review
+// ends at the reviewer's first answer, and its limits (ReviewLimits)
+// bound it.
 func (m *Manager) Review(ctx context.Context, req session.ReviewRequest) (session.ReviewAnswer, error) {
 	m.mu.Lock()
-	eng, opts := m.eng, m.tmpl
-	id := session.NewSubagentID()
+	eng, opts, limits := m.eng, m.tmpl, m.cfg.ReviewLimits
+	id := cmp.Or(req.ReviewerID, session.NewSubagentID())
 	m.parentIDs[id] = req.ParentID // no spawn tools, no root-only hooks
+	m.reviews[id] = true
 	m.mu.Unlock()
 	if eng == nil {
 		return session.ReviewAnswer{}, errors.New("subagents are not available in this session")
 	}
-	opts.ID, opts.Resumed, opts.Source, opts.Parent = id, false, session.SourceSubagent, req.ParentID
+	opts.ID, opts.Resumed, opts.Source, opts.Parent, opts.Review = id, false, session.SourceSubagent, req.ParentID, true
 	opts.Hooks, opts.Stream, opts.Interactive, opts.Shell = opts.Hooks.Clone(), false, false, nil
 	opts.Ask = func(context.Context, approval.Prompt) approval.Answer { return approval.Decline }
-	opts.Instructions, opts.Notices, opts.Settings = nil, nil, req.Settings
+	opts.Instructions, opts.Notices, opts.Settings, opts.FirstPrompt = nil, nil, req.Settings, ""
+	setScope := func(engine.Scope) {}
 	if ce, ok := eng.(childEngine); ok {
 		if sc, ok := ce.Engine.(engine.Scoper); ok {
-			sc.SetScope(id, engine.Scope{Tools: reviewTools, NeverAsk: true})
+			setScope = func(s engine.Scope) { sc.SetScope(id, s) }
 		}
 	}
+	setScope(engine.Scope{Tools: reviewTools, NeverAsk: true, CommandTimeout: limits.Command})
+	defer setScope(engine.Scope{})
 
 	// The session outlives ctx long enough to stop gracefully and close.
 	rs, err := session.Open(context.WithoutCancel(ctx), eng, opts)
@@ -73,11 +79,22 @@ func (m *Manager) Review(ctx context.Context, req session.ReviewRequest) (sessio
 		}()
 		_ = rs.Close()
 	}()
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	agent := m.addReviewer(req, rs, stop)
 	if _, err := rs.Submit(req.Prompt); err != nil {
+		m.endReviewer(agent, session.ReviewAnswer{}, err)
+
 		return session.ReviewAnswer{}, fmt.Errorf("failed to start the review: %w", err)
 	}
+	// The last turn under a limit offers no tool, so it can only answer.
+	noTools := func() {
+		setScope(engine.Scope{Tools: reviewTools, NeverAsk: true, CommandTimeout: limits.Command, NoTools: true})
+	}
+	answer, err := awaitReview(ctx, rs, req.Activity, limits, noTools, reviewAgent{m: m, c: agent})
+	m.endReviewer(agent, answer, err)
 
-	return awaitReview(ctx, rs, req.Activity)
+	return answer, err
 }
 
 // environment is the <environment_context> block that ends the parent's
@@ -89,84 +106,4 @@ func environment(prompt string) string {
 	}
 
 	return ""
-}
-
-// awaitReview follows the reviewer's session until its run ends and
-// returns its answer. When ctx ends first, it interrupts the run and
-// waits for it to stop.
-func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Event)) (session.ReviewAnswer, error) {
-	w := reviewWatch{activity: activity}
-	done := ctx.Done()
-	for {
-		select {
-		case <-done:
-			done = nil
-			go func() { _ = rs.Interrupt() }()
-		case e, ok := <-rs.Events():
-			if !ok {
-				return session.ReviewAnswer{}, errors.New("the reviewer's session closed")
-			}
-			if w.observe(e) {
-				return w.answer(ctx)
-			}
-		}
-	}
-}
-
-// reviewWatch folds the reviewer's events: its tool events, a failed
-// command's output, and its model responses (their tokens) go to
-// activity, and its run's result and failure are kept.
-type reviewWatch struct {
-	activity func(core.Event)
-	result   *core.Result
-	cause    string
-}
-
-// observe takes one event and reports whether the review ended.
-func (w *reviewWatch) observe(e core.Event) bool {
-	switch e := e.(type) {
-	case core.ToolCalled, core.ToolStarted, core.ToolFinished, core.ModelResponded, engine.ToolOutput:
-		if w.activity != nil {
-			w.activity(e)
-		}
-	case core.RunnerError:
-		w.cause = e.Message
-	case session.InputFailed:
-		w.cause = e.Reason
-	case session.Notice:
-		if e.Level == session.LevelError {
-			w.cause = e.Message
-		}
-	case core.RunFinished:
-		r := e.Result
-		w.result = &r
-	case session.Idle:
-		return w.result != nil || w.cause != ""
-	}
-
-	return false
-}
-
-// answer is the reviewer's last message, or why there is none, with the
-// tokens its run used either way.
-func (w *reviewWatch) answer(ctx context.Context) (session.ReviewAnswer, error) {
-	r := w.result
-	var a session.ReviewAnswer
-	if r != nil {
-		a.Tokens = r.Stats.Tokens
-	}
-	switch {
-	case ctx.Err() != nil:
-		return a, fmt.Errorf("the review stopped: %w", ctx.Err())
-	case r != nil && r.Status == core.StatusOK:
-		a.Text = r.Answer
-
-		return a, nil
-	case w.cause != "":
-		return a, errors.New(readable(w.cause))
-	case r != nil:
-		return a, errors.New(strings.TrimSpace(fmt.Sprintf("the review ended with status %s. %s", r.Status, r.Answer)))
-	}
-
-	return a, errors.New("the reviewer did not answer")
 }

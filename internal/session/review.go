@@ -20,6 +20,9 @@ var ErrNoReview = errors.New("/review needs the embedded engine")
 // Prompt as its only message.
 type ReviewRequest struct {
 	ParentID string
+	// ReviewerID is the reviewer's session ID, a subagent's
+	// (NewSubagentID); the main agent reaches the reviewer by it.
+	ReviewerID string
 	// Settings are the reviewer's, from ReviewSettings.
 	Settings Settings
 	Prompt   string
@@ -28,12 +31,26 @@ type ReviewRequest struct {
 	Activity func(core.Event)
 }
 
-// ReviewAnswer is the reviewer's last message and the tokens its run
-// used.
+// ReviewAnswer is the reviewer's answer and the tokens it used. Limit
+// says which of the review's limits stopped it ("" for none), and
+// Interrupted that the review was stopped from outside, such as by the
+// main agent's close_agent.
 type ReviewAnswer struct {
-	Text   string
-	Tokens core.Tokens
+	Text        string
+	Tokens      core.Tokens
+	Limit       ReviewLimit
+	Interrupted bool
 }
+
+// ReviewLimit is the limit that stopped a review: the reviewer was told
+// to answer with what it had, and stopped after that turn.
+type ReviewLimit string
+
+// The review's limits.
+const (
+	ReviewTimeLimit  ReviewLimit = "time"
+	ReviewTokenLimit ReviewLimit = "token"
+)
 
 // Reviewer runs reviews; internal/agents implements it. ReviewSettings
 // are the reviewer's settings for a parent with these. Review returns the
@@ -65,7 +82,9 @@ type ReviewActivity struct {
 }
 
 // ReviewFinished ends a review: its output, or Interrupted, or the error
-// that stopped it (Err), and the tokens the reviewer used.
+// that stopped it (Err), the tokens the reviewer used, and the limit that
+// stopped it, if one did (with its output, or with Err when the
+// reviewer did not answer even then).
 type ReviewFinished struct {
 	At          time.Time
 	ID          string
@@ -73,6 +92,7 @@ type ReviewFinished struct {
 	Interrupted bool
 	Err         string
 	Tokens      core.Tokens
+	Limit       ReviewLimit
 }
 
 func (e ReviewStarted) OccurredAt() time.Time  { return e.At }
@@ -85,10 +105,11 @@ type cmdReview struct {
 	cancel   context.CancelFunc
 }
 
-// reviewStart is a started review: its ID and the reviewer's settings.
+// reviewStart is a started review: its ID, the reviewer's session ID,
+// and the reviewer's settings.
 type reviewStart struct {
-	id       string
-	settings Settings
+	id, reviewer string
+	settings     Settings
 }
 
 // Review runs Codex's /review of the target: a subagent with Codex's
@@ -113,18 +134,18 @@ func (s *Session) Review(ctx context.Context, target codereview.Target) error {
 	}
 	fin := ReviewFinished{ID: start.id}
 	prompt, err := codereview.Prompt(ctx, start.settings.Workspace, target)
+	var answer ReviewAnswer
 	if err == nil {
-		var answer ReviewAnswer
 		answer, err = reviewer.Review(ctx, ReviewRequest{
-			ParentID: s.id, Settings: start.settings, Prompt: prompt,
+			ParentID: s.id, ReviewerID: start.reviewer, Settings: start.settings, Prompt: prompt,
 			Activity: func(e core.Event) {
 				s.post(evNotify{event: ReviewActivity{At: time.Now(), ID: start.id, Event: e}})
 			},
 		})
-		fin.Output, fin.Tokens = codereview.Parse(answer.Text), answer.Tokens
+		fin.Output, fin.Tokens, fin.Limit = codereview.Parse(answer.Text), answer.Tokens, answer.Limit
 	}
 	switch {
-	case ctx.Err() != nil:
+	case ctx.Err() != nil, answer.Interrupted:
 		fin.Interrupted, fin.Output = true, codereview.Output{}
 	case err != nil:
 		fin.Err = err.Error()
@@ -132,6 +153,16 @@ func (s *Session) Review(ctx context.Context, target codereview.Target) error {
 	s.post(evDo(func() { s.onReviewDone(fin) }))
 
 	return nil
+}
+
+// reviewRunningNote tells the main agent, in a run that starts while a
+// /review runs, that the review is the user's: its reviewer is one of the
+// agent's agents, which it leaves alone unless the user asks, and its
+// findings come with a later message.
+func reviewRunningNote(reviewerID string) string {
+	return "A /review the user started is still running. Its reviewer is agent " + reviewerID + ", started by the user: " +
+		"leave it alone unless the user asks you to act on it. If they do, reach it with the agent tools (send_input, wait_agent, close_agent), " +
+		"never through uah's files. Its findings come to you with the user's next message after it ends; the user stops it with esc esc or /stop."
 }
 
 // reviewer is the engine's Reviewer, if it has one.
@@ -152,18 +183,18 @@ func (s *Session) onReview(c cmdReview) (reviewStart, error) {
 		return reviewStart{}, errors.New("a review is already running")
 	}
 	id := uuid.NewString()
-	s.reviewStop = c.cancel
+	s.reviewStop, s.reviewerID = c.cancel, NewSubagentID()
 	settings := c.reviewer.ReviewSettings(s.settings)
 	s.emit(ReviewStarted{At: time.Now(), ID: id, Hint: c.hint, Model: settings.Model, Effort: settings.Effort})
 
-	return reviewStart{id: id, settings: settings}, nil
+	return reviewStart{id: id, reviewer: s.reviewerID, settings: settings}, nil
 }
 
 // onReviewDone reports the review and holds Codex's exit message for the
 // next run. A failed review sends nothing: Codex's thread gets no review
 // then either.
 func (s *Session) onReviewDone(fin ReviewFinished) {
-	s.reviewStop = nil
+	s.reviewStop, s.reviewerID = nil, ""
 	fin.At = time.Now()
 	s.emit(fin)
 	if s.state != StateClosed && fin.Err == "" {

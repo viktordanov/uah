@@ -222,7 +222,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 	if err != nil {
 		return Resolved{}, err
 	}
-	agentSettings, err := pickAgents(cfg.Agents)
+	agentSettings, err := pickAgents(cfg)
 	if err != nil {
 		return Resolved{}, err
 	}

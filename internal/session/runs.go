@@ -5,6 +5,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/engine"
@@ -19,6 +21,9 @@ func (s *Session) startRun(inputs []core.UserInput) {
 	s.state = StateStarting
 	s.markSent(inputs)
 	s.noteGoalRun()
+	if s.reviewStop != nil { // the note is not the user's: it is never queued again
+		inputs = append([]core.UserInput{{ID: uuid.NewString(), Text: reviewRunningNote(s.reviewerID), Role: core.RoleDeveloper}}, inputs...)
+	}
 	req := s.settings.request(s.id, inputs)
 	opts := engine.Options{
 		ServiceTier: s.settings.ServiceTier, AdaptiveEffort: s.settings.AdaptiveEffort, Mode: s.settings.Mode, Compact: s.compactPending, CompactFocus: s.compactFocus, Clear: s.clearPending,

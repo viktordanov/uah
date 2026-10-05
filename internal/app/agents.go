@@ -22,13 +22,21 @@ type Agents struct {
 	// Model and Effort are the subagents' defaults ("": the parent's).
 	Model  string
 	Effort string
+	// ReviewLimits bound each /review (review_time_limit and the others).
+	ReviewLimits agents.ReviewLimits
 }
 
-// pickAgents checks the [agents] keys and applies Codex's defaults.
-func pickAgents(c config.Agents) (Agents, error) {
+// pickAgents checks the [agents] keys and applies Codex's defaults, and
+// the /review limits (pickReviewLimits).
+func pickAgents(cfg config.Config) (Agents, error) {
+	limits, err := pickReviewLimits(cfg)
+	if err != nil {
+		return Agents{}, err
+	}
+	c := cfg.Agents
 	a := Agents{
 		Enabled: c.Enabled == nil || *c.Enabled, MaxThreads: agents.DefaultMaxThreads, MaxDepth: agents.DefaultMaxDepth,
-		Model: c.DefaultSubagentModel, Effort: c.DefaultSubagentReasoningEffort,
+		Model: c.DefaultSubagentModel, Effort: c.DefaultSubagentReasoningEffort, ReviewLimits: limits,
 	}
 	if n := c.MaxThreadsValue(); n != nil {
 		if *n < 1 {
@@ -80,6 +88,6 @@ func newAgents(r Resolved, cfg config.Config, workspace string, opts *session.Op
 
 	return agents.New(agents.Config{
 		MaxThreads: r.Agents.MaxThreads, MaxDepth: depth, Model: r.Agents.Model, Effort: r.Agents.Effort,
-		ReviewModel: cfg.ReviewModel, Roles: roles, Validate: validate,
+		ReviewModel: cfg.ReviewModel, ReviewLimits: r.Agents.ReviewLimits, Roles: roles, Validate: validate,
 	})
 }

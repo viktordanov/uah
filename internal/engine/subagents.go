@@ -83,6 +83,13 @@ type Scope struct {
 	// the auto-reviewer, as Codex's approval_policy = never does for its
 	// /review thread.
 	NeverAsk bool
+	// CommandTimeout, when set, stops each command that runs longer, as
+	// an interrupt stops it: its call ends with what it printed.
+	CommandTimeout time.Duration
+	// NoTools offers no tool and refuses every call, while the tools of
+	// past calls still resolve, so the session's history still loads: a
+	// /review's last turn, which can only answer.
+	NoTools bool
 }
 
 // AgentParent is a parent session's live run.

@@ -57,6 +57,8 @@ type Sidecar struct {
 	Created time.Time `json:"created"`
 	// Parent is the session that spawned this one (SourceSubagent).
 	Parent string `json:"parent,omitempty"`
+	// Review marks a /review's reviewer (Options.Review).
+	Review bool `json:"review,omitempty"`
 	// Settings are what the session last used, restored on resume (nil in
 	// sidecars from before uah kept them).
 	Settings *Saved `json:"settings,omitempty"`

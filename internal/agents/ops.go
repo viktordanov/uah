@@ -259,13 +259,35 @@ func (m *Manager) find(parentID, id string) (*child, bool) {
 }
 
 // notFound says a child is unknown, and how to reach one from an earlier
-// process.
+// process; a /review's reviewer is never one.
 func (m *Manager) notFound(parentID, id string) error {
-	if sc, found, err := session.ReadSidecar(m.template().SessionsDir, id); id != "" && err == nil && found && sc.Parent == parentID {
+	sc, found, err := session.ReadSidecar(m.template().SessionsDir, id)
+	switch {
+	case id == "" || err != nil || !found:
+	case m.isReview(id, sc):
+		return errReviewer(id)
+	case sc.Parent == parentID:
 		return fmt.Errorf("agent with id %s is not loaded; resume it with resume_agent first", id)
 	}
 
 	return fmt.Errorf("agent with id %s not found", id)
+}
+
+// isReview reports whether a session is a /review's reviewer: one this
+// process started, or one whose sidecar says so.
+func (m *Manager) isReview(id string, sc session.Sidecar) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return sc.Review || m.reviews[id]
+}
+
+// errReviewer refuses to resume a /review's reviewer whose review is not
+// running here: a reviewer is reached as a live agent while its review
+// runs, and its findings reached the agent when it ended.
+func errReviewer(id string) error {
+	return fmt.Errorf("agent with id %s is the reviewer of a /review the user started, which is not running here: it cannot be resumed. "+
+		"Its findings came to you with the user's message after it ended", id)
 }
 
 // send gives a child another message; with interrupt, it stops the
@@ -273,14 +295,29 @@ func (m *Manager) notFound(parentID, id string) error {
 func (m *Manager) send(parentID, id, message string, interrupt bool) (string, error) {
 	m.mu.Lock()
 	c, ok := m.find(parentID, id)
-	closed := ok && c.closed
+	closed := ok && (c.closed || c.ending)
 	if ok && interrupt {
 		c.cancelAsks()
 	}
 	if ok {
 		c.stopStreak = 0
 	}
+	reserved := ok && !closed && c.review
+	if reserved { // before the interrupt: its idle session must not end the review first
+		c.reserved++
+	}
 	m.mu.Unlock()
+	if reserved {
+		defer func() {
+			m.mu.Lock()
+			c.reserved--
+			m.mu.Unlock()
+			select {
+			case c.released <- struct{}{}:
+			default: // one wake is enough: the review reads the rest
+			}
+		}()
+	}
 	switch {
 	case !ok:
 		return "", m.notFound(parentID, id)
@@ -288,6 +325,11 @@ func (m *Manager) send(parentID, id, message string, interrupt bool) (string, er
 		return "", fmt.Errorf("agent with id %s is closed", id)
 	}
 	when := session.SendAfterRun
+	if c.review {
+		// The review ends with its run, so a message after it would
+		// never arrive: it goes into the live run.
+		when = session.SendNow
+	}
 	if interrupt {
 		if err := c.s.Interrupt(); err != nil {
 			return "", fmt.Errorf("failed to interrupt the agent: %w", err)
@@ -365,6 +407,11 @@ func (m *Manager) closeAgent(parentID, id string) (Status, error) {
 	if !ok {
 		return Status{State: engine.AgentNotFound}, m.notFound(parentID, id)
 	}
+	if c.review {
+		m.stopReviewer(c) // the review ends as interrupted and closes it
+
+		return prev, nil
+	}
 	m.closeTree(c)
 
 	return prev, nil
@@ -417,8 +464,14 @@ func (m *Manager) resume(_ context.Context, parentID, id string) (Status, error)
 	m.mu.Unlock()
 	dir := m.template().SessionsDir
 	sc, found, err := session.ReadSidecar(dir, id)
-	if id == "" || err != nil || !found || sc.Source != session.SourceSubagent || sc.Parent != parentID {
+	switch {
+	case id == "" || err != nil || !found || sc.Source != session.SourceSubagent || sc.Parent != parentID:
 		return Status{State: engine.AgentNotFound}, fmt.Errorf("agent with id %s not found", id)
+	case m.isReview(id, sc):
+		return Status{State: engine.AgentNotFound}, errReviewer(id)
+	case session.InUse(dir, id):
+		// Nothing starts: a second run of it would fail to start.
+		return Status{State: engine.AgentNotFound}, fmt.Errorf("agent with id %s is in use by another run, so it cannot be resumed now", id)
 	}
 	rec, _ := readRecord(dir, id)
 	role, err := m.role(rec.Role)

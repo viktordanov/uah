@@ -109,6 +109,13 @@ type Config struct {
 	// ReviewModel is /review's model, as Codex's key (the session's by
 	// default).
 	ReviewModel string `toml:"review_model"`
+	// ReviewTimeLimit and ReviewTokenLimit bound one /review: when one
+	// runs out, the reviewer answers with what it has (off by default).
+	// ReviewCommandTimeout stops each of the reviewer's commands that runs
+	// longer (10m by default; 0 is none).
+	ReviewTimeLimit      string `toml:"review_time_limit"`
+	ReviewTokenLimit     *int64 `toml:"review_token_limit"`
+	ReviewCommandTimeout string `toml:"review_command_timeout"`
 
 	// ModelInstructionsFile is a file whose text replaces the base
 	// instructions, uah's default prompt, as Codex's key does. A

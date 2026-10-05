@@ -4,6 +4,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/history"
@@ -38,6 +39,9 @@ func fileSettings(workspace string, l config.Layers, r Resolved, cfg config.Conf
 		overridden(l, "review.policy_file", first(cfg.Review.PolicyFile, "Codex's policy"), func(c config.Config) any { return c.Review.PolicyFile }),
 		overridden(l, "web_search", r.WebSearch, func(c config.Config) any { return c.WebSearch }),
 		overridden(l, "review_model", first(cfg.ReviewModel, r.Settings.Model), func(c config.Config) any { return c.ReviewModel }),
+		overridden(l, "review_time_limit", limitText(r.Agents.ReviewLimits.Time), func(c config.Config) any { return c.ReviewTimeLimit }),
+		overridden(l, "review_token_limit", limitCount(r.Agents.ReviewLimits.Tokens), func(c config.Config) any { return c.ReviewTokenLimit }),
+		overridden(l, "review_command_timeout", limitText(r.Agents.ReviewLimits.Command), func(c config.Config) any { return c.ReviewCommandTimeout }),
 	}
 	out = append(out, compactionSettings(l, r, cfg)...)
 	out = append(out, []Setting{
@@ -160,6 +164,25 @@ func setMap(m map[string]string) map[string]string {
 func orDefault(n, d int) int {
 	if n == 0 {
 		return d
+	}
+
+	return n
+}
+
+// limitText is a limit as `uah config` shows it: the duration, or "none".
+func limitText(d time.Duration) string {
+	if d == 0 {
+		return "none"
+	}
+
+	return d.String()
+}
+
+// limitCount is a count limit as `uah config` shows it: the number, or
+// "none".
+func limitCount(n int64) any {
+	if n == 0 {
+		return "none"
 	}
 
 	return n

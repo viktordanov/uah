@@ -217,3 +217,25 @@ func TestReview_HandOverIsANote(t *testing.T) {
 	require.Equal(t, []state.Kind{state.KindNotice}, kinds(s))
 	assert.Equal(t, "the review went to the main agent with this message", s.Items[0].Text)
 }
+
+// TestReview_WaitingAndLimit says what a running review waits on, once a
+// step has run for a minute, and which limit stopped a review.
+func TestReview_WaitingAndLimit(t *testing.T) {
+	act := func(e core.Event) session.ReviewActivity { return session.ReviewActivity{At: t0, ID: "r1", Event: e} }
+	s, _ := apply(opened(), session.ReviewStarted{At: t0, ID: "r1", Hint: "current changes"},
+		act(core.ToolCalled{At: t0, CallID: "quick", Name: "Bash", Arguments: `{"command":"git status"}`}),
+		act(core.ToolStarted{At: t0, CallID: "quick"}),
+		act(core.ToolFinished{At: t0, CallID: "quick", OK: true}),
+		act(core.ToolCalled{At: t0, CallID: "install", Name: "Bash", Arguments: `{"command":"pnpm install --offline --frozen-lockfile --ignore-scripts"}`}),
+		act(core.ToolStarted{At: t0, CallID: "install"}),
+	)
+	r := s.Items[0].Review
+	assert.Empty(t, r.WaitingOn(t0.Add(59*time.Second)), "not for a minute")
+	assert.Equal(t, "waiting on: pnpm install --offline --frozen-lockfil… (12m)", r.WaitingOn(t0.Add(12*time.Minute+30*time.Second)))
+	assert.Empty(t, r.LimitNote())
+
+	s, _ = apply(s, session.ReviewFinished{At: t0.Add(30 * time.Minute), ID: "r1", Limit: session.ReviewTimeLimit})
+	r = s.Items[0].Review
+	assert.Empty(t, r.WaitingOn(t0.Add(40*time.Minute)), "a review that ended waits on nothing")
+	assert.Equal(t, "stopped at the time limit", r.LimitNote())
+}

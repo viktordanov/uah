@@ -37,10 +37,14 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	if err != nil {
 		return nil, err
 	}
+	w.commands = newCommands(ctx, scope.commandTimeout())
 	b, sandboxed := translators.Bash.(sandboxedBash)
 	if sandboxed {
-		b.ctx = approvals
+		b.ctx, b.commands = approvals, w.commands
 		translators.Bash = b
+	}
+	if w.commands.limit > 0 {
+		translators.Bash = timedBash{Translator: translators.Bash, c: w.commands}
 	}
 	var skills []tool.Skill
 	var skillErrs []error
@@ -85,7 +89,12 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 
 	registry = withPreToolUse(approvals, registry, w.e.cfg.Hooks, req, w.l.SessionsDir)
 
-	return withPolicy(registry, policy, allowed, mcpTools), nil
+	registry = withPolicy(registry, policy, allowed, mcpTools)
+	if scope.closed() {
+		registry = closedRegistry{registry}
+	}
+
+	return registry, nil
 }
 
 // withSandbox offers Bash with the escalation arguments and a note on the
@@ -208,8 +217,14 @@ func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 		// The sandbox scripts run outside the sandbox (sandbox.Shell).
 		p.ReadOnly = append(slices.Clip(p.ReadOnly), dir)
 	}
-	if mode == sandbox.WorkspaceWrite {
+	switch mode {
+	case sandbox.WorkspaceWrite:
 		p = withGrants(p, w.grants.Roots())
+	case sandbox.ReadOnly:
+		// network_access is [sandbox_workspace_write]'s, as in Codex,
+		// whose read-only sandbox has no network: a /review's reviewer
+		// never reaches it.
+		p.Network = false
 	}
 
 	return p

@@ -66,6 +66,17 @@ type child struct {
 	noteDue string
 	// stopStreak counts SubagentStop hooks that kept the child going.
 	stopStreak int
+	// review marks a /review's reviewer (reviewagent.go), and stopReview
+	// stops its review.
+	review     bool
+	stopReview context.CancelFunc
+	// reserved counts the sends to a reviewer that are under way, from
+	// before their interrupt; ending is set once its review decided to end,
+	// after which no send reaches it.
+	reserved int
+	ending   bool
+	// released wakes the review when a reservation ends.
+	released chan struct{}
 	// log are the session's events since it opened, and subs the views
 	// that follow them (see watch.go).
 	log  []core.Event
@@ -252,10 +263,16 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 		if c.sending > 0 || len(c.pending) > 0 || c.closed {
 			return false, nil
 		}
+		if c.review { // its review ends it (endReviewer), not a run's end
+			c.last, c.failed, c.cause = nil, "", ""
+			clear(c.early)
+
+			return false, nil
+		}
 		status := c.final()
 		c.last, c.failed, c.cause = nil, "", ""
 		clear(c.early)
-		if status.State == engine.AgentCompleted && m.tmpl.Hooks.Has(hooks.SubagentStop, "") {
+		if status.State == engine.AgentCompleted && !c.review && m.tmpl.Hooks.Has(hooks.SubagentStop, "") {
 			return false, &stopCheck{gen: c.gen, status: status}
 		}
 		c.status, c.stopStreak = status, 0
@@ -332,7 +349,7 @@ func (m *Manager) outboxOf(parentID string) *outbox {
 // not reported, since the parent learns it anyway.
 // It holds m.mu.
 func (m *Manager) completionNote(c *child, current bool) string {
-	if !current || !c.status.Final() || c.status.State == engine.AgentShutdown || c.notified == c.gen {
+	if !current || c.review || !c.status.Final() || c.status.State == engine.AgentShutdown || c.notified == c.gen {
 		return ""
 	}
 	c.notified = c.gen

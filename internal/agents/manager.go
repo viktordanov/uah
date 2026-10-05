@@ -39,7 +39,9 @@ type Config struct {
 	// ReviewModel is /review's model, Codex's review_model ("": the
 	// session's).
 	ReviewModel string
-	Roles       []Role
+	// ReviewLimits bound each /review.
+	ReviewLimits ReviewLimits
+	Roles        []Role
 	// Validate refuses a model spawn_agent may not use, as Codex checks
 	// the model against its catalog (internal/models.Validate); nil
 	// accepts any.
@@ -61,6 +63,8 @@ type Manager struct {
 	// parentIDs and forks remember the sidecars' parents and records' forks.
 	parentIDs map[string]string
 	forks     map[string]bool
+	// reviews are the /review reviewers this process started.
+	reviews map[string]bool
 	// outboxes deliver each parent's updates in order (notify, forward).
 	outboxes map[string]*outbox
 	// changed is closed and replaced whenever a child's status changes.
@@ -78,7 +82,7 @@ func New(cfg Config) *Manager {
 
 	return &Manager{
 		cfg:     cfg,
-		parents: map[string]engine.AgentParent{}, children: map[string]*child{}, parentIDs: map[string]string{}, forks: map[string]bool{}, outboxes: map[string]*outbox{}, changed: make(chan struct{}),
+		parents: map[string]engine.AgentParent{}, children: map[string]*child{}, parentIDs: map[string]string{}, forks: map[string]bool{}, reviews: map[string]bool{}, outboxes: map[string]*outbox{}, changed: make(chan struct{}),
 	}
 }
 
@@ -234,7 +238,7 @@ func (m *Manager) forked(id string) bool {
 func (m *Manager) openIn(root string) int {
 	n := 0
 	for id, c := range m.children {
-		if !c.closed && m.treeRoot(id) == root {
+		if !c.closed && !c.review && m.treeRoot(id) == root {
 			n++
 		}
 	}
@@ -281,6 +285,7 @@ func (m *Manager) childOptions(p engine.AgentParent, c *child, role Role, rec re
 	opts := m.tmpl
 	opts.ID, opts.Resumed, opts.Source, opts.Parent = c.id, saved != nil, session.SourceSubagent, c.parent
 	opts.Ask, opts.Hooks, opts.Grants = m.askFor(c), opts.Hooks.Clone(), p.Grants
+	opts.FirstPrompt = "" // the root session's, when it was resumed
 	// A child's text never streams: neither its parent nor its view shows
 	// it as it arrives.
 	opts.Stream = false
@@ -389,7 +394,7 @@ func (m *Manager) Interrupt(parentID string) {
 	m.mu.Lock()
 	var stop []*child
 	for _, c := range m.children {
-		if c.parent == parentID && !c.closed {
+		if c.parent == parentID && !c.closed && !c.review { // the session stops its review itself
 			stop = append(stop, c)
 		}
 	}
