@@ -117,22 +117,45 @@ const reviewIndent = "    "
 const liveSteps = 4
 
 // reviewSteps draws the reviewer's steps, one line each: the latest few
-// while it runs, every one kept in the detailed view, with a spinning
-// "thinking" last while it runs and no call is live.
+// and every live one while it runs, every one kept in the detailed view,
+// with a spinning "thinking" last while it runs and no call is live.
 func (st *Styles) reviewSteps(r *state.Review, w int, now time.Time, details bool) []string {
 	steps := r.Steps
 	var out []string
 	if !details {
-		steps = steps[max(len(steps)-liveSteps, 0):]
+		steps = latestSteps(steps, liveSteps)
 	} else if n := r.StepCount - len(steps); n > 0 {
 		out = append(out, st.dim.Render(reviewIndent+"⋮ "+plural(n, "earlier step")+" not kept"))
 	}
 	for _, step := range steps {
 		out = append(out, st.reviewStep(step, w, now, details))
 	}
-	if r.Running && (len(steps) == 0 || !live(steps[len(steps)-1])) {
+	if r.Running && !slices.ContainsFunc(r.Steps, live) {
 		out = append(out, ansi.Truncate(reviewIndent+st.tool.Render(spin(now))+st.dim.Render(" thinking"), w, "…"))
 	}
+
+	return out
+}
+
+// latestSteps are the latest n steps, in order, with every live one kept:
+// a call still running before them takes the place of a finished one.
+func latestSteps(steps []state.Item, n int) []state.Item {
+	done := n
+	for _, s := range steps {
+		if live(s) {
+			done--
+		}
+	}
+	var out []state.Item
+	for _, s := range slices.Backward(steps) {
+		switch {
+		case live(s):
+			out = append(out, s)
+		case done > 0:
+			out, done = append(out, s), done-1
+		}
+	}
+	slices.Reverse(out)
 
 	return out
 }

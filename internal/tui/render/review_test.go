@@ -105,6 +105,17 @@ func TestScreens_Review(t *testing.T) {
 	got := screen(thinking, "")
 	assert.Contains(t, got, "✓ RAN    git diff 1a2b3c4\n    ⠋ thinking", "the spinner moves to a thinking line between calls")
 	assert.Contains(t, got, "5 steps · 39.1k tokens", "the tokens of its model responses so far")
+
+	act := func(e core.Event) session.ReviewActivity { return session.ReviewActivity{At: t0, ID: "r1", Event: e} }
+	slow := apply(reviewing(),
+		act(reviewerBash("c6", "ls a")), act(core.ToolFinished{At: t0, CallID: "c6", Name: "Bash", OK: true, Detail: "exit 0"}),
+		act(reviewerBash("c7", "ls b")), act(core.ToolFinished{At: t0, CallID: "c7", Name: "Bash", OK: true, Detail: "exit 0"}),
+		act(reviewerBash("c8", "ls c")), act(core.ToolFinished{At: t0, CallID: "c8", Name: "Bash", OK: true, Detail: "exit 0"}),
+		act(reviewerBash("c9", "ls d")), act(core.ToolFinished{At: t0, CallID: "c9", Name: "Bash", OK: true, Detail: "exit 0"}),
+	)
+	got = screen(slow, "")
+	assert.Contains(t, got, "⠋ RUN    git diff 1a2b3c4\n    ✓ LIST   b\n    ✓ LIST   c\n    ✓ LIST   d\n\n", "a call still running stays in view, in the place of the oldest finished one")
+	assert.NotContains(t, got, "thinking", "no thinking line while a call runs")
 }
 
 // TestScreens_ReviewFindings draws a finished review: the verdict line
