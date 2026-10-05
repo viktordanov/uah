@@ -17,7 +17,7 @@ import (
 func (s *Session) startRun(inputs []core.UserInput) {
 	// Injected messages that waited for a run go first (Inject).
 	s.noteFirstPrompt(inputs)
-	inputs, s.held = slices.Concat(s.held, inputs), nil
+	inputs, s.startHeld, s.held = slices.Concat(s.held, inputs), s.held, nil
 	s.state = StateStarting
 	s.markSent(inputs)
 	s.noteGoalRun()
@@ -58,11 +58,17 @@ func (s *Session) markSent(inputs []core.UserInput) {
 // onStarted handles a run that started or failed to start, and reports
 // whether the session closed.
 func (s *Session) onStarted(m evStarted) bool {
+	held := s.startHeld
+	s.startHeld = nil
 	if m.err != nil {
+		// The injected messages wait for the next run again; the rest failed.
+		s.held = slices.Concat(held, s.held)
 		ids := make([]string, 0, len(m.inputs))
 		for _, in := range slices.Concat(m.inputs, s.startSteers) {
 			delete(s.sent, in.ID)
-			ids = append(ids, in.ID)
+			if !slices.ContainsFunc(held, func(h core.UserInput) bool { return h.ID == in.ID }) {
+				ids = append(ids, in.ID)
+			}
 		}
 		s.startSteers = nil
 		s.emit(InputFailed{At: time.Now(), IDs: ids, Reason: m.err.Error()})

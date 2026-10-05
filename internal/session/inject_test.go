@@ -1,6 +1,7 @@
 package session_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -68,5 +69,30 @@ func TestSession_InjectWhileIdleIsHeld(t *testing.T) {
 		texts = append(texts, m.Text)
 	}
 	assert.Equal(t, []string{"kept", "next"}, texts)
+	r.finish(core.StatusOK)
+}
+
+// TestSession_InjectSurvivesAFailedStart: a run that fails to start gives
+// back the held message it took, and the next run gets it.
+func TestSession_InjectSurvivesAFailedStart(t *testing.T) {
+	h := newHarness(t, fakeCaps{LiveInput: true})
+	h.s.Inject("note")
+	h.eng.startErr = errors.New("preflight blocked the run")
+	_, err := h.s.Submit("first")
+	require.NoError(t, err)
+	failed := h.until(isType[session.InputFailed]).(session.InputFailed)
+	assert.NotContains(t, failed.IDs, "", "only the user's message failed")
+	assert.Len(t, failed.IDs, 1)
+	h.until(isType[session.Idle])
+
+	h.eng.startErr = nil
+	_, err = h.s.Submit("second")
+	require.NoError(t, err)
+	r := <-h.eng.started
+	var texts []string
+	for _, m := range r.req.Messages {
+		texts = append(texts, m.Text)
+	}
+	assert.Equal(t, []string{"note", "second"}, texts)
 	r.finish(core.StatusOK)
 }
