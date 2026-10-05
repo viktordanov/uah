@@ -33,7 +33,7 @@
 • Done: see │  47     x47 := step(47) // line 47    with a tab                                             │
             │  48     x48 := step(48) // line 48    with a tab                                             │
 λ Working (0│  49     x49 := step(49) // line 49    with a tab                                             │
-            ╰─ 20-49 of 100 · ↑↓ pgup pgdn g G scroll · e editor · o open · esc close ─────────────────────╯
+            ╰─ 20-49 of 100 · esc close · e editor · o open · ↑↓ pgup pgdn g G scroll ─────────────────────╯
 
 λ
 

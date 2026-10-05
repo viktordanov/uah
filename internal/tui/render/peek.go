@@ -117,7 +117,7 @@ func (st *Styles) peekLines(s state.State, pw, ph int) []string {
 		body = append(body, st.peekRow("", inner, false))
 	}
 	title := st.accent.Render(peekTitle(s))
-	hint := "↑↓ pgup pgdn g G scroll · e editor · o open · esc close"
+	hint := "esc close · e editor · o open · ↑↓ pgup pgdn g G scroll"
 	if len(p.Lines) > 0 {
 		hint = fmt.Sprintf("%d-%d of %d · ", top+1, end, len(p.Lines)) + hint
 	}

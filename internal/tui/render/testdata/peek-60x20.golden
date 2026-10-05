@@ -17,4 +17,4 @@
 │  39     x39 := step(39) // line 39    with a tab         │
 │  40     x40 := step(40) // line 40    with a tab         │
 │  41     x41 := step(41) // line 41    with a tab         │
-╰─ 24-41 of 100 · ↑↓ pgup pgdn g G scroll · e editor · … ──╯
+╰─ 24-41 of 100 · esc close · e editor · o open · ↑↓ pg… ──╯

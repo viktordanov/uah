@@ -177,6 +177,8 @@ func StartTUI(ctx context.Context, e *Env, id string) *TUI {
 	t := &TUI{term: &terminal{}, done: make(chan error, 1)}
 	deps := bubble.Deps{
 		SessionID: id,
+		FileLinks: "peek", // uah's default
+
 		Open: func(ctx context.Context, id string) (*session.Session, []session.LoadedRun, error) {
 			s, _, err := e.Open(ctx, id, true)
 			if err != nil {
