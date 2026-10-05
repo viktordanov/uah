@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/viktordanov/uah-core/harness/llm"
 	"github.com/viktordanov/uah-core/harness/operation"
 	"github.com/viktordanov/uah-core/harness/tool"
@@ -57,20 +59,31 @@ type commandManager struct {
 }
 
 // Add starts the operation and, for a command under a limit, its timer.
+// The timer starts first, so the command's end, which may come before
+// Add returns, stops it.
 func (m *commandManager) Add(op operation.Operation) error {
-	if err := m.Manager.Add(op); err != nil {
-		return err
-	}
-	if op.Type == operation.TypeShell && !terminal(op.Status) && m.c.limit > 0 {
+	timed := op.Type == operation.TypeShell && !terminal(op.Status) && m.c.limit > 0
+	if timed {
 		m.c.mu.Lock()
-		if _, ok := m.c.timers[op.ID]; !ok {
+		if _, ok := m.c.timers[op.ID]; ok {
+			timed = false
+		} else {
 			id := op.ID
 			m.c.timers[id] = time.AfterFunc(m.c.limit, func() { m.timeOut(id) })
 		}
 		m.c.mu.Unlock()
 	}
+	err := m.Manager.Add(op)
+	if err != nil && timed {
+		m.c.mu.Lock()
+		if t, ok := m.c.timers[op.ID]; ok {
+			t.Stop()
+			delete(m.c.timers, op.ID)
+		}
+		m.c.mu.Unlock()
+	}
 
-	return nil
+	return err
 }
 
 // timeOut stops a command that ran past the limit.
@@ -166,6 +179,16 @@ type timedBash struct {
 	c *commands
 }
 
+// decide passes the decision to the Bash translator under it, so the
+// hooks and the prefetcher still see a gated translator.
+func (b timedBash) decide(ctx context.Context, call llm.ToolCall) submit {
+	if g, ok := b.Translator.(gatedTranslator); ok {
+		return g.decide(ctx, call)
+	}
+
+	return func(tc tool.Context) tool.CallStatus { return b.Translate(tc, call) }
+}
+
 func (b timedBash) TranslateResult(callID string, status tool.CallStatus, ops []operation.Operation) (llm.ToolResult, error) {
 	result, err := b.Translator.TranslateResult(callID, status, ops)
 	if err == nil && len(ops) == 1 && b.c.TimedOut(ops[0].ID) {
@@ -194,73 +217,114 @@ func (c *commands) owns(group int) bool {
 }
 
 // ownKill reports whether a command only signals the session's own
-// commands: each of its simple commands is kill, with at most a signal
-// option, and each PID (or -group) it names is in the process group of one
-// of the run's commands that still run. Such a command runs outside the
-// sandbox without asking: the sandbox lets a command signal only its own
+// commands, and returns it rewritten from what was checked: each of its
+// simple commands is kill, with at most one signal option, and each PID
+// (or -group) it names is in the process group of one of the run's
+// commands that still run. Such a command runs outside the sandbox
+// without asking: the sandbox lets a command signal only its own
 // children, so a session could not otherwise stop a command it started
-// earlier, and stopping it changes nothing but that command.
-func (c *commands) ownKill(command string) bool {
+// earlier, and stopping it changes nothing but that command. The
+// command that runs is the rewritten one, `kill -s NAME -- PID...` for
+// each, never the model's text, which the shell could expand into
+// other targets (a brace, a variable).
+func (c *commands) ownKill(command string) (string, bool) {
 	if c == nil {
-		return false
+		return "", false
 	}
 	simple, ok := rules.Split(command)
 	if !ok || len(simple) == 0 {
-		return false
+		return "", false
 	}
+	out := make([]string, 0, len(simple))
 	for _, argv := range simple {
-		pids, ok := killTargets(argv)
+		signal, pids, ok := killTargets(argv)
 		if !ok {
-			return false
+			return "", false
 		}
+		words := []string{"kill", "-s", signal, "--"}
 		for _, pid := range pids {
 			group := -pid
 			if pid > 0 {
 				g, err := syscall.Getpgid(pid)
 				if err != nil {
-					return false
+					return "", false
 				}
 				group = g
 			}
 			if !c.owns(group) {
-				return false
+				return "", false
 			}
+			words = append(words, strconv.Itoa(pid))
 		}
+		out = append(out, strings.Join(words, " "))
 	}
 
-	return true
+	return strings.Join(out, "; "), true
 }
 
-// killTargets are the PIDs of a kill command, negative for a process
-// group; ok is false for any other command. One signal option may come
-// first (-TERM, -9, -s TERM), then "--".
-func killTargets(argv []string) ([]int, bool) {
+// killTargets reads a kill command: its signal's name (TERM when it names
+// none) and its PIDs, negative for a process group. ok is false for any
+// other command, a signal that is not one, or any word that is not a
+// plain signal or number. One signal option may come first (-TERM,
+// -SIGTERM, -9, -s TERM, -n 9), then "--".
+func killTargets(argv []string) (string, []int, bool) {
 	if len(argv) < 2 || argv[0] != "kill" {
-		return nil, false
+		return "", nil, false
 	}
-	args := argv[1:]
+	args, signal := argv[1:], "TERM"
 	switch {
 	case args[0] == "-s" || args[0] == "-n":
-		args = args[min(2, len(args)):]
+		if len(args) < 2 {
+			return "", nil, false
+		}
+		signal, args = args[1], args[2:]
 	case args[0] != "--" && strings.HasPrefix(args[0], "-") && len(args) > 1:
-		args = args[1:]
+		signal, args = args[0][1:], args[1:]
+	}
+	signal, ok := signalName(signal)
+	if !ok {
+		return "", nil, false
 	}
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
 	}
 	if len(args) == 0 {
-		return nil, false
+		return "", nil, false
 	}
 	pids := make([]int, 0, len(args))
 	for _, a := range args {
 		n, err := strconv.Atoi(a)
-		if err != nil || n >= -1 && n <= 1 {
-			return nil, false
+		if err != nil || strconv.Itoa(n) != a || n >= -1 && n <= 1 {
+			return "", nil, false
 		}
 		pids = append(pids, n)
 	}
 
-	return pids, true
+	return signal, pids, true
+}
+
+// signalName is a signal's name without SIG, from its name (any case,
+// with or without SIG) or its number; ok is false for anything else.
+func signalName(s string) (string, bool) {
+	if n, err := strconv.Atoi(s); err == nil {
+		name := unix.SignalName(syscall.Signal(n))
+		if n <= 0 || name == "" {
+			return "", false
+		}
+
+		return strings.TrimPrefix(name, "SIG"), true
+	}
+	name := strings.TrimPrefix(strings.ToUpper(s), "SIG")
+	for _, r := range name {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return "", false
+		}
+	}
+	if name == "" || unix.SignalNum("SIG"+name) == 0 {
+		return "", false
+	}
+
+	return name, true
 }
 
 // terminal reports whether an operation has ended.

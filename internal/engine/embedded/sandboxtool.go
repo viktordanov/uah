@@ -221,8 +221,12 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	if err != nil {
 		return refuse(tool.ErrorStatus(err.Error(), 0))
 	}
-	if sandboxed && b.commands.ownKill(args.Command) && !b.forbidden(args.Command) {
-		return func(tc tool.Context) tool.CallStatus { return b.Translator.Translate(tc, call) }
+	if kill, own := b.commands.ownKill(args.Command); sandboxed && own && !b.forbidden(args.Command) {
+		if arguments, ok := withCommand(call.Arguments, kill); ok {
+			call.Arguments = arguments
+
+			return func(tc tool.Context) tool.CallStatus { return b.Translator.Translate(tc, call) }
+		}
 	}
 	d := b.approver.Decide(ctx, approval.Request{
 		Command: args.Command, Cwd: b.cwd, Justification: args.Justification, PrefixRule: args.PrefixRule,
@@ -251,6 +255,19 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	}
 
 	return refuse(tool.CallStatus{Error: d.Reason})
+}
+
+// withCommand is a Bash call's arguments with another command; the rest
+// stay as they were. ok is false when they do not encode again.
+func withCommand(arguments, command string) (string, bool) {
+	var args map[string]any
+	if json.Unmarshal([]byte(arguments), &args) != nil || args == nil {
+		return "", false
+	}
+	args["command"] = command
+	data, err := json.Marshal(args)
+
+	return string(data), err == nil
 }
 
 // forbidden reports whether a forbid rule refuses the command.
