@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // What the TUI and `uah review` show of a review beyond Codex's text: each
@@ -53,11 +54,15 @@ func (f Finding) Heading() string {
 
 // Confidence is the finding's confidence from 0 to 1, and whether the
 // reviewer gave one.
-func (f Finding) Confidence() (float64, bool) { return confidence(f.ConfidenceScore) }
+func (f Finding) Confidence() (float64, bool) {
+	return confidence(f.ConfidenceScore, f.scored)
+}
 
 // Confidence is the reviewer's overall confidence from 0 to 1, and whether
 // it gave one.
-func (o Output) Confidence() (float64, bool) { return confidence(o.OverallConfidenceScore) }
+func (o Output) Confidence() (float64, bool) {
+	return confidence(o.OverallConfidenceScore, o.scored)
+}
 
 // Low reports whether the reviewer gave the finding a confidence under
 // LowConfidence.
@@ -67,11 +72,12 @@ func (f Finding) Low() bool {
 	return ok && c < LowConfidence
 }
 
-// confidence reads a score: 0 (or less, or not a number) is a score left
-// out, and one from 1 to 100 a percentage.
-func confidence(c float64) (float64, bool) {
+// confidence reads a score: 0 counts only when the reviewer wrote it
+// (scored), a negative one or one that is not a number is none, and one
+// above 1 up to 100 is a percentage.
+func confidence(c float64, scored bool) (float64, bool) {
 	switch {
-	case math.IsNaN(c) || c <= 0 || c > 100:
+	case math.IsNaN(c) || c < 0 || c > 100 || (c == 0 && !scored):
 		return 0, false
 	case c > 1:
 		return c / 100, true
@@ -149,17 +155,24 @@ func (o Output) Verdict() (text string, correct int) {
 	}
 }
 
-// Place is "path:12-14" (one number for one line), relative to workspace
-// when the file is in it, or "(no location)".
-func (f Finding) Place(workspace string) string {
+// Place is "path:12-14" (one number for one line), relative to the first
+// of roots that holds the file (the workspace, and the caller may add its
+// resolved spelling), or "(no location)". It does no I/O.
+func (f Finding) Place(roots ...string) string {
 	loc := f.CodeLocation
 	path := loc.AbsoluteFilePath
 	if path == "" {
 		return "(no location)"
 	}
-	if workspace != "" {
-		if rel, err := filepath.Rel(workspace, path); err == nil && !strings.HasPrefix(rel, "..") {
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		rel, err := filepath.Rel(root, path)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			path = rel
+
+			break
 		}
 	}
 	lines := fmt.Sprintf("%d-%d", loc.LineRange.Start, loc.LineRange.End)
@@ -169,3 +182,23 @@ func (f Finding) Place(workspace string) string {
 
 	return path + ":" + lines
 }
+
+// Clean is text from the reviewer made safe to print on a terminal: escape
+// sequences and other control characters go, a tab is four spaces, and a
+// carriage return ends a line; line breaks stay.
+func Clean(text string) string {
+	text = ansiEscape.ReplaceAllString(text, "")
+	text = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\t", "    ").Replace(text)
+
+	return strings.Map(func(r rune) rune {
+		if r != '\n' && (unicode.IsControl(r) || r == 0x7f) {
+			return -1
+		}
+
+		return r
+	}, text)
+}
+
+// ansiEscape matches an escape sequence: CSI, OSC (ended by BEL or ST),
+// and other two-character escapes.
+var ansiEscape = regexp.MustCompile(`\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])|\x9b[0-?]*[ -/]*[@-~]`)

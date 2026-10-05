@@ -227,7 +227,7 @@ func (o *reviewOutput) finish(lastMessage string) error {
 			return fmt.Errorf("failed to write the review: %w", err)
 		}
 	} else if text != "" {
-		o.print(reviewWriter(o.stdout, os.Environ()))
+		o.print(reviewWriter(o.stdout, stdoutTTY(o.stdout), os.Environ()))
 	}
 	if lastMessage != "" {
 		if text == "" {
@@ -313,6 +313,13 @@ func (o *reviewOutput) document() reviewJSON {
 	}
 
 	return doc
+}
+
+// stdoutTTY reports whether w is a terminal.
+func stdoutTTY(w io.Writer) bool {
+	f, ok := w.(*os.File)
+
+	return ok && isTerminal(f)
 }
 
 // reviewerLabel is "gpt-6-astra, effort high".

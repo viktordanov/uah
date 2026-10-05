@@ -14,6 +14,10 @@ type Output struct {
 	OverallCorrectness     string    `json:"overall_correctness"`
 	OverallExplanation     string    `json:"overall_explanation"`
 	OverallConfidenceScore float64   `json:"overall_confidence_score"`
+
+	// scored is whether the answer had overall_confidence_score, so a 0
+	// it wrote counts and one left out does not.
+	scored bool
 }
 
 // Finding is one issue: a title (which the rubric starts with "[P1]"), a
@@ -25,6 +29,47 @@ type Finding struct {
 	ConfidenceScore float64  `json:"confidence_score"`
 	Priority        *int     `json:"priority"`
 	CodeLocation    Location `json:"code_location"`
+
+	// scored is whether the finding had confidence_score.
+	scored bool
+}
+
+// UnmarshalJSON reads a finding and notes whether it had a confidence.
+func (f *Finding) UnmarshalJSON(data []byte) error {
+	type plain Finding
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err //nolint:wrapcheck // the caller's own decoding error
+	}
+	*f = Finding(p)
+	f.scored = has(data, "confidence_score")
+
+	return nil
+}
+
+// UnmarshalJSON reads an answer and notes whether it had an overall
+// confidence.
+func (o *Output) UnmarshalJSON(data []byte) error {
+	type plain Output
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err //nolint:wrapcheck // the caller's own decoding error
+	}
+	*o = Output(p)
+	o.scored = has(data, "overall_confidence_score")
+
+	return nil
+}
+
+// has reports whether a JSON object has key with a value other than null.
+func has(data []byte, key string) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil {
+		return false
+	}
+	v, ok := fields[key]
+
+	return ok && string(v) != "null"
 }
 
 // Location is a finding's file and its lines, inclusive.
