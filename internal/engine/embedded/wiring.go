@@ -84,7 +84,7 @@ type wiring struct {
 	// goal answers the goal tools with the session's goal.
 	goal engine.GoalTool
 	// inject gives the session's agent a message without a turn of its own.
-	inject func(string) func()
+	inject func(string) (func(), bool)
 	// tier and adaptive are the run's service tier and adaptive effort
 	// when it started; settings the session's live settings
 	// (engine.Options.Settings, nil: none), which subagents start with

@@ -110,7 +110,7 @@ func TestAgents_SendInput(t *testing.T) {
 	result := ev.finished()
 
 	assert.Equal(t, "both done", result.Answer)
-	outputs := lastOutputs(e)
+	outputs := answers(e)
 	assert.Contains(t, outputs, `{"completed":"first answer"}`)
 	assert.Contains(t, outputs, `{"submission_id":"`)
 	assert.Contains(t, outputs, `{"completed":"second answer"}`)
@@ -136,7 +136,7 @@ func TestAgents_AMessageWhileRunningKeepsBothAnswers(t *testing.T) {
 	close(gate)
 
 	assert.Equal(t, "both done", ev.finished().Answer)
-	assert.Contains(t, lastOutputs(e), `{"completed":"the inventory\n\nthe addendum"}`)
+	assert.Contains(t, answers(e), `{"completed":"the inventory\n\nthe addendum"}`)
 }
 
 // TestAgents_LimitAndClose refuses a spawn over the limit and accepts it
@@ -182,7 +182,7 @@ func TestAgents_ChildApprovalAsksTheParent(t *testing.T) {
 	result := ev.finished()
 
 	assert.Equal(t, "done", result.Answer)
-	assert.Contains(t, lastOutputs(e), `{"completed":"fetched"}`)
+	assert.Contains(t, answers(e), `{"completed":"fetched"}`)
 	assert.Contains(t, childOutputs(e, "CHILD-D"), "fetched", "the approved command ran")
 }
 
@@ -309,12 +309,14 @@ func TestAgents_NotifyTheParentWhenAChildEnds(t *testing.T) {
 // TestAgents_NotifyTheLiveRun tells a parent that works while its child
 // ends in the same run: the notification goes into the run as a developer
 // message and rides its next request, which it does not cancel, so the
-// parent needs no wait_agent and no message to learn the answer.
+// parent needs no wait_agent and no message to learn the answer. A wait
+// after it does not repeat the answer.
 func TestAgents_NotifyTheLiveRun(t *testing.T) {
 	childGate, parentGate := make(chan struct{}), make(chan struct{})
 	e := newEnv(t, agents.Config{},
 		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-L count the files"}`)}},
 		fakellm.Reply{Gate: parentGate, Commands: []string{"echo own work"}},
+		callWith("wait_agent", `{"targets":["ID"]}`),
 		fakellm.Reply{Text: "the agent said forty-two"},
 		fakellm.Reply{Text: "nothing new"},
 	)
@@ -334,12 +336,13 @@ func TestAgents_NotifyTheLiveRun(t *testing.T) {
 			parent = append(parent, r)
 		}
 	}
-	require.Len(t, parent, 3, "the notification canceled no request and started no run")
-	last := parent[2]
-	note := strings.Join(last.DeveloperTexts, "\n")
-	assert.Contains(t, note, "<subagent_notification>")
+	require.Len(t, parent, 4, "the notification canceled no request and started no run")
+	note := strings.Join(parent[2].DeveloperTexts, "\n")
+	assert.Contains(t, note, "<subagent_notification>", "the request after the parent's own work has it")
 	assert.Contains(t, note, `"status":{"completed":"forty-two"}`)
 	assert.Contains(t, lastOutputs(e), "own work")
+	assert.Contains(t, lastOutputs(e), "already got", "the wait points at the notification")
+	assert.Equal(t, 1, strings.Count(strings.Join(parent[3].DeveloperTexts, "\n")+lastOutputs(e), "forty-two"), "the answer is in the request once")
 
 	_, err = s.Submit("anything else?")
 	require.NoError(t, err)
@@ -348,11 +351,11 @@ func TestAgents_NotifyTheLiveRun(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(strings.Join(slices.Concat(next.UserTexts, next.DeveloperTexts), "\n"), "<subagent_notification>"), "it is not sent again")
 }
 
-// TestAgents_AWaitTakesBackTheHeldNotification reports a child's result
-// once: the child ends while the parent's run works without a wait, so its
-// <subagent_notification> is held, and when wait_agent then returns the same
-// final status, the held notification does not go with the next message.
-func TestAgents_AWaitTakesBackTheHeldNotification(t *testing.T) {
+// TestAgents_AWaitAfterTheNotificationKeepsTheAnswerOnce reports a child's
+// answer once: the child ends while the parent's request is under way, so
+// its <subagent_notification> goes into the run, and the wait_agent that
+// request then makes points at it instead of repeating the answer.
+func TestAgents_AWaitAfterTheNotificationKeepsTheAnswerOnce(t *testing.T) {
 	childGate, parentGate := make(chan struct{}), make(chan struct{})
 	e := newEnv(t, agents.Config{},
 		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-W count the files"}`)}},
@@ -367,15 +370,18 @@ func TestAgents_AWaitTakesBackTheHeldNotification(t *testing.T) {
 	_, err := s.Submit("delegate")
 	require.NoError(t, err)
 	close(childGate)
-	ev.agentState(engine.AgentCompleted) // its notification is held: no wait is pending
+	ev.agentState(engine.AgentCompleted) // no wait is pending: the notification goes into the run
 	close(parentGate)
 	assert.Equal(t, "the agent said forty-two", ev.finished().Answer)
-	assert.Contains(t, lastOutputs(e), `{"completed":"forty-two"}`)
+	last := lastParent(e)
+	assert.Contains(t, strings.Join(last.DeveloperTexts, "\n"), `"status":{"completed":"forty-two"}`)
+	assert.Contains(t, lastOutputs(e), "already got")
+	assert.NotContains(t, lastOutputs(e), "forty-two")
 
 	_, err = s.Submit("anything else?")
 	require.NoError(t, err)
 	ev.finished()
-	last := lastParent(e)
+	last = lastParent(e)
 	assert.Equal(t, "anything else?", last.UserTexts[len(last.UserTexts)-1])
-	assert.NotContains(t, strings.Join(last.UserTexts, "\n"), "<subagent_notification>", "the wait returned the status, so the note was taken back")
+	assert.Equal(t, 1, strings.Count(strings.Join(slices.Concat(last.UserTexts, last.DeveloperTexts), "\n"), "<subagent_notification>"), "the next run does not repeat it")
 }

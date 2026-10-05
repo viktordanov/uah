@@ -45,6 +45,22 @@ func (s Status) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v) // plain values
 }
 
+// toldNote stands for a final answer the parent already got in the
+// child's notification.
+const toldNote = "(its final answer is in the <subagent_notification> you already got)"
+
+// reported is the status a wait returns: a completed child whose
+// notification already went into the parent's live run is reported without
+// its answer again. It holds m.mu.
+func (c *child) reported() Status {
+	s := c.status
+	if c.told == c.gen && s.State == engine.AgentCompleted && s.Message != "" {
+		s.Message = toldNote
+	}
+
+	return s
+}
+
 // bound shares resultBudget among the statuses' messages, keeping the head
 // and the tail of a long one, as the runner bounds tool output.
 func bound(statuses map[string]Status) map[string]Status {

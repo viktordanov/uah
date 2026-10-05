@@ -51,6 +51,9 @@ type child struct {
 	// held takes back the parent's held notification; waited is the gen a wait returned (unhold).
 	held           func()
 	waited         int
+	// told is the gen whose notification went into the parent's live run,
+	// so a wait that returns that status need not repeat its answer.
+	told int
 	pending, early map[string]bool
 	// last is the last run's result; failed is a run that did not start;
 	// cause is the last error the run reported, such as the provider's.
@@ -332,7 +335,10 @@ func (m *Manager) notify(c *child) {
 	// shows the child ended, a message sent after that carries the note.
 	if note != "" && parent.Inject != nil {
 		gen := c.gen
-		m.outboxOf(c.parent).push(func() { m.hold(c, gen, parent.Inject(note)) })
+		m.outboxOf(c.parent).push(func() {
+			withdraw, live := parent.Inject(note)
+			m.hold(c, gen, withdraw, live)
+		})
 	}
 	if parent.Emit != nil && current {
 		m.outboxOf(c.parent).push(func() { parent.Emit(update) })
@@ -371,11 +377,16 @@ func (m *Manager) completionNote(c *child, current bool) string {
 	return note
 }
 
-// hold keeps the withdraw of gen's notification, or uses it if a wait returned that status.
-func (m *Manager) hold(c *child, gen int, withdraw func()) {
+// hold keeps the withdraw of gen's notification, or uses it if a wait
+// returned that status; a notification that went into the parent's live
+// run is not held.
+func (m *Manager) hold(c *child, gen int, withdraw func(), live bool) {
 	m.mu.Lock()
 	returned := c.waited >= gen
-	if !returned {
+	switch {
+	case live:
+		c.told, withdraw = gen, nil
+	case !returned:
 		c.held = withdraw
 	}
 	m.mu.Unlock()

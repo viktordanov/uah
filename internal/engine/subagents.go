@@ -111,8 +111,9 @@ type AgentParent struct {
 	// run ends, such as AgentUpdated.
 	Emit func(core.Event)
 	// Inject gives the parent's agent a message without a turn of its own,
-	// as a child's <subagent_notification> (nil: none); withdraw takes it back unsent.
-	Inject func(text string) (withdraw func())
+	// as a child's <subagent_notification> (nil: none); live says it went
+	// into the parent's live run, and withdraw takes a held one back unsent.
+	Inject func(text string) (withdraw func(), live bool)
 	// Grants are the parent session's grants, which its children share
 	// (Options.Grants).
 	Grants *sandbox.Grants

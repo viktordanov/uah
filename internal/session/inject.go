@@ -20,23 +20,34 @@ type evDo func()
 // that ends first leaves it in the history for the next request. Otherwise
 // it is held and goes out before the next run's messages, and it never
 // starts a run; withdraw takes it back while it is held.
-func (s *Session) Inject(text string) (withdraw func()) {
+// Live says it went into the run. It waits for the session's loop, so it
+// is never called from the loop.
+func (s *Session) Inject(text string) (withdraw func(), live bool) {
 	id := uuid.NewString()
-	s.post(evDo(func() { s.onInject(id, text) }))
+	reply := make(chan bool, 1)
+	s.post(evDo(func() { reply <- s.onInject(id, text) }))
+	select {
+	case live = <-reply:
+	case <-s.done:
+	}
 
 	return func() {
 		s.post(evDo(func() { s.held = slices.DeleteFunc(s.held, func(in core.UserInput) bool { return in.ID == id }) }))
-	}
+	}, live
 }
 
-func (s *Session) onInject(id, text string) {
+// onInject sends the message into the live run, or holds it, and reports
+// whether it went into the run.
+func (s *Session) onInject(id, text string) bool {
 	if s.state == StateClosed {
-		return
+		return false
 	}
 	if s.state == StateRunning && s.run != nil {
 		if err := s.run.Send(core.UserInput{ID: id, Text: text, Role: core.RoleDeveloper}); err == nil {
-			return
+			return true
 		}
 	}
 	s.held = append(s.held, core.UserInput{ID: id, Text: text})
+
+	return false
 }
