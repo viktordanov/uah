@@ -1,0 +1,6 @@
+{
+  "prompt": "We got four bug reports against this utility library, one per package. Please fix all four and add a regression test for each.\n\n1. csvq: `Field` doesn't quote values that contain a newline, and a value with a double quote comes out broken (the quote must be doubled, as in RFC 4180).\n2. semver: `Compare(\"1.10.0\", \"1.9.0\")` says 1.10.0 is older. Also a pre-release like `1.0.0-rc.1` must sort before `1.0.0`.\n3. roman: `FromRoman` gets subtractive forms wrong (\"XIV\" comes back as 16, \"MCMXCIV\" is off too), and it should reject an empty string or letters that aren't numerals with an error.\n4. urlpath: `Join(\"/api/\", \"/v1/\", \"users\")` gives `/api//v1//users`; it should give `/api/v1/users`. A trailing slash on the last segment should be kept.\n\nUse subagents for this: one per package, all four at once, each fixing its bug and adding the regression test in its own package. When they are done, run the whole suite and tell me what changed.",
+  "check": "go vet ./... && go test ./...",
+  "exercises": "four independent bugs in four packages, with the user asking for one subagent per package: the main agent delegates, waits, and checks the whole suite",
+  "tags": ["go", "fix", "subagents"]
+}

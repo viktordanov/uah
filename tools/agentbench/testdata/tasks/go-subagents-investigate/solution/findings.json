@@ -1,0 +1,5 @@
+{
+  "pricing": {"test": "TestDiscountRoundsToNearestCent", "function": "percentOf", "file": "pricing/discount.go"},
+  "inventory": {"test": "TestReserveTheLastUnits", "function": "canReserve", "file": "inventory/reserve.go"},
+  "schedule": {"test": "TestNextRunOnSunday", "function": "onDay", "file": "schedule/days.go"}
+}
