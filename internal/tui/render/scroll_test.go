@@ -299,4 +299,17 @@ func TestScroll_AgentViewPill(t *testing.T) {
 	x := strings.Index(lines[row], "New activity")
 	assert.True(t, p.c.OnPill(ansi.StringWidth(lines[row][:x]), row))
 	assert.False(t, p.c.OnPill(0, row))
+
+	p.apply(state.Submit{Text: "go on"}) // to the agent: back to its bottom
+	assert.Contains(t, strings.Join(p.draw(), "\n"), "child news", "the anchor went with the scroll")
+	assert.Empty(t, p.s.View.St.Anchor)
+}
+
+// TestNote_WideCharacterKeepsItsBackground: the space for a cut wide
+// character's half keeps the background the line has there.
+func TestNote_WideCharacterKeepsItsBackground(t *testing.T) {
+	const blue = "\x1b[44m"
+	got := render.NewStyles(render.Amber).Note(blue+"界界界\x1b[m", "X", 0)
+	assert.Equal(t, 6, ansi.StringWidth(got))
+	assert.Contains(t, got, blue+" ", "the half cell on the line's background: %q", got)
 }

@@ -154,6 +154,7 @@ func (s *State) onAgentView(ev any) ([]Effect, bool) {
 		switch {
 		case text == "" && when != session.SendAfterRun && len(v.St.Queue) > 0: // a Steer
 			v.St.Scroll = 0
+			v.St.follow()
 
 			return []Effect{EffAgentSteerQueued{ID: v.ID}}, true
 		case text == "":
@@ -163,6 +164,7 @@ func (s *State) onAgentView(ev any) ([]Effect, bool) {
 			v.St.notice(session.LevelWarning, fmt.Sprintf("/%s is for the main agent; alt+← returns to it", name))
 		default:
 			v.St.Scroll = 0
+			v.St.follow()
 
 			return []Effect{EffAgentSend{ID: v.ID, Text: s.withImages(text), When: when}}, true
 		}

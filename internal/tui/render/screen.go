@@ -152,7 +152,7 @@ type gathered struct {
 // anchor are the scroll, however many arrived since.
 func (c *Cache) gather(s state.State, w, height int) gathered {
 	anchor := -2 // the anchor's item, or -2 for none
-	if s.Backtrack == nil && s.Anchor.Key != "" {
+	if s.Backtrack == nil && s.Anchor.Key != "" && s.Pinned() {
 		anchor = s.Order(s.Anchor.Key)
 	}
 	d := gathered{scroll: s.Scroll, below: -1, banner: -1}

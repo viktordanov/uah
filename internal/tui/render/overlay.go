@@ -1,6 +1,7 @@
 package render
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -72,12 +73,19 @@ func (st *Styles) Note(line, text string, at int) string {
 	// The styles in force where the note ends carry on after it.
 	resume := strings.Join(sgr.FindAllString(ansi.Truncate(line, to, ""), -1), "")
 	right := ansi.TruncateLeft(line, to, "")
-	if w := ansi.StringWidth(right); w > 0 && w > ansi.StringWidth(line)-to { // a wide character the note's end cuts: a space for its half
-		right = " " + ansi.TruncateLeft(line, to+1, "")
+	if w := ansi.StringWidth(right); w > 0 && w > ansi.StringWidth(line)-to {
+		// A wide character the note's end cuts: a space for its half, in
+		// the styles the rest of the line starts with.
+		right = ansi.TruncateLeft(line, to+1, "")
+		lead := leadingSGR.FindString(right)
+		right = lead + " " + right[len(lead):]
 	}
 
 	return left + "\x1b[m" + st.chip.Render(text) + "\x1b[m" + resume + right
 }
+
+// leadingSGR matches the SGR sequences a line starts with.
+var leadingSGR = regexp.MustCompile("^(?:\x1b\\[[0-9;]*m)*")
 
 // OnPill reports whether screen cell (x, y) is on the new-output pill the
 // last frame drew, which a click takes to the bottom.
