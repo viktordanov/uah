@@ -248,9 +248,9 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 	case term.MouseWheelMsg, term.MouseClickMsg, term.MouseMotionMsg, term.MouseReleaseMsg, edgeMsg:
 		return m.onPointer(msg)
 	case term.KeyPressMsg:
-		return m.now().onKey(msg)
+		return m.now().cancelLink().onKey(msg)
 	case term.PasteMsg:
-		return m.now().onPaste(msg)
+		return m.now().cancelLink().onPaste(msg)
 	case eventsMsg:
 		if msg.gen != m.gen {
 			return m, next(msg.gen, msg.batches) // drain a closed session's last events

@@ -184,6 +184,23 @@ func TestTUI_DoubleClickOnALinkSelects(t *testing.T) {
 	assert.NotContains(t, dr.view(), "╭─ a.txt", "no overlay after the double click's window")
 }
 
+// TestTUI_KeyCancelsAClickedLink: a key or a paste within the double
+// click's window cancels the click, so no overlay opens over the typing.
+func TestTUI_KeyCancelsAClickedLink(t *testing.T) {
+	for name, act := range map[string]func(dr *driver){
+		"a key":   func(dr *driver) { dr.typeText("h") },
+		"esc":     func(dr *driver) { dr.key(term.KeyEscape, 0) },
+		"a paste": func(dr *driver) { dr.send(term.PasteMsg{Content: "pasted"}) },
+	} {
+		dr := readA(t, deps(t, "simple.jsonl"), "peek", "x\n")
+		x, y := dr.readCell()
+		dr.clickAt(x+1, y)
+		act(dr)
+		dr.pump(700 * time.Millisecond)
+		assert.NotContains(t, dr.view(), "╭─ a.txt", name)
+	}
+}
+
 // TestTUI_LinkAfterIdle: a click's toast shows, and a press elsewhere (the
 // composer) before the double click's window ends cancels the click.
 func TestTUI_LinkAfterIdle(t *testing.T) {

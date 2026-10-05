@@ -15,10 +15,10 @@ func (m Model) onPointer(msg term.Msg) (term.Model, term.Cmd) {
 	if _, ok := msg.(edgeMsg); ok {
 		return m.onMouse(msg) // the edge scroll's tick stops by itself
 	}
-	if _, ok := msg.(term.MouseClickMsg); ok && m.st.LinkWaiting() {
+	if _, ok := msg.(term.MouseClickMsg); ok {
 		// Any press, on the pill or the composer too, cancels a clicked
 		// link; one on the transcript counts as a double click there.
-		m.st, _ = state.Reduce(m.st, state.CancelLink{})
+		m = m.cancelLink()
 	}
 	if m.st.Peek != nil {
 		return m.onPeekMouse(msg)
@@ -28,6 +28,16 @@ func (m Model) onPointer(msg term.Msg) (term.Model, term.Cmd) {
 	}
 
 	return m.onMouse(msg)
+}
+
+// cancelLink drops a clicked link still waiting out the double click's
+// window: a press, a key, or a paste means the user moved on.
+func (m Model) cancelLink() Model {
+	if m.st.LinkWaiting() {
+		m.st, _ = state.Reduce(m.st, state.CancelLink{})
+	}
+
+	return m
 }
 
 // onMouse turns the reported mouse into selection intents: the left
