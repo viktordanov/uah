@@ -17,7 +17,7 @@ The design records below keep the research and the decisions behind each feature
 Design:
 
 1. [Harness design](design/harness.md) (historical): what the runner provided, what the harness added, the two engines it planned, and the scope accepted then.
-2. [TUI design](design/tui.md) (historical): the framework choice, architecture, screens, keys, and commands as first designed, and the move from Bubble Tea to uah's own terminal layer with its measurements.
+2. [TUI design](design/tui.md) (historical): the framework choice, architecture, screens, keys, and commands as first designed, and the move from Bubble Tea to uah's own terminal layer with its measurements, and how a window scrolled up holds its text while output arrives.
 3. [Implementation spec](design/implementation.md) (historical): the first plan of packages, files, types, and milestones; the [architecture rules](documentation/architecture.md) have today's packages.
 4. [State storage](design/state.md): what is stored where, and the plan for a rebuildable SQLite index.
 5. [Sandboxing and approvals: research](design/sandbox-research.md) (historical): how Codex sandboxes and approves commands, and the options for uah.
@@ -31,7 +31,7 @@ Design:
 13. [Streaming the answer](design/streaming.md): how Codex streams the answer, why the runner needs no change, and how the embedded engine tees each turn request's stream into the TUI.
 14. [Markdown rendering](design/markdown.md): how Codex draws and streams Markdown, the parser, incremental rendering by blocks, tables that fit the width, cached highlighting, the look chosen for code, tables, quotes, and headings, and the benchmarks that gate it.
 15. [Going back to an earlier message](design/rewind.md): Codex's backtrack and Claude Code's rewind, and how uah cuts the context at an earlier message while the session file keeps the old branch.
-16. [Selecting and copying text](design/selection.md): what Codex and other terminal programs do with the mouse, and how uah selects transcript text, keeps it on its text while the transcript moves, and copies it on release.
+16. [Selecting and copying text](design/selection.md): what Codex and other terminal programs do with the mouse, and how uah selects transcript text, keeps it on its text while the transcript moves, scrolls a drag held at the edge, and copies it on release with a toast.
 17. [Keeping the ChatGPT login fresh](design/codex-auth.md): when and how Codex refreshes its token in `auth.json`, and how uah does the same with Codex writing the same file.
 18. [Integration with the terminal host](design/hosting.md): what the terminal host needs from a harness, and the changes that let it run uah inside the mechanisms it keeps for every harness.
 19. [Editing the prompt in an editor](design/editor.md): what Claude Code's and Codex's ctrl+g do, and how uah runs `$VISUAL` or `$EDITOR` on a draft file the sandbox cannot reach, with the terminal released, and keeps its images.
