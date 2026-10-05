@@ -82,16 +82,22 @@ func (a reviewAgent) observe(e core.Event) {
 	}
 }
 
-// busy reports whether a message to the reviewer is on its way, so an
-// idle session is not the review's end.
-func (a reviewAgent) busy() bool {
+// end decides that the review ends at an idle session, unless a message
+// to the reviewer is under way: then the session's next run answers it.
+// Once it returns true, send_input refuses the reviewer, so no message is
+// lost between the decision and the review's end.
+func (a reviewAgent) end() bool {
 	if a.c == nil {
-		return false
+		return true
 	}
 	a.m.mu.Lock()
 	defer a.m.mu.Unlock()
+	if a.c.reserved > 0 || a.c.sending > 0 || len(a.c.pending) > 0 {
+		return false
+	}
+	a.c.ending = true
 
-	return a.c.sending > 0 || len(a.c.pending) > 0
+	return true
 }
 
 // stopReviewer stops a review the main agent closed: the review ends as

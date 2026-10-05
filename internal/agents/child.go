@@ -70,6 +70,11 @@ type child struct {
 	// stops its review.
 	review     bool
 	stopReview context.CancelFunc
+	// reserved counts the sends to a reviewer that are under way, from
+	// before their interrupt; ending is set once its review decided to end,
+	// after which no send reaches it.
+	reserved int
+	ending   bool
 	// log are the session's events since it opened, and subs the views
 	// that follow them (see watch.go).
 	log  []core.Event
@@ -254,6 +259,12 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 		}
 	case session.Idle:
 		if c.sending > 0 || len(c.pending) > 0 || c.closed {
+			return false, nil
+		}
+		if c.review { // its review ends it (endReviewer), not a run's end
+			c.last, c.failed, c.cause = nil, "", ""
+			clear(c.early)
+
 			return false, nil
 		}
 		status := c.final()

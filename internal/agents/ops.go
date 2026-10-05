@@ -295,14 +295,25 @@ func errReviewer(id string) error {
 func (m *Manager) send(parentID, id, message string, interrupt bool) (string, error) {
 	m.mu.Lock()
 	c, ok := m.find(parentID, id)
-	closed := ok && c.closed
+	closed := ok && (c.closed || c.ending)
 	if ok && interrupt {
 		c.cancelAsks()
 	}
 	if ok {
 		c.stopStreak = 0
 	}
+	reserved := ok && !closed && c.review
+	if reserved { // before the interrupt: its idle session must not end the review first
+		c.reserved++
+	}
 	m.mu.Unlock()
+	if reserved {
+		defer func() {
+			m.mu.Lock()
+			c.reserved--
+			m.mu.Unlock()
+		}()
+	}
 	switch {
 	case !ok:
 		return "", m.notFound(parentID, id)

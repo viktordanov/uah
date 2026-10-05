@@ -115,7 +115,7 @@ func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Ev
 			}
 			agent.observe(e)
 			step := w.observe(e)
-			if step == stepIdle && agent.busy() {
+			if step == stepIdle && !agent.end() {
 				step = stepNone // the main agent's message starts another run
 			}
 			switch step {

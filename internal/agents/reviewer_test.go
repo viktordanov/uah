@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -229,4 +230,65 @@ func mainRequest(e *env, message string) fakellm.Request {
 	}
 
 	return last
+}
+
+// TestReview_InterruptAndSend interrupts the reviewer's run with a
+// message: the interrupted run's idle session is not the review's end, so
+// the message reaches the reviewer and its answer is the review's.
+func TestReview_InterruptAndSend(t *testing.T) {
+	gate := make(chan struct{})
+	t.Cleanup(func() { close(gate) })
+	e := newEnv(t, agents.Config{},
+		steerReviewer(agents.ToolSend, `{"target":"ID","message":"Answer now.","interrupt":true}`),
+		steerReviewer(agents.ToolWait, `{"targets":["ID"]}`),
+		fakellm.Reply{Text: "done"},
+	)
+	e.llm.Route(uncommitted, fakellm.Reply{Gate: gate, Text: "never"}, fakellm.Reply{Text: reviewAnswer})
+	s, ev := e.open(t, false)
+
+	done := make(chan error, 1)
+	go func() { done <- s.Review(context.Background(), codereview.Target{Kind: codereview.Uncommitted}) }()
+	ev.until("ReviewStarted", func(x core.Event) bool { _, ok := x.(session.ReviewStarted); return ok })
+	<-e.llm.Seen()
+	_, err := s.Submit("stop the reviewer's work and ask for its answer")
+	require.NoError(t, err)
+	ev.finished()
+	fin := ev.reviewFinished()
+	require.NoError(t, <-done)
+
+	require.Empty(t, fin.Err)
+	assert.False(t, fin.Interrupted)
+	require.Len(t, fin.Output.Findings, 1)
+	outputs := strings.Join(mainRequest(e, "stop the reviewer's work and ask for its answer").ToolOutputs, "\n")
+	assert.Contains(t, outputs, `"completed"`)
+	assert.NotContains(t, outputs, `"interrupted"`, "the interrupted run is not the reviewer's end")
+}
+
+// TestReview_WaitThroughALimit: a limit interrupts the reviewer's run and
+// gives it a last turn; wait_agent returns the review's answer, not that
+// interrupted run.
+func TestReview_WaitThroughALimit(t *testing.T) {
+	gate := make(chan struct{})
+	t.Cleanup(func() { close(gate) })
+	e := newEnv(t, agents.Config{ReviewLimits: agents.ReviewLimits{Time: time.Second}},
+		steerReviewer(agents.ToolWait, `{"targets":["ID"],"timeout_ms":60000}`),
+		fakellm.Reply{Text: "done"},
+	)
+	e.llm.Route(uncommitted, fakellm.Reply{Gate: gate, Text: "never"}, fakellm.Reply{Text: reviewAnswer})
+	s, ev := e.open(t, false)
+
+	done := make(chan error, 1)
+	go func() { done <- s.Review(context.Background(), codereview.Target{Kind: codereview.Uncommitted}) }()
+	ev.until("ReviewStarted", func(x core.Event) bool { _, ok := x.(session.ReviewStarted); return ok })
+	<-e.llm.Seen()
+	_, err := s.Submit("wait for the review")
+	require.NoError(t, err)
+	ev.finished()
+	fin := ev.reviewFinished()
+	require.NoError(t, <-done)
+
+	assert.Equal(t, session.ReviewTimeLimit, fin.Limit)
+	outputs := strings.Join(mainRequest(e, "wait for the review").ToolOutputs, "\n")
+	assert.Contains(t, outputs, `"completed"`)
+	assert.NotContains(t, outputs, `"interrupted"`)
 }
