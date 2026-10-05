@@ -337,6 +337,11 @@ type TUI struct {
 	// Title shows the session's state in the terminal's title (on when
 	// unset, TitleOn).
 	Title *bool `toml:"title"`
+	// FileLinks is what a click on a file path in the transcript does
+	// (FileLinksMode): "peek" (the default) shows the file in an overlay,
+	// "editor" opens it in $VISUAL or $EDITOR at its line, "open" with the
+	// system's default app, and "off" draws paths as plain text.
+	FileLinks string `toml:"file_links"`
 }
 
 // History configures <home>/history.jsonl, the prompts ↑ and ctrl+r
@@ -350,6 +355,27 @@ type History struct {
 
 // MouseOn reports whether the TUI reports the mouse: on unless set false.
 func (t TUI) MouseOn() bool { return t.Mouse == nil || *t.Mouse }
+
+// The values of [tui] file_links.
+const (
+	FileLinksPeek   = "peek"
+	FileLinksEditor = "editor"
+	FileLinksOpen   = "open"
+	FileLinksOff    = "off"
+)
+
+// FileLinksModes are file_links' values, the default first.
+var FileLinksModes = []string{FileLinksPeek, FileLinksEditor, FileLinksOpen, FileLinksOff}
+
+// FileLinksMode is what a click on a file path does: file_links, or peek
+// when unset.
+func (t TUI) FileLinksMode() string {
+	if t.FileLinks == "" {
+		return FileLinksPeek
+	}
+
+	return t.FileLinks
+}
 
 // TitleOn reports whether the TUI sets the terminal's title and progress:
 // on unless set false.

@@ -180,6 +180,9 @@ func decode(path string, into *Config) (bool, error) {
 	if err := validateTools(path, into.Tools); err != nil {
 		return true, err
 	}
+	if v := into.TUI.FileLinks; v != "" && !slices.Contains(FileLinksModes, v) {
+		return true, fmt.Errorf("%s: [tui] file_links is %q; want one of %s", path, v, strings.Join(FileLinksModes, ", "))
+	}
 
 	return true, resolvePaths(into, filepath.Dir(path))
 }

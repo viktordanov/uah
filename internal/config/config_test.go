@@ -265,6 +265,31 @@ func TestMouse(t *testing.T) {
 	assert.True(t, cfg.TUI.MouseOn(), "the project file wins")
 }
 
+// TestFileLinks: a click on a path peeks unless file_links says otherwise,
+// a trusted project file overrides it, and an unknown value is refused.
+func TestFileLinks(t *testing.T) {
+	root := t.TempDir()
+	ws := filepath.Join(root, "ws")
+	user := filepath.Join(root, "config.toml")
+	cfg, _, err := config.Load(user, ws)
+	require.NoError(t, err)
+	assert.Equal(t, config.FileLinksPeek, cfg.TUI.FileLinksMode(), "peek by default")
+
+	write(t, user, "[tui]\nfile_links = \"editor\"\n[projects.\""+ws+"\"]\ntrusted = true\n")
+	cfg, _, err = config.Load(user, ws)
+	require.NoError(t, err)
+	assert.Equal(t, config.FileLinksEditor, cfg.TUI.FileLinksMode())
+
+	write(t, config.ProjectFile(ws), "[tui]\nfile_links = \"off\"\n")
+	cfg, _, err = config.Load(user, ws)
+	require.NoError(t, err)
+	assert.Equal(t, config.FileLinksOff, cfg.TUI.FileLinksMode(), "the project file wins")
+
+	write(t, user, "[tui]\nfile_links = \"browser\"\n")
+	_, _, err = config.Load(user, ws)
+	require.ErrorContains(t, err, `file_links is "browser"; want one of peek, editor, open, off`)
+}
+
 // TestAdaptiveEffort: adaptive_effort is unset by default, the user file sets it, and a
 // trusted project file overrides it.
 func TestAdaptiveEffort(t *testing.T) {
