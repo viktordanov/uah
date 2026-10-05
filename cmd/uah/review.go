@@ -15,6 +15,7 @@ import (
 	"github.com/viktordanov/uagent/stream"
 
 	"github.com/viktordanov/uah/internal/app"
+	"github.com/viktordanov/uah/internal/cmdparse"
 	"github.com/viktordanov/uah/internal/codereview"
 	"github.com/viktordanov/uah/internal/session"
 )
@@ -48,8 +49,10 @@ func reviewCommand() *cli.Command {
 		Description: "Runs /review without the terminal UI: a read-only reviewer with Codex's rubric looks at\n" +
 			"the uncommitted changes (--uncommitted), the changes against a base branch (--base), one\n" +
 			"commit (--commit), or what custom instructions say (- reads them from stdin). It prints\n" +
-			"progress on stderr and the review on stdout: the explanation, then each finding with its\n" +
-			"place. It exits 0 when the reviewer answered, whatever it found.",
+			"progress on stderr and the review on stdout: the findings counted by priority, the verdict,\n" +
+			"and the confidence, the explanation, then each finding by priority and confidence with its\n" +
+			"place; -o writes Codex's text, and --json one JSON line. It exits 0 when the reviewer\n" +
+			"answered, whatever it found.",
 		Flags:        flags,
 		OnUsageError: onUsageError,
 		Action:       reviewAction,
@@ -80,7 +83,8 @@ func reviewAction(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return cli.Exit(err.Error(), exitUsage)
 	}
-	out := reviewOutput{stdout: os.Stdout, stderr: os.Stderr, json: cmd.Bool(flagJSON)}
+	home, _ := os.UserHomeDir()
+	out := reviewOutput{stdout: os.Stdout, stderr: os.Stderr, json: cmd.Bool(flagJSON), env: cmdparse.Env{Workspace: st.Options.Settings.Workspace, Home: home}}
 	if !cmd.Bool("quiet") {
 		out.progress = newPrinter(os.Stderr, false)
 	}
@@ -168,8 +172,13 @@ type reviewOutput struct {
 	stdout, stderr io.Writer
 	progress       *printer
 	json           bool
-	started        session.ReviewStarted
-	finished       session.ReviewFinished
+	// env is where the reviewer's commands run, for their paths.
+	env cmdparse.Env
+	// calls are the reviewer's running calls, by ID.
+	calls    map[string]*reviewCall
+	seq      int
+	started  session.ReviewStarted
+	finished session.ReviewFinished
 }
 
 // handle takes one session event and reports whether the review finished.
@@ -181,11 +190,8 @@ func (o *reviewOutput) handle(e core.Event) bool {
 			o.progress.say(fmt.Sprintf("uah review · %s · %s", e.Hint, reviewerLabel(e.Model, e.Effort)))
 		}
 	case session.ReviewActivity:
-		switch e.Event.(type) {
-		case core.ToolCalled, core.ToolFinished:
-			if o.progress != nil {
-				o.progress.print(e.Event)
-			}
+		if o.progress != nil {
+			o.step(e.Event)
 		}
 	case session.Notice:
 		if o.progress != nil && e.Level != session.LevelInfo {
@@ -193,6 +199,9 @@ func (o *reviewOutput) handle(e core.Event) bool {
 		}
 	case session.ReviewFinished:
 		o.finished = e
+		if o.progress != nil {
+			o.flush()
+		}
 
 		return true
 	}
@@ -218,7 +227,7 @@ func (o *reviewOutput) finish(lastMessage string) error {
 			return fmt.Errorf("failed to write the review: %w", err)
 		}
 	} else if text != "" {
-		fmt.Fprintln(o.stdout, text)
+		o.print(reviewWriter(o.stdout, os.Environ()))
 	}
 	if lastMessage != "" {
 		if text == "" {
@@ -238,8 +247,9 @@ func (o *reviewOutput) finish(lastMessage string) error {
 	return nil
 }
 
-// summary is the review's last progress line: its findings and verdict,
-// how long it took, what it ran on, and the tokens it used.
+// summary is the review's last progress line: its findings by priority,
+// the verdict, the confidence, how long it took, what it ran on, and the
+// tokens it used.
 func (o *reviewOutput) summary() string {
 	f := o.finished
 	var parts []string
@@ -248,13 +258,14 @@ func (o *reviewOutput) summary() string {
 		parts = append(parts, "interrupted")
 	case f.Err != "":
 		parts = append(parts, "failed")
-	case len(f.Output.Findings) == 1:
-		parts = append(parts, "1 finding")
 	default:
-		parts = append(parts, fmt.Sprintf("%d findings", len(f.Output.Findings)))
-	}
-	if v := strings.TrimSpace(f.Output.OverallCorrectness); v != "" {
-		parts = append(parts, v)
+		parts = append(parts, f.Output.Counts())
+		if v, _ := f.Output.Verdict(); v != "" {
+			parts = append(parts, v)
+		}
+		if c, ok := f.Output.Confidence(); ok {
+			parts = append(parts, "confidence "+codereview.Percent(c))
+		}
 	}
 	t := f.Tokens
 

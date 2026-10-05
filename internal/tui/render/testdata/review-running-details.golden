@@ -1,0 +1,24 @@
+ uah · 3f2a1b2c · openai-codex/gpt-6-sol · high · workspace mode · /workspace/proj             idle
+
+
+
+
+
+
+
+
+
+
+
+
+  REVIEW  changes against 'main'  · gpt-6-astra high · 5 steps · 39.1k tokens · 42s
+    ├ READ    internal/config/load.go:1-80
+    ├ SEARCH  ParseConfig in internal  no matches
+    ├ RAN     go test ./internal/config  exit 1 · 4.0s
+    ├ LIST    internal/config
+    └ ⠋ RAN   git diff 1a2b3c4
+
+
+λ
+
+ 0 in (0 cached) · 0 out · 0 runs · 0 tools (∥0)          enter send · ctrl+j new line · / commands

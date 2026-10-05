@@ -23,7 +23,8 @@ type ReviewRequest struct {
 	// Settings are the reviewer's, from ReviewSettings.
 	Settings Settings
 	Prompt   string
-	// Activity gets the reviewer's tool events as they happen.
+	// Activity gets the reviewer's tool events, its failed commands'
+	// output, and its model responses as they happen.
 	Activity func(core.Event)
 }
 
@@ -53,7 +54,10 @@ type ReviewStarted struct {
 	Effort string
 }
 
-// ReviewActivity is one of the reviewer's tool events.
+// ReviewActivity is one of the reviewer's tool events (core.ToolCalled,
+// ToolStarted, ToolFinished, and the engine's ToolOutput, a failed
+// command's output) or model responses (core.ModelResponded, for its
+// tokens so far).
 type ReviewActivity struct {
 	At    time.Time
 	ID    string

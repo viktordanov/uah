@@ -73,17 +73,25 @@ func TestReview_ReadOnlySubagent(t *testing.T) {
 
 	started := slices.IndexFunc(ev.all, func(x core.Event) bool { r, ok := x.(session.ReviewStarted); return ok && r.Hint == "current changes" })
 	assert.GreaterOrEqual(t, started, 0, "ReviewStarted says what is reviewed")
-	activity := 0
+	activity, responses, failures := 0, 0, 0
 	for _, x := range ev.all {
 		_, asked := x.(session.ApprovalRequested)
 		assert.False(t, asked, "the reviewer never asks for approval")
 		if a, ok := x.(session.ReviewActivity); ok && a.ID == fin.ID {
 			activity++
+			if _, ok := a.Event.(core.ModelResponded); ok {
+				responses++
+			}
+			if _, ok := a.Event.(engine.ToolOutput); ok {
+				failures++
+			}
 		}
 		_, agent := x.(engine.AgentUpdated)
 		assert.False(t, agent, "the reviewer is not one of the agent's subagents")
 	}
 	assert.Positive(t, activity, "the reviewer's tool calls are reported")
+	assert.Positive(t, responses, "and its model responses, for the tokens so far")
+	assert.Positive(t, failures, "and why a command failed")
 
 	reqs := reviewerRequests(e)
 	require.NotEmpty(t, reqs)

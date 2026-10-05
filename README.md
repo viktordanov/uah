@@ -64,7 +64,7 @@ The [context preparation guide](docs/context-preparation.md) explains the module
 
 ---
 
-<!-- memoria:section id="usage" files="cmd/uah/main.go cmd/uah/models.go cmd/uah/run.go cmd/uah/review.go cmd/uah/resume.go cmd/uah/sessions.go cmd/uah/sessionsrm.go internal/app/sessionid.go cmd/uah/tui.go cmd/uah/tuiconfig.go cmd/uah/print.go cmd/uah/completion.go cmd/uah/doctor.go internal/app/doctor.go internal/app/doctorchecks.go cmd/uah/flags.go cmd/uah/prompts.go internal/images/images.go internal/images/store.go internal/images/paths.go internal/images/clipboard/clipboard.go internal/images/clipboard/macos.go internal/images/clipboard/linux.go internal/images/clipboard/write.go internal/app/usershell.go internal/usershell/usershell.go internal/usershell/record.go internal/usershell/capture.go cmd/uah/usage.go internal/app/planusage.go cmd/uah/exit.go cmd/uah/exit_internal_test.go internal/codereview/codereview.go internal/codereview/output.go internal/gitdiff/diff.go internal/gitdiff/refs.go internal/history/history.go internal/history/recorder.go" -->
+<!-- memoria:section id="usage" files="cmd/uah/main.go cmd/uah/models.go cmd/uah/run.go cmd/uah/review.go cmd/uah/reviewtext.go cmd/uah/resume.go cmd/uah/sessions.go cmd/uah/sessionsrm.go internal/app/sessionid.go cmd/uah/tui.go cmd/uah/tuiconfig.go cmd/uah/print.go cmd/uah/completion.go cmd/uah/doctor.go internal/app/doctor.go internal/app/doctorchecks.go cmd/uah/flags.go cmd/uah/prompts.go internal/images/images.go internal/images/store.go internal/images/paths.go internal/images/clipboard/clipboard.go internal/images/clipboard/macos.go internal/images/clipboard/linux.go internal/images/clipboard/write.go internal/app/usershell.go internal/usershell/usershell.go internal/usershell/record.go internal/usershell/capture.go cmd/uah/usage.go internal/app/planusage.go cmd/uah/exit.go cmd/uah/exit_internal_test.go internal/codereview/codereview.go internal/codereview/output.go internal/codereview/display.go internal/gitdiff/diff.go internal/gitdiff/refs.go internal/history/history.go internal/history/recorder.go" -->
 ## Get started
 
 1. Install it:
@@ -336,9 +336,10 @@ The [web search design](docs/design/web-search.md) compares it with Codex.
 
 1. Type `/review ` and pick a target in the menu: `uncommitted`, `branch` (then a base branch), or `commit` (then one of the last 100 commits). Or type instructions: `/review check the error handling`.
 2. The reviewer runs beside the session, read-only: it can run commands in the read-only sandbox and view images, nothing else, and it never asks for approval. Esc esc stops it.
-3. Its findings appear in the transcript with their priority, file and lines, and explanation. The `REVIEW` line shows the reviewer's model and effort, and when it is done, the tokens it used. Your next message takes the findings to the agent, as in Codex, so "fix the P1" works.
+3. While it works, the `REVIEW` line shows the reviewer's model and effort, its steps, the tokens so far, and the time, with its latest commands under it; ctrl+t shows every step.
+4. When it is done, the line under it counts the findings by priority and gives the verdict and the reviewer's confidence. The findings follow, sorted by priority and then confidence, each with its priority, confidence, file and lines, and explanation. A finding under 50% confidence is dim. Your next message takes the findings to the agent, as in Codex, so "fix the P1" works.
 
-`uah review` runs the same review without the TUI, as `codex review` does. It prints progress on stderr and the review on stdout, and exits 0 when the reviewer answers, whatever it finds:
+`uah review` runs the same review without the TUI, as `codex review` does. It prints the reviewer's steps on stderr and the review on stdout as the TUI shows it: the counts by priority, the verdict, and the confidence, then the findings sorted, in color on a terminal. It exits 0 when the reviewer answers, whatever it finds:
 
 ```sh
 uah review --base main                    # the changes against main
@@ -346,7 +347,7 @@ uah review --uncommitted                  # staged, unstaged, and untracked chan
 uah review --commit 1a2b3c4               # one commit (--title adds its title to the hint)
 uah review "check the error handling"     # custom instructions; - reads them from stdin
 uah review --base main --json             # one JSON line: findings, verdict, model, effort, tokens
-uah review --base main -o REVIEW.md       # also write the review's text to a file
+uah review --base main -o REVIEW.md       # also write the review to a file, in Codex's text
 ```
 
 `review_model` in the [configuration](#configuration) picks the reviewer's model (default: the session's). The [review design](docs/design/review.md) has Codex's behavior and the decisions.

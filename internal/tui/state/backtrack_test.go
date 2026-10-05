@@ -116,6 +116,11 @@ func TestBacktrack_NeedsAnIdleSessionAnEmptyComposerAndMessages(t *testing.T) {
 	assert.Nil(t, busy.Backtrack)
 	assert.Equal(t, []state.Effect{state.EffInterrupt{}}, effects, "esc esc still interrupts a busy agent")
 
+	reviewing, _ := apply(talked(t), session.ReviewStarted{At: t0, ID: "rev-1"})
+	reviewing, effects = apply(reviewing, state.Esc{Empty: true}, state.Esc{Empty: true})
+	assert.Nil(t, reviewing.Backtrack)
+	assert.Equal(t, []state.Effect{state.EffInterrupt{}}, effects, "esc esc stops a running /review")
+
 	empty, _ := apply(state.New(t0), session.SessionOpened{At: t0, ID: "sess-2", Engine: "embedded", Settings: settings()})
 	empty, _ = apply(empty, state.Esc{Empty: true}, state.Esc{Empty: true})
 	assert.Nil(t, empty.Backtrack)

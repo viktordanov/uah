@@ -46,10 +46,7 @@ func (st *Styles) compactTool(it state.Item, w int, now time.Time) string {
 	var head, tail string
 	switch {
 	case it.Tool == state.ToolCalled || it.Tool == state.ToolRunning:
-		if label == "RAN" {
-			label = "RUN"
-		}
-		head = st.accent.Render("  " + pad(label) + pad(elapsed(now.Sub(it.Started))) + " ")
+		head = st.accent.Render("  " + pad(liveLabel(label)) + pad(elapsed(now.Sub(it.Started))) + " ")
 	case it.Tool == state.ToolFailed && !noMatches:
 		head = st.dim.Render("  "+pad(label)) + st.bad.Render(pad("fail")) + " "
 		if t := failTail(it); t != "" {
@@ -70,6 +67,16 @@ func (st *Styles) compactTool(it state.Item, w int, now time.Time) string {
 	room := max(w-ansi.StringWidth(head)-ansi.StringWidth(tail), 8)
 
 	return head + ansi.Truncate(st.parts(toolParts(it)), room, "…") + tail
+}
+
+// liveLabel is a running call's label: RUN for a command, which reads RAN
+// once it is done.
+func liveLabel(label string) string {
+	if label == "RAN" {
+		return "RUN"
+	}
+
+	return label
 }
 
 // toolParts are what a call's line says: its shaped parts, the names of

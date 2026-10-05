@@ -16,7 +16,7 @@
 ╰────────────────────────────────────────────────╯
 
   REVIEW  changes against 'main'
-          ■ interrupted · 1m 00s · gpt-6-astra high · 20.3k tokens
+          ✗ failed: the reviewer did not answer · 1m 00s · gpt-6-astra high · 39.1k tokens
 
 
 λ

@@ -2,6 +2,7 @@ package state_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/codereview"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/gitdiff"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/state"
@@ -117,8 +119,9 @@ func TestReview_Item(t *testing.T) {
 	assert.Equal(t, "current changes", it.Review.Hint)
 	assert.True(t, s.ReviewRunning())
 
-	s, _ = apply(s, session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolCalled{At: t0, CallID: "c1", Name: "Bash", Label: `{"command":"git diff"}`}})
-	assert.Equal(t, "git diff", s.Items[0].Review.Doing)
+	s, _ = apply(s, session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolCalled{At: t0, CallID: "c1", Name: "Bash", Label: "git diff", Arguments: `{"command":"git diff"}`}})
+	require.Len(t, s.Items[0].Review.Steps, 1)
+	assert.Equal(t, "git diff", s.Items[0].Review.Steps[0].Command)
 
 	_, effects := apply(s, state.Submit{Text: "/review uncommitted"})
 	assert.Empty(t, effects, "one review at a time")
@@ -133,8 +136,77 @@ func TestReview_Item(t *testing.T) {
 	assert.False(t, it.Live())
 	assert.False(t, s.ReviewRunning())
 	assert.Equal(t, out, it.Review.Output)
-	assert.Empty(t, it.Review.Doing)
+	assert.Equal(t, state.ToolStopped, it.Review.Steps[0].Tool, "a call the review left running is stopped")
 	assert.Equal(t, "/workspace", it.Review.Workspace)
+}
+
+// TestReview_Steps keeps the reviewer's steps for the detailed view:
+// each tool call shaped as the session's own, its start and end, at most
+// the latest 100 and any still running, with the count of all, the tokens of its model
+// responses so far, and a copy per change, so an earlier Review keeps
+// its own steps.
+func TestReview_Steps(t *testing.T) {
+	act := func(e core.Event) session.ReviewActivity { return session.ReviewActivity{At: t0, ID: "r1", Event: e} }
+	s, _ := apply(opened(), session.ReviewStarted{At: t0, ID: "r1", Hint: "current changes"})
+	s, _ = apply(s,
+		act(core.ToolCalled{At: t0, CallID: "c0", Name: "Bash", Arguments: `{"command":"sed -n 1,40p /workspace/a.go"}`}),
+		act(core.ToolStarted{At: t0.Add(time.Second), CallID: "c0"}),
+	)
+	first := s.Items[0].Review
+	require.Len(t, first.Steps, 1)
+	step := first.Steps[0]
+	assert.Equal(t, "READ", step.Verb, "shaped as the session's own commands")
+	assert.Equal(t, state.ToolRunning, step.Tool)
+
+	s, _ = apply(s,
+		act(core.ToolFinished{At: t0, CallID: "c0", OK: false, Detail: "exit 2", Duration: 3 * time.Second}),
+		act(core.ModelResponded{At: t0, Usage: core.Tokens{InputTokens: 1_000, OutputTokens: 50}}),
+		act(core.ModelResponded{At: t0, Usage: core.Tokens{InputTokens: 2_000, OutputTokens: 70}}),
+	)
+	r := s.Items[0].Review
+	assert.Equal(t, state.ToolFailed, r.Steps[0].Tool)
+	assert.Equal(t, "exit 2", r.Steps[0].Detail)
+	assert.Equal(t, 3*time.Second, r.Steps[0].Duration)
+	s, _ = apply(s, act(engine.ToolOutput{At: t0, CallID: "c0", Output: "sed: a.go: No such file\n\n"}))
+	r = s.Items[0].Review
+	assert.Equal(t, "sed: a.go: No such file", r.Steps[0].ErrorLine, "why it failed, from its output")
+	assert.Equal(t, core.Tokens{InputTokens: 3_000, OutputTokens: 120}, r.Tokens, "the tokens so far")
+	assert.Equal(t, state.ToolRunning, first.Steps[0].Tool, "an earlier Review keeps its own steps")
+
+	for i := 1; i <= 130; i++ {
+		s, _ = apply(s, act(core.ToolCalled{At: t0, CallID: fmt.Sprintf("c%d", i), Name: "Bash", Arguments: fmt.Sprintf(`{"command":"echo %d"}`, i)}))
+	}
+	r = s.Items[0].Review
+	assert.Len(t, r.Steps, 100, "bounded")
+	assert.Equal(t, 131, r.StepCount, "every call counts")
+	assert.Equal(t, "call:c31", r.Steps[0].Key, "the latest are kept")
+	assert.Equal(t, "call:c130", r.Steps[99].Key)
+
+	slow, _ := apply(opened(), session.ReviewStarted{At: t0, ID: "r2", Hint: "current changes"},
+		session.ReviewActivity{At: t0, ID: "r2", Event: core.ToolCalled{At: t0, CallID: "slow", Name: "Bash", Arguments: `{"command":"sleep 60"}`}})
+	for i := range 120 {
+		id := fmt.Sprintf("q%d", i)
+		slow, _ = apply(slow,
+			session.ReviewActivity{At: t0, ID: "r2", Event: core.ToolCalled{At: t0, CallID: id, Name: "Bash", Arguments: `{"command":"true"}`}},
+			session.ReviewActivity{At: t0, ID: "r2", Event: core.ToolFinished{At: t0, CallID: id, OK: true}})
+	}
+	r2 := slow.Items[0].Review
+	require.Len(t, r2.Steps, 100)
+	assert.Equal(t, "call:slow", r2.Steps[0].Key, "a call still running is never dropped")
+	assert.Equal(t, "call:q21", r2.Steps[1].Key, "the oldest finished ones go")
+	slow, _ = apply(slow, session.ReviewActivity{At: t0, ID: "r2", Event: core.ToolFinished{At: t0, CallID: "slow", OK: true}})
+	assert.Equal(t, state.ToolOK, slow.Items[0].Review.Steps[0].Tool, "and its end finds it")
+
+	before := s.Items[0].Review
+	ended, _ := apply(s, session.ReviewFinished{At: t0.Add(time.Minute), ID: "r1", Interrupted: true})
+	r = ended.Items[0].Review
+	assert.Equal(t, core.Tokens{InputTokens: 3_000, OutputTokens: 120}, r.Tokens, "without the run's total, the sum so far stays")
+	assert.Equal(t, state.ToolStopped, r.Steps[99].Tool, "the review stopped its running call")
+	assert.Equal(t, state.ToolCalled, before.Steps[99].Tool, "and the earlier Review is unchanged")
+
+	done, _ := apply(s, session.ReviewFinished{At: t0.Add(time.Minute), ID: "r1", Tokens: core.Tokens{InputTokens: 9_000, OutputTokens: 300}})
+	assert.Equal(t, core.Tokens{InputTokens: 9_000, OutputTokens: 300}, done.Items[0].Review.Tokens, "the run's total wins")
+	assert.Len(t, done.Items[0].Review.Steps, 100, "the steps stay after the review")
 }
 
 // TestReview_HandOverIsANote shows the message that gave the review to

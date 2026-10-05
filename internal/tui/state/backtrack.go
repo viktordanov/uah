@@ -97,9 +97,10 @@ func (s *State) onSelecting(ev any) ([]Effect, bool) {
 }
 
 // canBacktrack reports whether esc may start going back: a session is
-// open and idle with nothing queued.
+// open and idle with nothing queued. A running /review is not idle: esc
+// stops it instead.
 func (s *State) canBacktrack() bool {
-	return !s.Busy && !s.ShellRunning() && len(s.Queue) == 0 && s.SessionID != ""
+	return !s.Busy && !s.ShellRunning() && !s.ReviewRunning() && len(s.Queue) == 0 && s.SessionID != ""
 }
 
 func (s *State) startBacktrack() {

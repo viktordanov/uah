@@ -25,6 +25,16 @@ const (
 
 // onToolCalled adds a tool call's line.
 func (s *State) onToolCalled(e core.ToolCalled) {
+	it := s.toolCall(e)
+	if e.Name == toolSkill {
+		s.joinSkill(&it)
+	}
+	s.put(it)
+}
+
+// toolCall is a tool call's line, shaped: a command's summary, an MCP
+// call's parts, the agent's questions.
+func (s *State) toolCall(e core.ToolCalled) Item {
 	it := Item{Kind: KindTool, Key: "call:" + e.CallID, Name: e.Name, Label: s.eventLabel(e), Tool: ToolCalled, Started: e.At}
 	switch {
 	case e.Name == toolBash:
@@ -33,12 +43,11 @@ func (s *State) onToolCalled(e core.ToolCalled) {
 		it.Verb, it.Parts = sum.Label, sum.Parts
 	case isMCP(e.Name):
 		it.Parts = mcpParts(e.Name, e.Arguments)
-	case e.Name == toolSkill:
-		s.joinSkill(&it)
 	case e.Name == engine.QuestionToolName:
 		it.Verb, it.Parts = "ASK", []cmdparse.Part{{Text: questionParts(e.Arguments)}}
 	}
-	s.put(it)
+
+	return it
 }
 
 // pathEnv is where the session's commands run, for their paths.
@@ -105,14 +114,22 @@ func (s *State) unmerge(key string) {
 func (s *State) onToolOutput(e engine.ToolOutput) {
 	s.update("call:"+e.CallID, func(it *Item) {
 		switch {
-		case e.Error != "":
-			it.ErrorLine = lastLine(e.Error)
-		case e.Output != "":
-			it.ErrorLine = lastLine(e.Output)
+		case e.Error != "" || e.Output != "":
+			it.ErrorLine = errorLine(e)
 		case isMCP(it.Name):
 			it.Result = resultSummary(e.Result, e.Size)
 		}
 	})
+}
+
+// errorLine is why a call failed: the last line of its error, else of its
+// output.
+func errorLine(e engine.ToolOutput) string {
+	if e.Error != "" {
+		return lastLine(e.Error)
+	}
+
+	return lastLine(e.Output)
 }
 
 // attachApproval puts the auto-reviewer's approval under the call it
