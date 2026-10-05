@@ -22,7 +22,7 @@ func (s *Session) startRun(inputs []core.UserInput) {
 	s.markSent(inputs)
 	s.noteGoalRun()
 	if s.reviewStop != nil { // the note is not the user's: it is never queued again
-		inputs = append([]core.UserInput{{ID: uuid.NewString(), Text: reviewRunningNote, Role: core.RoleDeveloper}}, inputs...)
+		inputs = append([]core.UserInput{{ID: uuid.NewString(), Text: reviewRunningNote(s.reviewerID), Role: core.RoleDeveloper}}, inputs...)
 	}
 	req := s.settings.request(s.id, inputs)
 	opts := engine.Options{

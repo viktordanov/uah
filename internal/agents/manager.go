@@ -238,7 +238,7 @@ func (m *Manager) forked(id string) bool {
 func (m *Manager) openIn(root string) int {
 	n := 0
 	for id, c := range m.children {
-		if !c.closed && m.treeRoot(id) == root {
+		if !c.closed && !c.review && m.treeRoot(id) == root {
 			n++
 		}
 	}
@@ -394,7 +394,7 @@ func (m *Manager) Interrupt(parentID string) {
 	m.mu.Lock()
 	var stop []*child
 	for _, c := range m.children {
-		if c.parent == parentID && !c.closed {
+		if c.parent == parentID && !c.closed && !c.review { // the session stops its review itself
 			stop = append(stop, c)
 		}
 	}

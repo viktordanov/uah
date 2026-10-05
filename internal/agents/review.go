@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -35,15 +36,16 @@ func (m *Manager) ReviewSettings(parent session.Settings) session.Settings {
 // Review runs one /review as Codex runs its review thread: a fresh
 // session beside the parent with no history and the reviewer's settings
 // (ReviewSettings), whose approvals are never asked. It sends the prompt,
-// waits for the answer, and closes the session. The session is a child of
-// the parent (its sidecar says so, and `uah sessions` lists it), but not
-// one of the parent's agents: its sidecar marks it as a review, and the
-// agent tools and /agents never see it. The review ends at the
-// reviewer's first answer, and its limits (ReviewLimits) bound it.
+// waits for the answer, and closes the session. Unlike in Codex, the
+// reviewer is one of the parent's agents while it runs (reviewagent.go),
+// marked as the user's, so the main agent can reach it with the agent
+// tools when the user asks; its sidecar marks it as a review. The review
+// ends at the reviewer's first answer, and its limits (ReviewLimits)
+// bound it.
 func (m *Manager) Review(ctx context.Context, req session.ReviewRequest) (session.ReviewAnswer, error) {
 	m.mu.Lock()
 	eng, opts, limits := m.eng, m.tmpl, m.cfg.ReviewLimits
-	id := session.NewSubagentID()
+	id := cmp.Or(req.ReviewerID, session.NewSubagentID())
 	m.parentIDs[id] = req.ParentID // no spawn tools, no root-only hooks
 	m.reviews[id] = true
 	m.mu.Unlock()
@@ -77,15 +79,22 @@ func (m *Manager) Review(ctx context.Context, req session.ReviewRequest) (sessio
 		}()
 		_ = rs.Close()
 	}()
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	agent := m.addReviewer(req, rs, stop)
 	if _, err := rs.Submit(req.Prompt); err != nil {
+		m.endReviewer(agent, session.ReviewAnswer{}, err)
+
 		return session.ReviewAnswer{}, fmt.Errorf("failed to start the review: %w", err)
 	}
 	// The last turn under a limit offers no tool, so it can only answer.
 	noTools := func() {
 		setScope(engine.Scope{Tools: reviewTools, NeverAsk: true, CommandTimeout: limits.Command, NoTools: true})
 	}
+	answer, err := awaitReview(ctx, rs, req.Activity, limits, noTools, reviewAgent{m: m, c: agent})
+	m.endReviewer(agent, answer, err)
 
-	return awaitReview(ctx, rs, req.Activity, limits, noTools)
+	return answer, err
 }
 
 // environment is the <environment_context> block that ends the parent's

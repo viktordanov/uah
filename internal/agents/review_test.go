@@ -32,8 +32,12 @@ const uncommitted = "Review the current code changes"
 
 func (ev *events) reviewFinished() session.ReviewFinished {
 	ev.t.Helper()
+	match := func(x core.Event) bool { _, ok := x.(session.ReviewFinished); return ok }
+	if i := slices.IndexFunc(ev.all, match); i >= 0 { // seen while waiting for something else
+		return ev.all[i].(session.ReviewFinished)
+	}
 
-	return ev.until("ReviewFinished", func(x core.Event) bool { _, ok := x.(session.ReviewFinished); return ok }).(session.ReviewFinished)
+	return ev.until("ReviewFinished", match).(session.ReviewFinished)
 }
 
 func reviewerRequests(e *env) []fakellm.Request {

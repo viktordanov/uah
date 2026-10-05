@@ -27,7 +27,7 @@ func flagDefaults() app.Inputs {
 	return app.Inputs{Workspace: "/ws", MaxDisk: "5G"}
 }
 
-var defaultReviewLimits = agents.ReviewLimits{Time: agents.DefaultReviewTime, Tokens: agents.DefaultReviewTokens, Command: agents.DefaultReviewCommand}
+var defaultReviewLimits = agents.ReviewLimits{Command: agents.DefaultReviewCommand}
 
 func TestResolve(t *testing.T) {
 	t.Parallel()

@@ -110,9 +110,9 @@ type Config struct {
 	// default).
 	ReviewModel string `toml:"review_model"`
 	// ReviewTimeLimit and ReviewTokenLimit bound one /review: when one
-	// runs out, the reviewer answers with what it has (30m and 3,000,000
-	// by default; 0 is no limit). ReviewCommandTimeout stops each of the
-	// reviewer's commands that runs longer (10m by default; 0 is none).
+	// runs out, the reviewer answers with what it has (off by default).
+	// ReviewCommandTimeout stops each of the reviewer's commands that runs
+	// longer (10m by default; 0 is none).
 	ReviewTimeLimit      string `toml:"review_time_limit"`
 	ReviewTokenLimit     *int64 `toml:"review_token_limit"`
 	ReviewCommandTimeout string `toml:"review_command_timeout"`

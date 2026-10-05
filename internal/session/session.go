@@ -158,6 +158,9 @@ type Session struct {
 	shells map[string]context.CancelFunc
 	// reviewStop stops the running /review (Review), nil when none runs.
 	reviewStop context.CancelFunc
+	// reviewerID is the running /review's reviewer, an agent of the main
+	// agent's.
+	reviewerID string
 	// firstPromptPending is a new session whose sidecar has no first
 	// message yet; the first run records it.
 	firstPromptPending bool

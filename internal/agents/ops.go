@@ -282,11 +282,12 @@ func (m *Manager) isReview(id string, sc session.Sidecar) bool {
 	return sc.Review || m.reviews[id]
 }
 
-// errReviewer refuses an agent tool's call on a /review's reviewer: the
-// review is the user's, and its findings reach the agent when it ends.
+// errReviewer refuses to resume a /review's reviewer whose review is not
+// running here: a reviewer is reached as a live agent while its review
+// runs, and its findings reached the agent when it ended.
 func errReviewer(id string) error {
-	return fmt.Errorf("agent with id %s is the reviewer of a /review the user started, not one of your agents: the agent tools cannot reach it. "+
-		"Its findings come to you with the user's next message when it ends; the user stops it with esc esc or /stop", id)
+	return fmt.Errorf("agent with id %s is the reviewer of a /review the user started, which is not running here: it cannot be resumed. "+
+		"Its findings came to you with the user's message after it ended", id)
 }
 
 // send gives a child another message; with interrupt, it stops the
@@ -309,6 +310,11 @@ func (m *Manager) send(parentID, id, message string, interrupt bool) (string, er
 		return "", fmt.Errorf("agent with id %s is closed", id)
 	}
 	when := session.SendAfterRun
+	if c.review {
+		// The review ends with its run, so a message after it would
+		// never arrive: it goes into the live run.
+		when = session.SendNow
+	}
 	if interrupt {
 		if err := c.s.Interrupt(); err != nil {
 			return "", fmt.Errorf("failed to interrupt the agent: %w", err)
@@ -385,6 +391,11 @@ func (m *Manager) closeAgent(parentID, id string) (Status, error) {
 	m.mu.Unlock()
 	if !ok {
 		return Status{State: engine.AgentNotFound}, m.notFound(parentID, id)
+	}
+	if c.review {
+		m.stopReviewer(c) // the review ends as interrupted and closes it
+
+		return prev, nil
 	}
 	m.closeTree(c)
 

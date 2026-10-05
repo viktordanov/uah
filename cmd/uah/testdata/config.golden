@@ -29,8 +29,8 @@ review.timeout                                    1m30s                         
 review.policy_file                                Codex's policy                default
 web_search                                        live                          default
 review_model                                      gpt-6-luna                    default
-review_time_limit                                 30m0s                         default
-review_token_limit                                3000000                       default
+review_time_limit                                 none                          default
+review_token_limit                                none                          default
 review_command_timeout                            10m0s                         default
 auto_compact_percent                              80                            project file
 model_auto_compact_token_limit                    0                             default

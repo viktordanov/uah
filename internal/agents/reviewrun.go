@@ -25,14 +25,13 @@ type ReviewLimits struct {
 	Command time.Duration
 }
 
-// The review's default limits, from the reviews uah ran before
-// (docs/design/review.md): the longest took 10 minutes and 1.6M tokens,
-// and its longest command 7 minutes.
-const (
-	DefaultReviewTime    = 30 * time.Minute
-	DefaultReviewTokens  = 3_000_000
-	DefaultReviewCommand = 10 * time.Minute
-)
+// The review's command limit, by default: twice the wake policy's
+// 5-minute hold, and longer than any command of the reviews uah ran
+// before (the longest, 7 minutes). The time and token limits are off by
+// default until the owner decides (docs/design/review.md#limits); about
+// three times the longest review before would be 30 minutes and 3,000,000
+// tokens.
+const DefaultReviewCommand = 10 * time.Minute
 
 // reviewLastTurn bounds the last turn a limit gives the reviewer.
 const reviewLastTurn = 3 * time.Minute
@@ -74,7 +73,7 @@ const (
 // interrupts the run and waits for it to stop. When a limit runs out, it
 // stops the run, offers no tools (noTools), and gives the reviewer one
 // last turn to answer.
-func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Event), limits ReviewLimits, noTools func()) (session.ReviewAnswer, error) {
+func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Event), limits ReviewLimits, noTools func(), agent reviewAgent) (session.ReviewAnswer, error) {
 	w := reviewWatch{activity: activity, limits: limits, live: map[string]bool{}}
 	done := ctx.Done()
 	var deadline, lastTurn <-chan time.Time
@@ -107,11 +106,19 @@ func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Ev
 
 				return w.answer(ctx)
 			}
+			if ctx.Err() != nil {
+				interrupt() // a stop that came while the session was idle reached no run
+			}
 		case e, ok := <-rs.Events():
 			if !ok {
 				return session.ReviewAnswer{}, errors.New("the reviewer's session closed")
 			}
-			switch w.observe(e) {
+			agent.observe(e)
+			step := w.observe(e)
+			if step == stepIdle && agent.busy() {
+				step = stepNone // the main agent's message starts another run
+			}
+			switch step {
 			case stepStop:
 				interrupt()
 			case stepIdle:
@@ -250,7 +257,7 @@ func (w *reviewWatch) reach(limit session.ReviewLimit) bool {
 // answer is the reviewer's first answer, or why there is none, with the
 // tokens its runs used either way.
 func (w *reviewWatch) answer(ctx context.Context) (session.ReviewAnswer, error) {
-	a := session.ReviewAnswer{Tokens: w.tokens, Limit: w.limit}
+	a := session.ReviewAnswer{Tokens: w.tokens, Limit: w.limit, Interrupted: ctx.Err() != nil}
 	if a.Tokens == (core.Tokens{}) {
 		a.Tokens = w.used // a run that ended without a result
 	}

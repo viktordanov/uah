@@ -61,10 +61,10 @@ func readReviewPolicy(r *Resolved) error {
 
 // pickReviewLimits checks the /review limits: review_time_limit,
 // review_token_limit, and review_command_timeout, with the defaults from
-// the reviews uah ran before (agents.DefaultReviewTime and the others).
-// 0 sets no limit.
+// agents.DefaultReviewCommand; the time and token limits are off unless
+// set. 0 sets no limit.
 func pickReviewLimits(cfg config.Config) (agents.ReviewLimits, error) {
-	l := agents.ReviewLimits{Time: agents.DefaultReviewTime, Tokens: agents.DefaultReviewTokens, Command: agents.DefaultReviewCommand}
+	l := agents.ReviewLimits{Command: agents.DefaultReviewCommand}
 	for _, d := range []struct {
 		key, value string
 		to         *time.Duration

@@ -66,6 +66,10 @@ type child struct {
 	noteDue string
 	// stopStreak counts SubagentStop hooks that kept the child going.
 	stopStreak int
+	// review marks a /review's reviewer (reviewagent.go), and stopReview
+	// stops its review.
+	review     bool
+	stopReview context.CancelFunc
 	// log are the session's events since it opened, and subs the views
 	// that follow them (see watch.go).
 	log  []core.Event
@@ -255,7 +259,7 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 		status := c.final()
 		c.last, c.failed, c.cause = nil, "", ""
 		clear(c.early)
-		if status.State == engine.AgentCompleted && m.tmpl.Hooks.Has(hooks.SubagentStop, "") {
+		if status.State == engine.AgentCompleted && !c.review && m.tmpl.Hooks.Has(hooks.SubagentStop, "") {
 			return false, &stopCheck{gen: c.gen, status: status}
 		}
 		c.status, c.stopStreak = status, 0
@@ -332,7 +336,7 @@ func (m *Manager) outboxOf(parentID string) *outbox {
 // not reported, since the parent learns it anyway.
 // It holds m.mu.
 func (m *Manager) completionNote(c *child, current bool) string {
-	if !current || !c.status.Final() || c.status.State == engine.AgentShutdown || c.notified == c.gen {
+	if !current || c.review || !c.status.Final() || c.status.State == engine.AgentShutdown || c.notified == c.gen {
 		return ""
 	}
 	c.notified = c.gen

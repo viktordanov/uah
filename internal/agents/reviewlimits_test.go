@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -173,20 +174,24 @@ func TestReview_CommandTimeout(t *testing.T) {
 	gone(t, stuck)
 }
 
-// TestReview_StopsItsOwnCommand: in the read-only sandbox, which lets a
-// command signal only its own children, the reviewer kills a command it
-// started earlier, and nothing asks. The hold is a second, so the
-// sandboxed command has started when the reviewer hears it still runs.
+// TestReview_StopsItsOwnCommand is the kill the reviewer tried: in the
+// read-only sandbox, which lets a command signal only its own children
+// (and on Linux not even see another command's), the reviewer stops a
+// command it started earlier with the kill the "still running" result
+// names, and nothing asks. The hold is a second, so the sandboxed command
+// has started when the reviewer hears it still runs.
 func TestReview_StopsItsOwnCommand(t *testing.T) {
 	stuck := endless(t)
+	hint := regexp.MustCompile(`to stop it, run (kill -- -[0-9]+)`)
 	e := newEnv(t, agents.Config{})
-	kill := fakellm.Reply{From: func(fakellm.Request) fakellm.Reply {
-		ids := pids(stuck)
-		if len(ids) != 1 {
-			return fakellm.Reply{Text: "no pid"}
+	kill := fakellm.Reply{From: func(req fakellm.Request) fakellm.Reply {
+		for _, o := range req.ToolOutputs {
+			if m := hint.FindStringSubmatch(o); m != nil {
+				return fakellm.Reply{Commands: []string{m[1]}}
+			}
 		}
 
-		return fakellm.Reply{Commands: []string{"kill " + strconv.Itoa(ids[0])}}
+		return fakellm.Reply{Text: "no hint"}
 	}}
 	e.llm.Route(uncommitted, fakellm.Reply{Commands: []string{stuck}}, kill, fakellm.Reply{Text: reviewAnswer})
 	s, ev := e.open(t, false, e.sandboxed(t), func(c *embedded.Config) { c.WakeHold = time.Second })

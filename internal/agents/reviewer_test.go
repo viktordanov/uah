@@ -3,6 +3,7 @@ package agents_test
 import (
 	"context"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/agents"
 	"github.com/viktordanov/uah/internal/codereview"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/testing/fakellm"
 )
@@ -43,10 +45,10 @@ func finishedReviewer(t *testing.T, e *env, s *session.Session, ev *events) stri
 	return ""
 }
 
-// TestReview_AgentToolsCannotReachTheReviewer refuses resume_agent and
-// send_input on a /review's reviewer, as the user's: the main agent is
-// told so, and nothing starts.
-func TestReview_AgentToolsCannotReachTheReviewer(t *testing.T) {
+// TestReview_ResumeAFinishedReviewer refuses resume_agent on a reviewer
+// whose review ended: a reviewer is reached as a live agent while its
+// review runs, never through its session, and nothing starts.
+func TestReview_ResumeAFinishedReviewer(t *testing.T) {
 	e := newEnv(t, agents.Config{})
 	e.llm.Route(uncommitted, fakellm.Reply{Text: reviewAnswer})
 	s, ev := e.open(t, false)
@@ -61,13 +63,88 @@ func TestReview_AgentToolsCannotReachTheReviewer(t *testing.T) {
 	require.NoError(t, err)
 	ev.finished()
 
-	reqs := e.llm.Requests()
-	outputs := strings.Join(reqs[len(reqs)-1].ToolOutputs, "\n")
-	assert.Equal(t, 2, strings.Count(outputs, "is the reviewer of a /review the user started"), outputs)
-	_, found, err := session.ReadSidecar(e.sessionsDir(), id)
-	require.NoError(t, err)
-	assert.True(t, found)
+	outputs := strings.Join(lastParent(e).ToolOutputs, "\n")
+	assert.Contains(t, outputs, "is the reviewer of a /review the user started, which is not running here: it cannot be resumed")
+	assert.Contains(t, outputs, "is closed", "send_input says the reviewer is closed, not that the message went out")
+	assert.NotContains(t, outputs, "submission_id")
 	assert.NoFileExists(t, filepath.Join(e.sessionsDir(), id+".agent.json"), "no agent record: nothing was resumed")
+}
+
+// reviewerID is the reviewer's agent ID from the note the main agent got.
+var reviewerID = regexp.MustCompile(`reviewer is agent (subagent-[0-9a-f-]{36})`)
+
+// steerReviewer is a main agent's reply that calls tool on the running
+// reviewer, with args where ID is its ID.
+func steerReviewer(tool, args string) fakellm.Reply {
+	return fakellm.Reply{From: func(req fakellm.Request) fakellm.Reply {
+		id := ""
+		for _, d := range req.DeveloperTexts {
+			if m := reviewerID.FindStringSubmatch(d); m != nil {
+				id = m[1]
+			}
+		}
+
+		return fakellm.Reply{Calls: []fakellm.Call{call(tool, strings.ReplaceAll(args, "ID", id))}}
+	}}
+}
+
+// TestReview_TheReviewerIsAnAgent: while a /review runs, its reviewer is
+// one of the main agent's agents, marked as the user's. send_input reaches
+// its live run (here, telling it to answer now), the review's answer is
+// the one that follows, and wait_agent returns it.
+func TestReview_TheReviewerIsAnAgent(t *testing.T) {
+	gate := make(chan struct{})
+	t.Cleanup(func() { close(gate) })
+	e := newEnv(t, agents.Config{},
+		steerReviewer(agents.ToolSend, `{"target":"ID","message":"The user asks you to answer now."}`),
+		steerReviewer(agents.ToolWait, `{"targets":["ID"]}`),
+		fakellm.Reply{Text: "it answered"},
+	)
+	e.llm.Route(uncommitted, fakellm.Reply{Gate: gate, Text: "never"}, fakellm.Reply{Text: reviewAnswer})
+	s, ev := e.open(t, false)
+
+	done := make(chan error, 1)
+	go func() { done <- s.Review(context.Background(), codereview.Target{Kind: codereview.Uncommitted}) }()
+	ev.until("ReviewStarted", func(x core.Event) bool { _, ok := x.(session.ReviewStarted); return ok })
+	<-e.llm.Seen() // the reviewer thinks
+	_, err := s.Submit("tell the reviewer to answer now")
+	require.NoError(t, err)
+	assert.Equal(t, "it answered", ev.finished().Answer)
+	fin := ev.reviewFinished()
+	require.NoError(t, <-done)
+
+	require.Empty(t, fin.Err)
+	require.Len(t, fin.Output.Findings, 1)
+	outputs := strings.Join(mainRequest(e, "tell the reviewer to answer now").ToolOutputs, "\n")
+	assert.Contains(t, outputs, "submission_id")
+	assert.Contains(t, outputs, `"completed"`, "wait_agent returns the review's answer")
+	reqs := reviewerRequests(e)
+	assert.Contains(t, reqs[len(reqs)-1].UserTexts, "The user asks you to answer now.", "the message reached the reviewer's run")
+	update := ev.agentState(engine.AgentRunning)
+	assert.Equal(t, "review", update.Role)
+	assert.Contains(t, update.Task, "started by the user: leave it alone unless the user asks you to act on it")
+}
+
+// TestReview_CloseAgentStopsTheReview: close_agent on the reviewer stops
+// the review, which ends as interrupted.
+func TestReview_CloseAgentStopsTheReview(t *testing.T) {
+	gate := make(chan struct{})
+	t.Cleanup(func() { close(gate) })
+	e := newEnv(t, agents.Config{}, steerReviewer(agents.ToolClose, `{"target":"ID"}`), fakellm.Reply{Text: "stopped"})
+	e.llm.Route(uncommitted, fakellm.Reply{Gate: gate, Text: "never"})
+	s, ev := e.open(t, false)
+
+	done := make(chan error, 1)
+	go func() { done <- s.Review(context.Background(), codereview.Target{Kind: codereview.Uncommitted}) }()
+	ev.until("ReviewStarted", func(x core.Event) bool { _, ok := x.(session.ReviewStarted); return ok })
+	<-e.llm.Seen()
+	_, err := s.Submit("the user wants the review stopped")
+	require.NoError(t, err)
+	fin := ev.reviewFinished()
+	require.NoError(t, <-done)
+
+	assert.True(t, fin.Interrupted)
+	assert.Empty(t, fin.Err)
 }
 
 // TestAgents_ResumeInUse refuses to resume a child whose session another
@@ -109,8 +186,9 @@ func TestAgents_ResumeInUse(t *testing.T) {
 }
 
 // TestReview_MainAgentKnows tells the main agent, in a run that starts
-// while a /review runs, that the review is the user's, so it does not go
-// looking for the reviewer; the note is not the user's message.
+// while a /review runs, that the review is the user's and which agent its
+// reviewer is, so it does not go looking for it; the note is not the
+// user's message.
 func TestReview_MainAgentKnows(t *testing.T) {
 	gate := make(chan struct{})
 	e := newEnv(t, agents.Config{}, fakellm.Reply{Text: "it is reviewing"}, fakellm.Reply{Text: "ok"})
