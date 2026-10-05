@@ -23,12 +23,19 @@ const (
 	toolWaitBefore = "wait"
 )
 
-// wait_agent's timeout bounds, Codex's.
+// wait_agent's timeout bounds. Codex's are 30 s by default, 10 s to 1 h;
+// its parents polled with 10 s waits. A wait without a timeout waits as long
+// as one can: just under the embedded engine's 5-minute wake hold
+// (embedded.wakeHold), which would otherwise wake the parent only to say the
+// wait is still running.
 const (
-	waitDefault = 30 * time.Second
-	waitMin     = 10 * time.Second
-	waitMax     = time.Hour
+	waitMax     = 4*time.Minute + 30*time.Second
+	waitDefault = waitMax
+	waitMin     = time.Minute
 )
+
+// waitNote is a timed-out wait's note: the agents are fine, wait again.
+const waitNote = "No agent finished during this wait. They are still working, and nothing is wrong: call wait_agent again to keep waiting. A message does not make an agent finish sooner."
 
 // tool is one subagent tool: what the model is offered and how a call runs.
 // A new tool is one more entry in tools.
@@ -126,6 +133,7 @@ type (
 	waitResult struct {
 		Status   map[string]Status `json:"status"`
 		TimedOut bool              `json:"timed_out"`
+		Note     string            `json:"note,omitempty"`
 	}
 	closeArgs struct {
 		Target string `json:"target"`
@@ -185,7 +193,18 @@ func runWait(ctx context.Context, m *Manager, call engine.AgentCall) (any, error
 	}
 	statuses, timedOut, err := m.wait(ctx, parentID, a.Targets, timeout)
 
-	return waitResult{Status: bound(statuses), TimedOut: timedOut}, err
+	return newWaitResult(statuses, timedOut), err
+}
+
+// newWaitResult is wait_agent's result; a timed-out one says the agents
+// are fine.
+func newWaitResult(statuses map[string]Status, timedOut bool) waitResult {
+	res := waitResult{Status: bound(statuses), TimedOut: timedOut}
+	if timedOut {
+		res.Note = waitNote
+	}
+
+	return res
 }
 
 func runClose(_ context.Context, m *Manager, call engine.AgentCall) (any, error) {

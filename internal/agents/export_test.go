@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"context"
 	"time"
 
@@ -11,7 +12,14 @@ import (
 // BeforeSubmit runs f before each message goes to a child's session.
 func (m *Manager) BeforeSubmit(f func(message string)) { m.beforeSubmit = f }
 
-// Wait is wait_agent without its 10-second minimum, for tests.
+// WaitResult is wait_agent's result for the statuses, as JSON.
+func WaitResult(statuses map[string]Status, timedOut bool) string {
+	data, _ := json.Marshal(newWaitResult(statuses, timedOut))
+
+	return string(data)
+}
+
+// Wait is wait_agent without its one-minute minimum, for tests.
 func (m *Manager) Wait(ctx context.Context, parentID string, ids []string, timeout time.Duration) (map[string]Status, bool, error) {
 	return m.wait(ctx, parentID, ids, timeout)
 }
