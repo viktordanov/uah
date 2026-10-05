@@ -41,14 +41,13 @@ func TestCountAgentUse(t *testing.T) {
 
 	a, err := bench.CountAgentUse(dir, "main")
 	require.NoError(t, err)
-	require.NotNil(t, a)
 	assert.Equal(t, bench.AgentUse{
 		Spawns: 1, Messages: 1, ToRunning: 1, Closes: 1, Waits: 2, WaitsTimedOut: 1, Notes: 1,
 		BusyRequests: 2, AgentOnlyRequests: 1,
-	}, *a, "the wait and the message came while the child worked; only the wait's request did nothing else")
+	}, a, "the wait and the message came while the child worked; only the wait's request did nothing else")
 	assert.Equal(t, 1, a.Interventions())
 
 	none, err := bench.CountAgentUse(dir, "subagent-1")
 	require.NoError(t, err)
-	assert.Nil(t, none, "a session that spawned nothing has no counts")
+	assert.False(t, none.Used(), "a session that spawned nothing has no counts")
 }

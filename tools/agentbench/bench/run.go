@@ -485,9 +485,12 @@ func measure(res *Result, price Price) error {
 		if res.Failures, err = RunFailures(*res); err != nil {
 			return err
 		}
-		state := filepath.Join(res.Artifacts, "uah-state")
-		if res.AgentUse, err = CountAgentUse(state, mainSession(filepath.Join(res.Artifacts, "stream.jsonl"))); err != nil {
+		use, err := CountAgentUse(filepath.Join(res.Artifacts, "uah-state"), mainSession(filepath.Join(res.Artifacts, "stream.jsonl")))
+		if err != nil {
 			return err
+		}
+		if use.Used() {
+			res.AgentUse = &use
 		}
 	}
 

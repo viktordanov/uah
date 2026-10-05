@@ -44,7 +44,7 @@ type AgentUse struct {
 
 // Interventions are the messages, interrupts, and closes the main agent
 // sent to working children.
-func (a *AgentUse) Interventions() int { return a.ToRunning + a.ClosedRunning }
+func (a AgentUse) Interventions() int { return a.ToRunning + a.ClosedRunning }
 
 // agentOp is the part of an agent call's operation the counts read.
 type agentOp struct {
@@ -59,16 +59,16 @@ type agentOp struct {
 // before the next one.
 type workSpan struct{ from, to time.Time }
 
-// CountAgentUse reads the main session and its children under stateDir;
-// nil when the main agent spawned nothing.
-func CountAgentUse(stateDir, mainSession string) (*AgentUse, error) {
+// CountAgentUse reads the main session and its children under stateDir.
+func CountAgentUse(stateDir, mainSession string) (AgentUse, error) {
+	var a AgentUse
 	if mainSession == "" {
-		return nil, nil
+		return a, nil
 	}
 	dir := filepath.Join(stateDir, "sessions")
 	files, err := filepath.Glob(filepath.Join(dir, "*.session.jsonl"))
 	if err != nil {
-		return nil, err
+		return a, err
 	}
 	busy := map[string][]workSpan{} // by child
 	for _, path := range files {
@@ -78,15 +78,14 @@ func CountAgentUse(stateDir, mainSession string) (*AgentUse, error) {
 		}
 		_, page, err := sessionfile.Read(path, sessionfile.BeforeFirst, 0)
 		if err != nil {
-			return nil, err
+			return a, err
 		}
 		busy[id] = childSpans(page.Items)
 	}
 	_, page, err := sessionfile.Read(filepath.Join(dir, mainSession+".session.jsonl"), sessionfile.BeforeFirst, 0)
 	if err != nil {
-		return nil, err
+		return a, err
 	}
-	a := &AgentUse{}
 	a.count(page.Items, func(child string, at time.Time) bool {
 		for id, spans := range busy {
 			if (child == "" || id == child) && slices.ContainsFunc(spans, func(s workSpan) bool { return !at.Before(s.from) && !at.After(s.to) }) {
@@ -96,12 +95,12 @@ func CountAgentUse(stateDir, mainSession string) (*AgentUse, error) {
 
 		return false
 	})
-	if a.Spawns == 0 && a.Resumes == 0 {
-		return nil, nil
-	}
 
 	return a, nil
 }
+
+// Used says whether the main agent spawned or resumed any subagent.
+func (a AgentUse) Used() bool { return a.Spawns > 0 || a.Resumes > 0 }
 
 // parentOf is the parent a session's sidecar names, or "".
 func parentOf(dir, id string) string {
@@ -160,13 +159,7 @@ func (a *AgentUse) count(items []sessionfile.Item, working func(child string, at
 		}
 		switch it.Kind {
 		case sessionfile.KindInput:
-			var in sessionfile.Input
-			if it.Decode(&in) != nil || (in.Kind != sessionfile.InputExternal && in.Kind != sessionfile.InputDeveloper) {
-				continue
-			}
-			if text, err := in.Text(); err == nil && strings.Contains(text, "<subagent_notification>") {
-				a.Notes++
-			}
+			a.input(it)
 		case sessionfile.KindToolCallStatus:
 			var st sessionfile.ToolCallStatus
 			if it.Decode(&st) != nil {
@@ -178,34 +171,7 @@ func (a *AgentUse) count(items []sessionfile.Item, working func(child string, at
 				}
 			}
 		case sessionfile.KindModelResponse:
-			var r sessionfile.ModelResponse
-			if it.Decode(&r) != nil {
-				continue
-			}
-			at := it.RecordedAt
-			busy := working("", at)
-			agentOnly, any := true, false
-			for _, o := range r.Response.Output {
-				var tc sessionfile.ToolCall
-				if o.Type != sessionfile.OutputToolCall || o.Decode(&tc) != nil {
-					continue
-				}
-				any = true
-				if !a.call(tc, func(child string) bool { return working(child, at) }) {
-					agentOnly = false
-				}
-				if tc.Name == "wait_agent" {
-					waits = append(waits, tc.CallID)
-				}
-			}
-			if busy {
-				u := r.Response.Usage
-				a.BusyRequests++
-				a.BusyTokens = a.BusyTokens.Add(Tokens{Input: u.InputTokens, Cached: u.CachedInputTokens, Output: u.OutputTokens, Reasoning: u.ReasoningTokens})
-				if any && agentOnly {
-					a.AgentOnlyRequests++
-				}
-			}
+			waits = append(waits, a.response(it, working)...)
 		}
 	}
 	for _, id := range waits {
@@ -215,6 +181,52 @@ func (a *AgentUse) count(items []sessionfile.Item, working func(child string, at
 			}
 		}
 	}
+}
+
+// input counts a notification among the main agent's inputs.
+func (a *AgentUse) input(it sessionfile.Item) {
+	var in sessionfile.Input
+	if it.Decode(&in) != nil || (in.Kind != sessionfile.InputExternal && in.Kind != sessionfile.InputDeveloper) {
+		return
+	}
+	if text, err := in.Text(); err == nil && strings.Contains(text, "<subagent_notification>") {
+		a.Notes++
+	}
+}
+
+// response counts one model response of the main agent and returns its
+// wait_agent calls' IDs.
+func (a *AgentUse) response(it sessionfile.Item, working func(child string, at time.Time) bool) []string {
+	var r sessionfile.ModelResponse
+	if it.Decode(&r) != nil {
+		return nil
+	}
+	at := it.RecordedAt
+	var waits []string
+	agentOnly, calls := true, 0
+	for _, o := range r.Response.Output {
+		var tc sessionfile.ToolCall
+		if o.Type != sessionfile.OutputToolCall || o.Decode(&tc) != nil {
+			continue
+		}
+		calls++
+		if !a.call(tc, func(child string) bool { return working(child, at) }) {
+			agentOnly = false
+		}
+		if tc.Name == toolWaitAgent {
+			waits = append(waits, tc.CallID)
+		}
+	}
+	if working("", at) {
+		u := r.Response.Usage
+		a.BusyRequests++
+		a.BusyTokens = a.BusyTokens.Add(Tokens{Input: u.InputTokens, Cached: u.CachedInputTokens, Output: u.OutputTokens, Reasoning: u.ReasoningTokens})
+		if calls > 0 && agentOnly {
+			a.AgentOnlyRequests++
+		}
+	}
+
+	return waits
 }
 
 // call counts one tool call of the main agent and reports whether it
@@ -249,7 +261,7 @@ func (a *AgentUse) call(tc sessionfile.ToolCall, working func(child string) bool
 		if working(args.Target) {
 			a.ClosedRunning++
 		}
-	case "wait_agent", "wait":
+	case toolWaitAgent, "wait":
 		a.Waits++
 	default:
 		return false
