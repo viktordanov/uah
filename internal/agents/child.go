@@ -360,16 +360,17 @@ func (m *Manager) outboxOf(parentID string) *outbox {
 
 // completionNote is Codex's <subagent_notification> for a child that just
 // reached a final status, once per message it was sent; "" otherwise. A
-// child the parent closed itself, or one a pending wait_agent returns, is
-// not reported, since the parent learns it anyway.
+// child the parent closed itself, or one a pending wait_agent returns or a
+// wait already returned (between the status and this note), is not
+// reported, since the parent learns it anyway.
 // It holds m.mu.
 func (m *Manager) completionNote(c *child, current bool) string {
 	if !current || c.review || !c.status.Final() || c.status.State == engine.AgentShutdown || c.notified == c.gen {
 		return ""
 	}
 	c.notified = c.gen
-	if c.waiters > 0 {
-		return "" // a pending wait_agent returns this status
+	if c.waiters > 0 || c.waited >= c.gen {
+		return "" // a pending wait_agent returns this status, or one already did
 	}
 	note, err := engine.SubagentNotification(c.id, c.status)
 	if err != nil {
