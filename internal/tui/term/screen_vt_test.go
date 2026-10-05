@@ -110,13 +110,13 @@ func (v *vtTerm) mismatch(want uv.ScreenBuffer, lines []string, cur *Cursor) str
 			if got == nil || exp == nil {
 				return fmt.Sprintf("no cell at %d,%d", x, y)
 			}
-			if got.Content != exp.Content || got.Width != exp.Width || !got.Style.Equal(&exp.Style) {
+			if got.Content != exp.Content || got.Width != exp.Width || !got.Style.Equal(&exp.Style) || !got.Link.Equal(&exp.Link) {
 				line := ""
 				if y < len(lines) {
 					line = lines[y]
 				}
 
-				return fmt.Sprintf("cell %d,%d: got %q (w%d) %+v, want %q (w%d) %+v\nline %q", x, y, got.Content, got.Width, got.Style, exp.Content, exp.Width, exp.Style, line)
+				return fmt.Sprintf("cell %d,%d: got %q (w%d) %+v %+v, want %q (w%d) %+v %+v\nline %q", x, y, got.Content, got.Width, got.Style, got.Link, exp.Content, exp.Width, exp.Style, exp.Link, line)
 			}
 		}
 	}
@@ -297,6 +297,8 @@ var sgrs = []string{
 	"\x1b[22m", "\x1b[23m", "\x1b[24m", "\x1b[39m", "\x1b[49m",
 	"\x1b[31m", "\x1b[32m", "\x1b[94m", "\x1b[38;5;208m", "\x1b[38;2;10;200;30m", "\x1b[48;5;236m", "\x1b[48;2;40;40;60m",
 	"\x1b[0;32m", "\x1b[1;4;35m", "\x1b[4:3m", "\x1b[58;5;196m",
+	// OSC 8 hyperlinks, as file links draw them, and their end.
+	"\x1b]8;;file://host/w/a.go\x1b\\", "\x1b]8;line=12-20;file://host/w/b%20c.go\x1b\\", "\x1b]8;;\x1b\\",
 }
 
 type span struct {
@@ -586,4 +588,19 @@ func slicesEqual(a, b []string) bool {
 	}
 
 	return true
+}
+
+// TestScreenLinksCutAtTheRow: a hyperlink cut with its row, or left open,
+// ends with the row; a link before a change makes the row be written
+// whole, and a link after it is written from the change.
+func TestScreenLinksCutAtTheRow(t *testing.T) {
+	const w, h = 20, 4
+	open, end := "\x1b]8;line=3;file://host/w/a.go\x1b\\", "\x1b]8;;\x1b\\"
+	long := "ab " + open + "\x1b[4m" + strings.Repeat("x", 30) + "\x1b[24m" + end + " tail"
+	frames := [][]string{
+		{long, "plain row", "", "  READ  " + open + "a.go" + end},
+		{long, "plain row two", "c " + open + "unclosed", "  READ  " + open + "a.go" + end + " 1s"},
+		{"ab " + open + "x" + end + " changed", "plain", "c " + open + "unclosed!", "  RAN   " + open + "a.go" + end},
+	}
+	play(t, w, h, frames, func(int) *Cursor { return nil })
 }
