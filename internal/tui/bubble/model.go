@@ -295,10 +295,8 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 		return m.dispatch(msg)
 	case state.UsageLoaded, state.CacheLoaded, state.Copied, state.DiffShown, state.ReviewTargetsLoaded, state.PromptsLoaded:
 		return m.dispatch(msg)
-	case state.LinksResolved, state.PeekLoaded:
-		return m.dispatch(msg)
-	case state.FileOpened, state.LinkTimer:
-		return m.now().dispatch(msg) // its toast or the overlay starts now, not at the last tick
+	case state.LinksResolved, state.PeekLoaded, state.FileOpened, state.LinkTimer:
+		return m.now().dispatch(msg) // a toast starts now, not at the last tick
 	}
 
 	return m, nil
