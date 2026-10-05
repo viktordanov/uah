@@ -5,8 +5,6 @@
 
 
 
-
-
 ╭────────────────────────────────────────────────╮
 │ λ uah                                          │
 │                                                │
@@ -14,8 +12,10 @@
 │ directory: /workspace/proj                     │
 ╰────────────────────────────────────────────────╯
 
-  REVIEW changes against 'main'  gpt-6-astra high · 2m 10s · 5 steps · 140.1k tokens
-    no findings · patch is correct · confidence 90%
+  REVIEW  changes against 'main'
+          no findings · ✓ patch is correct
+          confidence 90% · 2m 10s · gpt-6-astra high · 140.1k tokens
+
     The change is sound.
 
 

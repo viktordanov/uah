@@ -15,8 +15,8 @@
 │ directory: /workspace/proj                     │
 ╰────────────────────────────────────────────────╯
 
-  REVIEW changes against 'main'  gpt-6-astra high · 1m 00s · 5 steps · 39.1k tokens
-    failed: the reviewer did not answer
+  REVIEW  changes against 'main'
+          ✗ failed: the reviewer did not answer · 1m 00s · gpt-6-astra high · 39.1k tokens
 
 
 λ

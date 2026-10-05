@@ -100,10 +100,10 @@ func TestScreens_Review(t *testing.T) {
 	golden(t, "review-running-details", screen(apply(running, state.ToggleDetails{}), ""))
 
 	started := apply(base(), session.ReviewStarted{At: t0, ID: "r1", Hint: "changes against 'main'"})
-	assert.Contains(t, screen(started, ""), "    ⠋ thinking", "before its first tool")
+	assert.Contains(t, screen(started, ""), "    └ ⠋ thinking", "before its first tool")
 	thinking := apply(running, session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolFinished{At: t0, CallID: "c5", Name: "Bash", OK: true, Detail: "exit 0"}})
 	got := screen(thinking, "")
-	assert.Contains(t, got, "✓ RAN    git diff 1a2b3c4\n    ⠋ thinking", "the spinner moves to a thinking line between calls")
+	assert.Contains(t, got, "├ RAN     git diff 1a2b3c4\n    └ ⠋ thinking", "the spinner moves to a thinking line between calls")
 	assert.Contains(t, got, "5 steps · 39.1k tokens", "the tokens of its model responses so far")
 
 	act := func(e core.Event) session.ReviewActivity { return session.ReviewActivity{At: t0, ID: "r1", Event: e} }
@@ -114,7 +114,7 @@ func TestScreens_Review(t *testing.T) {
 		act(reviewerBash("c9", "ls d")), act(core.ToolFinished{At: t0, CallID: "c9", Name: "Bash", OK: true, Detail: "exit 0"}),
 	)
 	got = screen(slow, "")
-	assert.Contains(t, got, "⠋ RUN    git diff 1a2b3c4\n    ✓ LIST   b\n    ✓ LIST   c\n    ✓ LIST   d\n\n", "a call still running stays in view, in the place of the oldest finished one")
+	assert.Contains(t, got, "├ ⠋ RAN   git diff 1a2b3c4\n    ├ LIST    b\n    ├ LIST    c\n    └ LIST    d\n\n", "a call still running stays in view, in the place of the oldest finished one")
 	assert.NotContains(t, got, "thinking", "no thinking line while a call runs")
 }
 
@@ -129,17 +129,18 @@ func TestScreens_ReviewFindings(t *testing.T) {
 	golden(t, "review-details", screenTall(apply(done, state.ToggleDetails{})))
 
 	got := screenWidth(done, 100)
-	order := []string{"Return the parse error  82%", "Close the file on error  55%", "Guard the empty list  70%", "Maybe drop the retry  30% · low confidence", "Name the timeout  60%", "Mention the default  90%"}
+	order := []string{`Return the parse error +82%`, `Close the file on error +55%`, `Guard the empty list +70%`, `Maybe drop the retry +30%`, `Name the timeout +60%`, `Mention the default +90%`}
 	last := 0
 	for _, title := range order {
-		i := strings.Index(got, title)
-		require.Positive(t, i, title)
-		assert.Greater(t, i, last, "%s comes after the one before", title)
-		last = i
+		loc := regexp.MustCompile(title + "\n").FindStringIndex(got)
+		require.NotNil(t, loc, "%s, its confidence at the row's end", title)
+		assert.Greater(t, loc[0], last, "%s comes after the one before", title)
+		last = loc[0]
 	}
-	assert.Contains(t, got, "6 findings (2 P1 · 2 P2 · 1 P3) · patch is incorrect · confidence 82%")
-	assert.Contains(t, got, "gpt-6-astra high · 2m 10s · 5 steps · 140.1k tokens")
-	assert.Contains(t, got, "… +3 lines (ctrl+t to view)")
+	assert.Contains(t, got, "  REVIEW  changes against 'main'\n          6 findings (2 P1 · 2 P2 · 1 P3) · ✗ patch is incorrect\n          confidence 82% · 2m 10s · gpt-6-astra high · 140.1k tokens\n",
+		"too wide for one line, the verdict line breaks after the verdict")
+	assert.Contains(t, got, "    P1  Return the parse error")
+	assert.Contains(t, got, "… 4 more lines (ctrl+t to view)")
 	assert.NotContains(t, got, "git diff 1a2b3c4", "the steps fold away in the compact view")
 }
 
@@ -160,10 +161,14 @@ func TestScreens_ReviewVerdict(t *testing.T) {
 
 		return out
 	}
-	assert.Regexp(t, regexp.QuoteMeta(color(theme.Good))+`[;m][^\x1b]*patch is correct`, raw)
+	assert.Regexp(t, regexp.QuoteMeta(color(theme.Good))+`[;m][^\x1b]*✓ patch is correct`, raw)
 
 	bad := tall(reviewed(codereview.Parse(findings)))
-	assert.Regexp(t, regexp.QuoteMeta(color(theme.Bad))+`[;m][^\x1b]*patch is incorrect`, bad)
+	assert.Regexp(t, regexp.QuoteMeta(color(theme.Bad))+`[;m][^\x1b]*✗ patch is incorrect`, bad)
+	assert.Regexp(t, regexp.QuoteMeta(color(theme.Bad))+`[;m]P1 `, bad, "P0 and P1 in the bad color")
+	assert.Regexp(t, regexp.QuoteMeta(color(theme.Warn))+`[;m]P2 [^\n]*Guard`, bad, "P2 in the warning color")
+	assert.Regexp(t, regexp.QuoteMeta(color(theme.Dim))+`[;m][^\x1b]*Maybe drop the retry`, bad, "a finding of low confidence is dim")
+	assert.Regexp(t, regexp.QuoteMeta(color(theme.Dim))+`[;m][^\x1b]*The retry might be needed`, bad, "its body too")
 
 	empty := screen(reviewed(codereview.Output{}), "")
 	assert.Contains(t, empty, "no findings")
@@ -176,7 +181,7 @@ func TestScreens_ReviewVerdict(t *testing.T) {
 func TestScreens_ReviewEnded(t *testing.T) {
 	stopped := apply(reviewing(), session.ReviewFinished{At: t0.Add(time.Minute), ID: "r1", Interrupted: true, Tokens: core.Tokens{InputTokens: 20_000, OutputTokens: 300}})
 	golden(t, "review-interrupted", screen(stopped, ""))
-	assert.Contains(t, screen(apply(stopped, state.ToggleDetails{}), ""), "■ RAN    git diff 1a2b3c4")
+	assert.Contains(t, screen(apply(stopped, state.ToggleDetails{}), ""), "└ RAN     git diff 1a2b3c4  stopped")
 
 	failed := apply(reviewing(), session.ReviewFinished{At: t0.Add(time.Minute), ID: "r1", Err: "the reviewer did not answer"})
 	golden(t, "review-failed", screen(failed, ""))
@@ -225,7 +230,8 @@ func TestSelectedTextReview(t *testing.T) {
 	s := reviewed(codereview.Parse(findings))
 	key := s.Items[len(s.Items)-1].Key
 	text, _ := render.SelectedText(selecting(s, pos(key, 0, 0), pos(key, 99, 99)), render.NewCache(render.Amber), render.Frame{Width: 100, Height: 24})
-	assert.True(t, strings.HasPrefix(text, "REVIEW changes against 'main'  gpt-6-astra high · 2m 10s · 5 steps · 140.1k tokens\n"+
-		"  6 findings (2 P1 · 2 P2 · 1 P3) · patch is incorrect · confidence 82%\n"), text)
-	assert.Contains(t, text, "P1     Return the parse error  82%\n       internal/config/load.go:41-44\n       parse drops the error, so a bad file loads as empty.")
+	assert.True(t, strings.HasPrefix(text, "REVIEW  changes against 'main'\n"+
+		"        6 findings (2 P1 · 2 P2 · 1 P3) · ✗ patch is incorrect\n        confidence 82% · 2m 10s · gpt-6-astra high · 140.1k tokens\n"), text)
+	assert.Regexp(t, `\nP1  Return the parse error +82%\n    internal/config/load\.go:41-44\n    parse drops the error, so a bad file loads as empty\.\n`, text,
+		"priority, title, confidence, place, and body, without the item's indent")
 }
