@@ -129,6 +129,9 @@ type Result struct {
 	Shell string `json:"owner_env_shell,omitempty"`
 	// Failures counts a uah run's failed and wasted calls (failures.go).
 	Failures *Failures `json:"failures,omitempty"`
+	// AgentUse is how a uah run's main agent treated its subagents, when
+	// it spawned any.
+	AgentUse *AgentUse `json:"agent_use,omitempty"`
 	// Artifacts is the run's directory: the stamped event stream, stderr,
 	// the timeline, the diff, and uah's state.
 	Artifacts string `json:"artifacts"`
@@ -480,6 +483,10 @@ func measure(res *Result, price Price) error {
 	writeJSON(filepath.Join(res.Artifacts, "timeline.json"), tl)
 	if res.Harness == HarnessUAH {
 		if res.Failures, err = RunFailures(*res); err != nil {
+			return err
+		}
+		state := filepath.Join(res.Artifacts, "uah-state")
+		if res.AgentUse, err = CountAgentUse(state, mainSession(filepath.Join(res.Artifacts, "stream.jsonl"))); err != nil {
 			return err
 		}
 	}
