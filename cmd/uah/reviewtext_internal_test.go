@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,24 +51,37 @@ func TestReviewPrint(t *testing.T) {
 }
 
 // TestReviewSteps prints the reviewer's calls shaped as the TUI's tool
-// lines, and the ones that failed with why; a search that exits 1 with no
-// output found nothing, and one whose output comes after its end is
-// reported then.
+// lines, and each one that failed once its end and its output are in,
+// in either order, with why; a search that exits 1 with no output found
+// nothing; a failure whose output never came is printed when the review
+// ends.
 func TestReviewSteps(t *testing.T) {
 	var buf bytes.Buffer
 	o := reviewOutput{progress: newPrinter(&buf, false), env: cmdparse.Env{Workspace: "/w"}}
-	o.step(core.ToolCalled{CallID: "1", Name: "Bash", Arguments: `{"command":"sed -n 1,40p /w/a.go"}`})
-	o.step(core.ToolFinished{CallID: "1", OK: true, Detail: "exit 0"})
-	o.step(core.ToolCalled{CallID: "2", Name: "Bash", Arguments: `{"command":"rg -n Foo /w/internal"}`})
-	o.step(core.ToolFinished{CallID: "2", OK: false, Detail: "exit 1"})
-	o.step(core.ToolCalled{CallID: "3", Name: "Bash", Arguments: `{"command":"go test ./..."}`})
-	o.step(core.ToolFinished{CallID: "3", OK: false, Detail: "exit 1", Duration: 4 * time.Second})
-	o.step(core.ToolCalled{CallID: "4", Name: "Bash", Arguments: `{"command":"find /w/missing -name '*.go'"}`})
-	o.step(core.ToolFinished{CallID: "4", OK: false, Detail: "exit 1"})
-	o.step(engine.ToolOutput{CallID: "4", Output: "find: /w/missing: No such file or directory\n"})
-	o.step(core.ToolCalled{CallID: "5", Name: "Bash", Arguments: `{"command":"rg -n '(' /w"}`})
-	o.step(engine.ToolOutput{CallID: "5", Output: "rg: regex parse error\n"})
-	o.step(core.ToolFinished{CallID: "5", OK: false, Detail: "exit 2"})
+	call := func(id, command string) {
+		o.step(core.ToolCalled{CallID: id, Name: "Bash", Arguments: `{"command":` + strconv.Quote(command) + `}`})
+	}
+	end := func(id, detail string, d time.Duration) {
+		o.step(core.ToolFinished{CallID: id, OK: detail == "exit 0", Detail: detail, Duration: d})
+	}
+	output := func(id, text string) { o.step(engine.ToolOutput{CallID: id, Output: text}) }
+	call("1", "sed -n 1,40p /w/a.go")
+	end("1", "exit 0", 0)
+	call("2", "rg -n Foo /w/internal") // found nothing: end, then empty output
+	end("2", "exit 1", 0)
+	output("2", "")
+	call("3", "rg -n Bar /w") // found nothing: empty output, then end
+	output("3", "")
+	end("3", "exit 1", 0)
+	call("4", "go test ./...") // its output comes after its end
+	end("4", "exit 1", 4*time.Second)
+	output("4", "--- FAIL: TestX\nFAIL\tpkg\n\x1b[0m\n")
+	call("5", "find /w/missing -name '*.go'")
+	output("5", "find: /w/missing: No such file or directory\n")
+	end("5", "exit 1", 0)
+	call("6", "cat /w/b.go") // no output ever came
+	end("6", "exit 2", 0)
+	o.flush()
 	var lines []string
 	for l := range strings.Lines(buf.String()) {
 		lines = append(lines, strings.TrimRight(l[strings.Index(l, "]")+2:], "\n"))
@@ -75,14 +89,15 @@ func TestReviewSteps(t *testing.T) {
 	assert.Equal(t, []string{
 		"  → READ    a.go:1-40",
 		"  → SEARCH  Foo in internal",
+		"  → SEARCH  Bar in .",
 		"  → RAN     go test ./...",
-		"  ✗ RAN     go test ./...  (exit 1, 4.0s)",
+		"  ✗ RAN     go test ./...  (exit 1, 4.0s): FAIL pkg",
 		"  → SEARCH  *.go in missing",
 		"  ✗ SEARCH  *.go in missing  (exit 1, 0.0s): find: /w/missing: No such file or directory",
-		"  → SEARCH  ( in .",
-		"  ✗ SEARCH  ( in .  (exit 2, 0.0s): rg: regex parse error",
+		"  → READ    b.go",
+		"  ✗ READ    b.go  (exit 2, 0.0s)",
 	}, lines)
-	assert.Len(t, o.calls, 1, "only the search that found nothing still waits for output")
+	assert.Empty(t, o.calls, "every ended call is settled")
 }
 
 // TestReviewPrintEmpty says the reviewer gave nothing, as Codex's text

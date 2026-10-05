@@ -176,6 +176,7 @@ type reviewOutput struct {
 	env cmdparse.Env
 	// calls are the reviewer's running calls, by ID.
 	calls    map[string]*reviewCall
+	seq      int
 	started  session.ReviewStarted
 	finished session.ReviewFinished
 }
@@ -198,6 +199,9 @@ func (o *reviewOutput) handle(e core.Event) bool {
 		}
 	case session.ReviewFinished:
 		o.finished = e
+		if o.progress != nil {
+			o.flush()
+		}
 
 		return true
 	}

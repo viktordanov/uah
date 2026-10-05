@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/viktordanov/uagent/core"
 
@@ -31,10 +33,11 @@ import (
 // not one, or NO_COLOR, gets plain text.
 
 // step prints one of the reviewer's tool events on stderr: a call when it
-// starts, and its end when it failed, with why when the command's output
-// says. A search that exits 1 with no output found nothing, as the TUI
-// reads it; the output may come before or after the end, so such a search
-// waits for it, and is reported if it comes.
+// starts, and its end when it failed, with why. A failed command's end and
+// its output (engine.ToolOutput, for every command that exits nonzero)
+// come in either order, so a failure is printed once both are in, or when
+// the review ends; a search that exits 1 with no output found nothing, as
+// the TUI reads it, and is not a failure.
 func (o *reviewOutput) step(ev core.Event) {
 	if o.calls == nil {
 		o.calls = map[string]*reviewCall{}
@@ -42,16 +45,15 @@ func (o *reviewOutput) step(ev core.Event) {
 	switch e := ev.(type) {
 	case core.ToolCalled:
 		label, text := o.shape(e.Name, e.Arguments, e.Label)
-		o.calls[e.CallID] = &reviewCall{label: label, text: text}
+		o.seq++
+		o.calls[e.CallID] = &reviewCall{seq: o.seq, label: label, text: text}
 		o.progress.say(fmt.Sprintf("  → %-8s%s", label, oneLine(text, 160)))
 	case engine.ToolOutput:
-		c, ok := o.calls[e.CallID]
-		if !ok {
-			return
-		}
-		c.why = cmp.Or(lastLine(e.Error), lastLine(e.Output))
-		if c.done != nil {
-			o.failed(e.CallID, c)
+		if c, ok := o.calls[e.CallID]; ok {
+			c.why, c.output = cmp.Or(lastLine(e.Error), lastLine(e.Output)), true
+			if c.done != nil {
+				o.settle(e.CallID, c)
+			}
 		}
 	case core.ToolFinished:
 		c, ok := o.calls[e.CallID]
@@ -61,16 +63,31 @@ func (o *reviewOutput) step(ev core.Event) {
 			delete(o.calls, e.CallID)
 		default:
 			c.done = &e
-			if c.why != "" || c.label != cmdparse.LabelSearch || e.Detail != "exit 1" {
-				o.failed(e.CallID, c)
+			if c.output {
+				o.settle(e.CallID, c)
 			}
 		}
 	}
 }
 
-// failed prints a call that failed, and forgets it.
-func (o *reviewOutput) failed(id string, c *reviewCall) {
+// flush settles the failed calls whose output never came, in the order
+// they were made, when the review ends.
+func (o *reviewOutput) flush() {
+	ids := slices.SortedFunc(maps.Keys(o.calls), func(a, b string) int { return cmp.Compare(o.calls[a].seq, o.calls[b].seq) })
+	for _, id := range ids {
+		if c := o.calls[id]; c.done != nil {
+			o.settle(id, c)
+		}
+	}
+}
+
+// settle prints a call that failed, unless it is a search that found
+// nothing, and forgets it.
+func (o *reviewOutput) settle(id string, c *reviewCall) {
 	delete(o.calls, id)
+	if c.label == cmdparse.LabelSearch && c.done.Detail == "exit 1" && c.why == "" {
+		return
+	}
 	why := ""
 	if c.why != "" {
 		why = ": " + oneLine(c.why, 160)
@@ -78,16 +95,19 @@ func (o *reviewOutput) failed(id string, c *reviewCall) {
 	o.progress.say(fmt.Sprintf("  ✗ %-8s%s  (%s, %.1fs)%s", c.label, oneLine(c.text, 160), c.done.Detail, c.done.Duration.Seconds(), why))
 }
 
-// reviewCall is one of the reviewer's calls: its label and text, why it
-// failed when its output says, and its end once it failed.
+// reviewCall is one of the reviewer's calls: the order it was made in, its
+// label and text, why it failed and whether its output came, and its end
+// once it failed.
 type reviewCall struct {
+	seq              int
 	label, text, why string
+	output           bool
 	done             *core.ToolFinished
 }
 
 // lastLine is the last line of text with a letter or a digit.
 func lastLine(text string) string {
-	lines := strings.Split(strings.TrimSpace(text), "\n")
+	lines := strings.Split(ansi.Strip(text), "\n")
 	for _, l := range slices.Backward(lines) {
 		if l = strings.TrimSpace(l); strings.ContainsFunc(l, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
 			return l
