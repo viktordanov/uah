@@ -6,6 +6,7 @@ import (
 	"math/rand/v2"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -214,7 +215,8 @@ func TestReview_StopsItsOwnCommand(t *testing.T) {
 }
 
 // TestReview_CannotStopOthers: a kill of a process the reviewer did not
-// start stays in the sandbox, which refuses it.
+// start stays in the sandbox, which refuses it: Seatbelt denies the signal,
+// and bubblewrap's PID namespace hides the process.
 func TestReview_CannotStopOthers(t *testing.T) {
 	other := endless(t)
 	cmd := exec.Command("sh", "-c", "exec "+other)
@@ -227,6 +229,10 @@ func TestReview_CannotStopOthers(t *testing.T) {
 	fin := review(t, s, ev)
 
 	require.Empty(t, fin.Err)
-	assert.Contains(t, strings.Join(reviewerRequests(e)[1].ToolOutputs, "\n"), "not permitted")
+	refused := "not permitted"
+	if runtime.GOOS == "linux" {
+		refused = "No such process"
+	}
+	assert.Contains(t, strings.Join(reviewerRequests(e)[1].ToolOutputs, "\n"), refused)
 	assert.Len(t, pids(other), 1, "the other process still runs")
 }
