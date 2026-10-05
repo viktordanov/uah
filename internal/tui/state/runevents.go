@@ -53,7 +53,11 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 
 			return
 		}
-		s.put(Item{Kind: KindNotice, Key: "msg:" + e.ID, Text: preparedNote(e.Text), Level: session.LevelInfo})
+		note, ok := s.agentNote(e.Text) // a notification sent into the live run
+		if !ok {
+			note = preparedNote(e.Text)
+		}
+		s.put(Item{Kind: KindNotice, Key: "msg:" + e.ID, Text: note, Level: session.LevelInfo})
 	case core.TurnStarted:
 		l := s.live()
 		l.Turn, l.Aside = cmp.Or(l.Turn, e.At), nil

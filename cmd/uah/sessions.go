@@ -348,6 +348,9 @@ func developerLabel(text string) string {
 	if note, ok := goalLabel(text); ok {
 		return note
 	}
+	if id, state, ok := engine.ParseSubagentNotification(text); ok {
+		return "agent " + id + " " + state
+	}
 
 	return "developer message"
 }

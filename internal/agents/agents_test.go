@@ -306,6 +306,48 @@ func TestAgents_NotifyTheParentWhenAChildEnds(t *testing.T) {
 	assert.Equal(t, "what did it say?", last.UserTexts[len(last.UserTexts)-1])
 }
 
+// TestAgents_NotifyTheLiveRun tells a parent that works while its child
+// ends in the same run: the notification goes into the run as a developer
+// message and rides its next request, which it does not cancel, so the
+// parent needs no wait_agent and no message to learn the answer.
+func TestAgents_NotifyTheLiveRun(t *testing.T) {
+	childGate, parentGate := make(chan struct{}), make(chan struct{})
+	e := newEnv(t, agents.Config{},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-L count the files"}`)}},
+		fakellm.Reply{Gate: parentGate, Commands: []string{"echo own work"}},
+		fakellm.Reply{Text: "the agent said forty-two"},
+		fakellm.Reply{Text: "nothing new"},
+	)
+	e.llm.Route("CHILD-L", fakellm.Reply{Gate: childGate, Text: "forty-two"})
+	s, ev := e.open(t, false)
+	_, err := s.Submit("delegate")
+	require.NoError(t, err)
+	awaitRequests(t, e, "CHILD-L", 1)
+	close(childGate)
+	ev.agentState(engine.AgentCompleted) // while the parent's second request is under way
+	close(parentGate)
+	assert.Equal(t, "the agent said forty-two", ev.finished().Answer)
+
+	var parent []fakellm.Request
+	for _, r := range e.llm.Requests() {
+		if !isChild(r) {
+			parent = append(parent, r)
+		}
+	}
+	require.Len(t, parent, 3, "the notification canceled no request and started no run")
+	last := parent[2]
+	note := strings.Join(last.DeveloperTexts, "\n")
+	assert.Contains(t, note, "<subagent_notification>")
+	assert.Contains(t, note, `"status":{"completed":"forty-two"}`)
+	assert.Contains(t, lastOutputs(e), "own work")
+
+	_, err = s.Submit("anything else?")
+	require.NoError(t, err)
+	ev.finished()
+	next := lastParent(e)
+	assert.Equal(t, 1, strings.Count(strings.Join(slices.Concat(next.UserTexts, next.DeveloperTexts), "\n"), "<subagent_notification>"), "it is not sent again")
+}
+
 // TestAgents_AWaitTakesBackTheHeldNotification reports a child's result
 // once: the child ends while the parent's run works without a wait, so its
 // <subagent_notification> is held, and when wait_agent then returns the same
