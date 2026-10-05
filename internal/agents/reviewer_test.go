@@ -123,7 +123,7 @@ func TestReview_MainAgentKnows(t *testing.T) {
 	_, err := s.Submit("what is the review doing?")
 	require.NoError(t, err)
 	assert.Equal(t, "it is reviewing", ev.finished().Answer)
-	main := lastParent(e)
+	main := mainRequest(e, "what is the review doing?")
 	assert.True(t, slices.ContainsFunc(main.DeveloperTexts, func(s string) bool { return strings.Contains(s, "A /review the user started is still running") }))
 	assert.Equal(t, []string{"what is the review doing?"}, main.UserTexts)
 
@@ -134,8 +134,21 @@ func TestReview_MainAgentKnows(t *testing.T) {
 	require.NoError(t, err)
 	ev.finished()
 	notes := 0
-	for _, d := range lastParent(e).DeveloperTexts {
+	for _, d := range mainRequest(e, "thanks").DeveloperTexts {
 		notes += strings.Count(d, "is still running")
 	}
 	assert.Equal(t, 1, notes, "once it ended, no new note")
+}
+
+// mainRequest is the main agent's last request with the message, not the
+// reviewer's, which runs beside it.
+func mainRequest(e *env, message string) fakellm.Request {
+	var last fakellm.Request
+	for _, r := range e.llm.Requests() {
+		if slices.Contains(r.UserTexts, message) {
+			last = r
+		}
+	}
+
+	return last
 }

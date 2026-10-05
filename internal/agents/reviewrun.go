@@ -83,6 +83,9 @@ func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Ev
 		defer t.Stop()
 		deadline = t.C
 	}
+	// submitted brings the last turn's Submit back; the loop goes on
+	// reading the session's events meanwhile, so none is lost.
+	var submitted chan error
 	interrupt := func() { go func() { _ = rs.Interrupt() }() }
 	for {
 		select {
@@ -97,6 +100,13 @@ func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Ev
 		case <-lastTurn:
 			lastTurn = nil
 			interrupt()
+		case err := <-submitted:
+			submitted = nil
+			if err != nil { // no run starts, so no Idle follows
+				w.cause = err.Error()
+
+				return w.answer(ctx)
+			}
 		case e, ok := <-rs.Events():
 			if !ok {
 				return session.ReviewAnswer{}, errors.New("the reviewer's session closed")
@@ -105,37 +115,18 @@ func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Ev
 			case stepStop:
 				interrupt()
 			case stepIdle:
-				if w.phase != reviewStopping || ctx.Err() != nil {
+				if w.phase != reviewStopping || w.text != "" || ctx.Err() != nil {
 					return w.answer(ctx)
 				}
-				w.phase = reviewLastTurnPhase
+				w.phase, w.ran, w.cause = reviewLastTurnPhase, false, ""
 				noTools()
-				if err := submit(rs, lastTurnMessage(w.limit, limits)); err != nil {
-					w.cause = err.Error()
-
-					return w.answer(ctx)
-				}
+				submitted = make(chan error, 1)
+				go func(errc chan<- error, text string) {
+					_, err := rs.Submit(text)
+					errc <- err
+				}(submitted, lastTurnMessage(w.limit, limits))
 				lastTurn = time.After(lastTurnLimit(limits))
 			case stepNone:
-			}
-		}
-	}
-}
-
-// submit sends the reviewer a message without blocking its events.
-func submit(rs *session.Session, text string) error {
-	errc := make(chan error, 1)
-	go func() {
-		_, err := rs.Submit(text)
-		errc <- err
-	}()
-	for {
-		select {
-		case err := <-errc:
-			return err
-		case _, ok := <-rs.Events():
-			if !ok {
-				return errors.New("the reviewer's session closed")
 			}
 		}
 	}
@@ -221,6 +212,9 @@ func (w *reviewWatch) answered(text string) step {
 		return stepNone
 	}
 	w.text = text
+	if w.phase == reviewStopping { // it answered as the limit ran out: no limit stopped it
+		w.phase, w.limit = reviewWorking, ""
+	}
 	if len(w.live) > 0 || w.phase == reviewLastTurnPhase {
 		return stepStop
 	}
