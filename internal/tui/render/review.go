@@ -107,7 +107,7 @@ func (st *Styles) reviewLines(it state.Item, w int, now time.Time, details bool)
 		out = append(out, st.verdictLines(head, stats, w)...)
 	}
 	if r.Err == "" && !r.Interrupted {
-		if e := strings.TrimSpace(r.Output.OverallExplanation); e != "" {
+		if e := strings.TrimSpace(codereview.Clean(r.Output.OverallExplanation)); e != "" {
 			out = append(out, "")
 			out = append(out, st.markdownLines(e, w, reviewIndent, reviewIndent)...)
 		} else if len(r.Output.Findings) == 0 {
@@ -332,7 +332,7 @@ func (st *Styles) findingLines(f codereview.Finding, workspace string, w int, de
 		room = right - len(findingIndent)
 	}
 	room = max(room, 10)
-	rows := strings.Split(ansi.Wrap(untab(oneLine(f.Heading())), room, ""), "\n")
+	rows := strings.Split(ansi.Wrap(oneLine(codereview.Clean(f.Heading())), room, ""), "\n")
 	out := []string{""}
 	for i, row := range rows {
 		lead := findingIndent
@@ -346,8 +346,8 @@ func (st *Styles) findingLines(f codereview.Finding, workspace string, w int, de
 		}
 		out = append(out, ansi.Truncate(line, w, "…"))
 	}
-	out = append(out, ansi.Truncate(st.dim.Render(findingIndent+f.Place(workspace)), w, "…"))
-	body := strings.TrimSpace(f.Body)
+	out = append(out, ansi.Truncate(st.dim.Render(findingIndent+codereview.Clean(f.Place(workspace))), w, "…"))
+	body := strings.TrimSpace(codereview.Clean(f.Body))
 	if body == "" {
 		return out
 	}
