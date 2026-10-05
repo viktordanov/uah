@@ -74,69 +74,148 @@ const (
 // stops the run, offers no tools (noTools), and gives the reviewer one
 // last turn to answer.
 func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Event), limits ReviewLimits, noTools func(), agent reviewAgent) (session.ReviewAnswer, error) {
-	w := reviewWatch{activity: activity, limits: limits, live: map[string]bool{}}
+	l := reviewLoop{
+		ctx: ctx, rs: rs, agent: agent, limits: limits, noTools: noTools,
+		w: reviewWatch{activity: activity, limits: limits, live: map[string]bool{}},
+	}
 	done := ctx.Done()
-	var deadline, lastTurn <-chan time.Time
+	var deadline <-chan time.Time
 	if limits.Time > 0 {
 		t := time.NewTimer(limits.Time)
 		defer t.Stop()
 		deadline = t.C
 	}
-	// submitted brings the last turn's Submit back; the loop goes on
-	// reading the session's events meanwhile, so none is lost.
-	var submitted chan error
-	interrupt := func() { go func() { _ = rs.Interrupt() }() }
 	for {
 		select {
 		case <-done:
 			done = nil
-			interrupt()
+			l.interrupt()
 		case <-deadline:
 			deadline = nil
-			if w.reach(session.ReviewTimeLimit) {
-				interrupt()
+			if l.w.reach(session.ReviewTimeLimit) {
+				l.interrupt()
 			}
-		case <-lastTurn:
-			lastTurn = nil
-			interrupt()
-		case err := <-submitted:
-			submitted = nil
+		case <-l.lastTurn:
+			l.lastTurn = nil
+			l.interrupt()
+		case err := <-l.submitted:
+			l.submitted = nil
 			if err != nil { // no run starts, so no Idle follows
-				w.cause = err.Error()
+				l.w.cause = err.Error()
 
-				return w.answer(ctx)
+				return l.w.answer(ctx)
 			}
 			if ctx.Err() != nil {
-				interrupt() // a stop that came while the session was idle reached no run
+				l.interrupt() // a stop that came while the session was idle reached no run
+			}
+		case <-agent.released():
+			// A send to the reviewer let go of its reservation. Its
+			// events came before its Submit returned, so once the ones
+			// waiting are read, an idle session still skipped is the end.
+			if end, ok := l.drain(); end {
+				return l.w.answer(ctx)
+			} else if !ok {
+				return session.ReviewAnswer{}, errReviewerClosed
+			}
+			if l.skipped {
+				if end := l.idle(); end {
+					return l.w.answer(ctx)
+				}
 			}
 		case e, ok := <-rs.Events():
 			if !ok {
-				return session.ReviewAnswer{}, errors.New("the reviewer's session closed")
+				return session.ReviewAnswer{}, errReviewerClosed
 			}
-			agent.observe(e)
-			step := w.observe(e)
-			if step == stepIdle && !agent.end() {
-				step = stepNone // the main agent's message starts another run
-			}
-			switch step {
-			case stepStop:
-				interrupt()
-			case stepIdle:
-				if w.phase != reviewStopping || w.text != "" || ctx.Err() != nil {
-					return w.answer(ctx)
-				}
-				w.phase, w.ran, w.cause = reviewLastTurnPhase, false, ""
-				noTools()
-				submitted = make(chan error, 1)
-				go func(errc chan<- error, text string) {
-					_, err := rs.Submit(text)
-					errc <- err
-				}(submitted, lastTurnMessage(w.limit, limits))
-				lastTurn = time.After(lastTurnLimit(limits))
-			case stepNone:
+			if l.event(e) {
+				return l.w.answer(ctx)
 			}
 		}
 	}
+}
+
+var errReviewerClosed = errors.New("the reviewer's session closed")
+
+// reviewLoop is awaitReview's state.
+type reviewLoop struct {
+	ctx     context.Context
+	rs      *session.Session
+	agent   reviewAgent
+	limits  ReviewLimits
+	noTools func()
+	w       reviewWatch
+	// submitted brings the last turn's Submit back; the loop goes on
+	// reading the session's events meanwhile, so none is lost. lastTurn
+	// bounds that turn.
+	submitted chan error
+	lastTurn  <-chan time.Time
+	// skipped is an idle session that did not end the review, since a
+	// message to the reviewer was under way; a run that starts clears it.
+	skipped bool
+}
+
+func (l *reviewLoop) interrupt() { go func() { _ = l.rs.Interrupt() }() }
+
+// event takes one of the reviewer's events and reports whether the review
+// ends.
+func (l *reviewLoop) event(e core.Event) bool {
+	l.agent.observe(e)
+	switch e.(type) {
+	case core.RunStarted, session.InputSent:
+		l.skipped = false
+	}
+	switch l.w.observe(e) {
+	case stepStop:
+		l.interrupt()
+	case stepIdle:
+		return l.idle()
+	case stepNone:
+	}
+
+	return false
+}
+
+// drain reads the events already waiting; end reports whether the review
+// ends, and ok is false when the session closed.
+func (l *reviewLoop) drain() (end, ok bool) {
+	for {
+		select {
+		case e, open := <-l.rs.Events():
+			if !open {
+				return false, false
+			}
+			if l.event(e) {
+				return true, true
+			}
+		default:
+			return false, true
+		}
+	}
+}
+
+// idle takes the reviewer's idle session and reports whether the review
+// ends: unless a message to the reviewer is under way, it ends, or, when a
+// limit stopped the run without an answer, the last turn starts.
+func (l *reviewLoop) idle() bool {
+	final := l.w.phase != reviewStopping || l.w.text != "" || l.ctx.Err() != nil
+	if !l.agent.end(final) {
+		l.skipped = true // the main agent's message starts another run
+
+		return false
+	}
+	l.skipped = false
+	if final {
+		return true
+	}
+	l.w.phase, l.w.ran, l.w.cause = reviewLastTurnPhase, false, ""
+	l.noTools()
+	l.submitted = make(chan error, 1)
+	go func(errc chan<- error, text string) {
+		_, err := l.rs.Submit(text)
+		errc <- err
+	}(l.submitted, lastTurnMessage(l.w.limit, l.limits))
+	l.lastTurn = time.After(lastTurnLimit(l.limits))
+
+	return false
 }
 
 // What an event means for awaitReview.

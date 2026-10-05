@@ -75,6 +75,8 @@ type child struct {
 	// after which no send reaches it.
 	reserved int
 	ending   bool
+	// released wakes the review when a reservation ends.
+	released chan struct{}
 	// log are the session's events since it opened, and subs the views
 	// that follow them (see watch.go).
 	log  []core.Event

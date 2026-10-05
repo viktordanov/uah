@@ -312,6 +312,10 @@ func (m *Manager) send(parentID, id, message string, interrupt bool) (string, er
 			m.mu.Lock()
 			c.reserved--
 			m.mu.Unlock()
+			select {
+			case c.released <- struct{}{}:
+			default: // one wake is enough: the review reads the rest
+			}
 		}()
 	}
 	switch {

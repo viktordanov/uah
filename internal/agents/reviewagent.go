@@ -29,6 +29,7 @@ func (m *Manager) addReviewer(req session.ReviewRequest, rs *session.Session, st
 	m.mu.Lock()
 	c := newChild(rs.ID(), req.ParentID, reviewRole, m.nickname(req.ParentID, Role{NicknameCandidates: []string{"Reviewer"}}, ""))
 	c.review, c.stopReview, c.task = true, stop, reviewTask
+	c.released = make(chan struct{}, 1)
 	c.model, c.effort = req.Settings.Model, req.Settings.Effort
 	c.s = rs
 	m.children[c.id] = c
@@ -82,11 +83,11 @@ func (a reviewAgent) observe(e core.Event) {
 	}
 }
 
-// end decides that the review ends at an idle session, unless a message
-// to the reviewer is under way: then the session's next run answers it.
-// Once it returns true, send_input refuses the reviewer, so no message is
-// lost between the decision and the review's end.
-func (a reviewAgent) end() bool {
+// end reports whether no message to the reviewer is under way, so its
+// idle session is the end of a run nothing follows. With final, the
+// review ends there, and send_input refuses the reviewer from then on, so
+// no message is lost between the decision and the review's end.
+func (a reviewAgent) end(final bool) bool {
 	if a.c == nil {
 		return true
 	}
@@ -95,9 +96,19 @@ func (a reviewAgent) end() bool {
 	if a.c.reserved > 0 || a.c.sending > 0 || len(a.c.pending) > 0 {
 		return false
 	}
-	a.c.ending = true
+	a.c.ending = final
 
 	return true
+}
+
+// released signals each send to the reviewer that let go of its
+// reservation (nil without a reviewer agent: never).
+func (a reviewAgent) released() <-chan struct{} {
+	if a.c == nil {
+		return nil
+	}
+
+	return a.c.released
 }
 
 // stopReviewer stops a review the main agent closed: the review ends as
