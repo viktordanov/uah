@@ -259,13 +259,34 @@ func (m *Manager) find(parentID, id string) (*child, bool) {
 }
 
 // notFound says a child is unknown, and how to reach one from an earlier
-// process.
+// process; a /review's reviewer is never one.
 func (m *Manager) notFound(parentID, id string) error {
-	if sc, found, err := session.ReadSidecar(m.template().SessionsDir, id); id != "" && err == nil && found && sc.Parent == parentID {
+	sc, found, err := session.ReadSidecar(m.template().SessionsDir, id)
+	switch {
+	case id == "" || err != nil || !found:
+	case m.isReview(id, sc):
+		return errReviewer(id)
+	case sc.Parent == parentID:
 		return fmt.Errorf("agent with id %s is not loaded; resume it with resume_agent first", id)
 	}
 
 	return fmt.Errorf("agent with id %s not found", id)
+}
+
+// isReview reports whether a session is a /review's reviewer: one this
+// process started, or one whose sidecar says so.
+func (m *Manager) isReview(id string, sc session.Sidecar) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return sc.Review || m.reviews[id]
+}
+
+// errReviewer refuses an agent tool's call on a /review's reviewer: the
+// review is the user's, and its findings reach the agent when it ends.
+func errReviewer(id string) error {
+	return fmt.Errorf("agent with id %s is the reviewer of a /review the user started, not one of your agents: the agent tools cannot reach it. "+
+		"Its findings come to you with the user's next message when it ends; the user stops it with esc esc or /stop", id)
 }
 
 // send gives a child another message; with interrupt, it stops the
@@ -417,8 +438,14 @@ func (m *Manager) resume(_ context.Context, parentID, id string) (Status, error)
 	m.mu.Unlock()
 	dir := m.template().SessionsDir
 	sc, found, err := session.ReadSidecar(dir, id)
-	if id == "" || err != nil || !found || sc.Source != session.SourceSubagent || sc.Parent != parentID {
+	switch {
+	case id == "" || err != nil || !found || sc.Source != session.SourceSubagent || sc.Parent != parentID:
 		return Status{State: engine.AgentNotFound}, fmt.Errorf("agent with id %s not found", id)
+	case m.isReview(id, sc):
+		return Status{State: engine.AgentNotFound}, errReviewer(id)
+	case session.InUse(dir, id):
+		// Nothing starts: a second run of it would fail to start.
+		return Status{State: engine.AgentNotFound}, fmt.Errorf("agent with id %s is in use by another run, so it cannot be resumed now", id)
 	}
 	rec, _ := readRecord(dir, id)
 	role, err := m.role(rec.Role)
