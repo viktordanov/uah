@@ -97,8 +97,8 @@ type Styles struct {
 	// notice is information notices' gray; comment is the code comments'
 	// color, which an MCP call's result and a heredoc's body take.
 	notice, comment lipgloss.Style
-	// chip is a note drawn over the transcript (overlay.go): the accent on
-	// the band.
+	// chip is a note drawn over the transcript (overlay.go): the band's
+	// color on the accent, as the header, so it stands out on the band too.
 	chip lipgloss.Style
 	// yoloChip is yolo mode in the header: the warning color on the band,
 	// since the header's background is the accent.
@@ -136,9 +136,8 @@ func NewStyles(t Theme) *Styles {
 	st.warn = lipgloss.NewStyle().Foreground(t.Warn)
 	st.italic = lipgloss.NewStyle().Foreground(t.Dim).Italic(true)
 	st.header = lipgloss.NewStyle().Foreground(t.Band).Background(t.Accent)
-	st.chip = lipgloss.NewStyle().Foreground(t.Accent).Background(t.Band)
 	st.yoloChip = lipgloss.NewStyle().Foreground(t.Warn).Background(t.Band).Bold(true)
-	st.selected = st.header
+	st.selected, st.chip = st.header, st.header
 	st.tool = lipgloss.NewStyle().Foreground(t.Accent)
 	st.ok = lipgloss.NewStyle().Foreground(t.Good)
 	st.codeSpan = lipgloss.NewStyle().Foreground(t.Name)

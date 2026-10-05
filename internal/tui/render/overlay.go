@@ -12,8 +12,8 @@ import (
 // own, so nothing on the screen moves when one comes or goes: the pill
 // that says output arrived below a window scrolled up (state/scroll.go),
 // centered on its last row as Codex draws it, and the toast (state.Toast),
-// in the corner on the right. Each is one row of the theme's accent on the
-// band; Note draws any other.
+// in the corner on the right. Each is one row on the theme's accent, as
+// the header is; Note draws any other.
 
 // pillLabels are the new-output pill's words, Codex's with uah's key,
 // longest first: the first that fits is drawn.
