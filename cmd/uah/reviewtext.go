@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/viktordanov/uagent/core"
 
@@ -33,18 +35,62 @@ func (o *reviewOutput) step(ev core.Event) {
 	case core.ToolCalled:
 		label, text := o.shape(e.Name, e.Arguments, e.Label)
 		if o.calls == nil {
-			o.calls = map[string][2]string{}
+			o.calls = map[string]reviewCall{}
 		}
-		o.calls[e.CallID] = [2]string{label, text}
+		o.calls[e.CallID] = reviewCall{label: label, text: text, grep: label == cmdparse.LabelSearch && greps(command(e.Arguments, e.Label))}
 		o.progress.say(fmt.Sprintf("  → %-8s%s", label, oneLine(text, 160)))
 	case core.ToolFinished:
 		call, ok := o.calls[e.CallID]
 		delete(o.calls, e.CallID)
-		if e.OK || !ok || (call[0] == cmdparse.LabelSearch && e.Detail == "exit 1") {
-			return // a search that found nothing did not fail
+		if e.OK || !ok || (call.grep && e.Detail == "exit 1") {
+			return // rg or grep that found nothing did not fail
 		}
-		o.progress.say(fmt.Sprintf("  ✗ %-8s%s  (%s, %.1fs)", call[0], oneLine(call[1], 160), e.Detail, e.Duration.Seconds()))
+		o.progress.say(fmt.Sprintf("  ✗ %-8s%s  (%s, %.1fs)", call.label, oneLine(call.text, 160), e.Detail, e.Duration.Seconds()))
 	}
+}
+
+// reviewCall is a running call's label and text, and whether it is rg or
+// grep, whose exit 1 means no match rather than a failure.
+type reviewCall struct {
+	label, text string
+	grep        bool
+}
+
+// greps reports whether a command is a search whose exit 1 means it found
+// nothing: rg, grep, or git grep. find, for one, exits 1 on an error.
+func greps(command string) bool {
+	f := strings.Fields(cmdparse.Strip(command))
+	if len(f) > 1 && f[0] == "git" {
+		f = f[1:]
+	}
+
+	return len(f) > 0 && slices.Contains([]string{"rg", "grep", "egrep", "fgrep"}, f[0])
+}
+
+// command is a Bash call's command, from its arguments, else its label.
+func command(arguments, label string) string {
+	var args struct {
+		Command string `json:"command"`
+	}
+	if json.Unmarshal([]byte(arguments), &args) != nil || args.Command == "" {
+		return label
+	}
+
+	return args.Command
+}
+
+// reviewWriter writes in the terminal's colors: none on a writer that is
+// not a terminal, and none, not even bold, when NO_COLOR is set to
+// anything.
+func reviewWriter(w io.Writer, environ []string) *colorprofile.Writer {
+	out := colorprofile.NewWriter(w, environ)
+	for _, kv := range environ {
+		if v, ok := strings.CutPrefix(kv, "NO_COLOR="); ok && v != "" {
+			out.Profile = colorprofile.NoTTY
+		}
+	}
+
+	return out
 }
 
 // shape is a tool call's label and text as the TUI's tool lines read: a
@@ -54,13 +100,7 @@ func (o *reviewOutput) shape(name, arguments, label string) (string, string) {
 	if name != "Bash" {
 		return strings.ToUpper(name), label
 	}
-	var args struct {
-		Command string `json:"command"`
-	}
-	if json.Unmarshal([]byte(arguments), &args) != nil || args.Command == "" {
-		args.Command = label
-	}
-	sum := cmdparse.Summarize(args.Command, o.env)
+	sum := cmdparse.Summarize(command(arguments, label), o.env)
 
 	return cmp.Or(sum.Label, "RAN"), sum.Text()
 }
@@ -113,6 +153,9 @@ func (o *reviewOutput) print(w io.Writer) {
 	if e := strings.TrimSpace(r.OverallExplanation); e != "" {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, e)
+	} else if len(r.Findings) == 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, st.dim.Render(codereview.FallbackMessage))
 	}
 	for _, f := range codereview.Sorted(r.Findings) {
 		o.printFinding(w, st, f)

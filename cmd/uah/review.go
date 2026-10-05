@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/colorprofile"
 	"github.com/urfave/cli/v3"
 
 	"github.com/viktordanov/uagent/core"
@@ -175,8 +174,8 @@ type reviewOutput struct {
 	json           bool
 	// env is where the reviewer's commands run, for their paths.
 	env cmdparse.Env
-	// calls are the reviewer's running calls' labels and texts, by ID.
-	calls    map[string][2]string
+	// calls are the reviewer's running calls, by ID.
+	calls    map[string]reviewCall
 	started  session.ReviewStarted
 	finished session.ReviewFinished
 }
@@ -224,7 +223,7 @@ func (o *reviewOutput) finish(lastMessage string) error {
 			return fmt.Errorf("failed to write the review: %w", err)
 		}
 	} else if text != "" {
-		o.print(colorprofile.NewWriter(o.stdout, os.Environ()))
+		o.print(reviewWriter(o.stdout, os.Environ()))
 	}
 	if lastMessage != "" {
 		if text == "" {

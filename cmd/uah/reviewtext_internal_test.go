@@ -59,6 +59,10 @@ func TestReviewSteps(t *testing.T) {
 	o.step(core.ToolFinished{CallID: "2", OK: false, Detail: "exit 1"})
 	o.step(core.ToolCalled{CallID: "3", Name: "Bash", Arguments: `{"command":"go test ./..."}`})
 	o.step(core.ToolFinished{CallID: "3", OK: false, Detail: "exit 1", Duration: 4 * time.Second})
+	o.step(core.ToolCalled{CallID: "4", Name: "Bash", Arguments: `{"command":"find /w/missing -name '*.go'"}`})
+	o.step(core.ToolFinished{CallID: "4", OK: false, Detail: "exit 1"})
+	o.step(core.ToolCalled{CallID: "5", Name: "Bash", Arguments: `{"command":"rg -n '(' /w"}`})
+	o.step(core.ToolFinished{CallID: "5", OK: false, Detail: "exit 2"})
 	var lines []string
 	for l := range strings.Lines(buf.String()) {
 		lines = append(lines, strings.TrimRight(l[strings.Index(l, "]")+2:], "\n"))
@@ -68,5 +72,33 @@ func TestReviewSteps(t *testing.T) {
 		"  → SEARCH  Foo in internal",
 		"  → RAN     go test ./...",
 		"  ✗ RAN     go test ./...  (exit 1, 4.0s)",
-	}, lines)
+		"  → SEARCH  *.go in missing",
+		"  ✗ SEARCH  *.go in missing  (exit 1, 0.0s)",
+		"  → SEARCH  ( in .",
+		"  ✗ SEARCH  ( in .  (exit 2, 0.0s)",
+	}, lines, "find's exit 1 and rg's exit 2 are failures; rg's exit 1 found nothing")
+	assert.Empty(t, o.calls, "ended calls are forgotten")
+}
+
+// TestReviewPrintEmpty says the reviewer gave nothing, as Codex's text
+// does, when it answered with neither an explanation nor findings.
+func TestReviewPrintEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	o := reviewOutput{started: session.ReviewStarted{Hint: "current changes"}, finished: session.ReviewFinished{Output: codereview.Parse("{}")}}
+	o.print(colorprofile.NewWriter(&buf, nil))
+	assert.Equal(t, "REVIEW  current changes\n        no findings · 0s\n\n"+codereview.FallbackMessage+"\n", buf.String())
+}
+
+// TestReviewWriter: NO_COLOR set to anything turns off every style, bold
+// too, even on a terminal that has colors.
+func TestReviewWriter(t *testing.T) {
+	env := []string{"TERM=xterm-256color", "COLORTERM=truecolor", "CLICOLOR_FORCE=1"}
+	assert.NotEqual(t, colorprofile.NoTTY, reviewWriter(&bytes.Buffer{}, env).Profile, "a forced color terminal")
+	for _, v := range []string{"1", "yes"} {
+		var buf bytes.Buffer
+		w := reviewWriter(&buf, append(env, "NO_COLOR="+v))
+		assert.Equal(t, colorprofile.NoTTY, w.Profile, v)
+		_, _ = w.Write([]byte("\x1b[1mbold\x1b[m"))
+		assert.Equal(t, "bold", buf.String(), v)
+	}
 }
