@@ -36,6 +36,8 @@ type Review struct {
 	Output      codereview.Output
 	Interrupted bool
 	Err         string
+	// Limit is the limit that stopped the review, if one did.
+	Limit session.ReviewLimit
 	// Model and Effort are the reviewer's, and Tokens what it used: the sum
 	// of its model responses while it runs, then its run's total.
 	Model, Effort string
@@ -129,7 +131,7 @@ func (s *State) onReview(ev any) bool {
 		}
 		s.updateReview(e.ID, func(r *Review) {
 			r.Running, r.Ended = false, e.At
-			r.Output, r.Interrupted, r.Err = e.Output, e.Interrupted, e.Err
+			r.Output, r.Interrupted, r.Err, r.Limit = e.Output, e.Interrupted, e.Err, e.Limit
 			if e.Tokens != (core.Tokens{}) {
 				r.Tokens = e.Tokens // else the sum so far: a run that ended without a result
 			}
@@ -187,6 +189,61 @@ func (s *State) reviewStep(r *Review, ev core.Event) {
 	case core.ModelResponded:
 		r.Tokens = r.Tokens.Add(e.Usage)
 	}
+}
+
+// waitingAfter is how long a step runs before the review says it waits
+// on it.
+const waitingAfter = time.Minute
+
+// Waiting is the reviewer's oldest step that has run for over a minute,
+// and for how long, while the review runs: what the reviewer waits on.
+func (r *Review) Waiting(now time.Time) (Item, time.Duration, bool) {
+	if r == nil || !r.Running {
+		return Item{}, 0, false
+	}
+	for _, it := range r.Steps {
+		if it.Tool == ToolRunning && !it.Started.IsZero() && now.Sub(it.Started) >= waitingAfter {
+			return it, now.Sub(it.Started), true
+		}
+	}
+
+	return Item{}, 0, false
+}
+
+// WaitingOn says what the reviewer waits on, as "waiting on: pnpm install
+// (12m)", or "" when no step has run for a minute.
+func (r *Review) WaitingOn(now time.Time) string {
+	it, d, ok := r.Waiting(now)
+	if !ok {
+		return ""
+	}
+	text := it.Label
+	if it.Parts != nil {
+		var b strings.Builder
+		for _, p := range it.Parts {
+			b.WriteString(p.Text)
+		}
+		text = b.String()
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	if r := []rune(text); len(r) > waitingText {
+		text = string(r[:waitingText-1]) + "…"
+	}
+
+	return fmt.Sprintf("waiting on: %s (%dm)", text, int(d.Minutes()))
+}
+
+// waitingText is how much of a step WaitingOn shows.
+const waitingText = 40
+
+// LimitNote says which limit stopped the review: "stopped at the time
+// limit", or "" when none did.
+func (r *Review) LimitNote() string {
+	if r == nil || r.Limit == "" {
+		return ""
+	}
+
+	return "stopped at the " + string(r.Limit) + " limit"
 }
 
 // updateReview changes a review's item in place; the item's Review is
