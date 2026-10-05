@@ -173,8 +173,9 @@ func (st *Styles) reviewSteps(r *state.Review, w int, now time.Time, details boo
 	} else if n := r.StepCount - len(steps); n > 0 {
 		lines = append(lines, st.dim.Render("⋮ "+plural(n, "earlier step")+" not kept"))
 	}
+	room := w - len(reviewIndent) - 2 // the branch
 	for _, step := range steps {
-		lines = append(lines, st.reviewStep(step, now, details))
+		lines = append(lines, st.reviewStep(step, now, details, room))
 	}
 	if r.Running && !slices.ContainsFunc(r.Steps, live) {
 		lines = append(lines, st.tool.Render(spin(now))+st.dim.Render(" thinking"))
@@ -224,8 +225,8 @@ const stepLabel = labelWidth + 1
 // column (the spinner before it while it runs, the error color when it
 // failed) and what it did, then how it ended where that says something:
 // its exit code, "no matches", "stopped", and in the detailed view how
-// long it took.
-func (st *Styles) reviewStep(it state.Item, now time.Time, details bool) string {
+// long it took. The text is cut to fit width w, so how it ended shows.
+func (st *Styles) reviewStep(it state.Item, now time.Time, details bool, w int) string {
 	label := cmp.Or(it.Verb, toolLabel(it.Name))
 	padded := label + strings.Repeat(" ", max(stepLabel-ansi.StringWidth(label), 1))
 	var head string
@@ -251,12 +252,13 @@ func (st *Styles) reviewStep(it state.Item, now time.Time, details bool) string 
 	if details && !live(it) && it.Duration >= 100*time.Millisecond {
 		tail = append(tail, st.dim.Render(secs(it.Duration)))
 	}
-	line := head + st.parts(toolParts(it))
+	end := ""
 	if len(tail) > 0 {
-		line += "  " + strings.Join(tail, st.dim.Render(" · "))
+		end = "  " + strings.Join(tail, st.dim.Render(" · "))
 	}
+	room := max(w-ansi.StringWidth(head)-ansi.StringWidth(end), 8)
 
-	return line
+	return head + ansi.Truncate(st.parts(toolParts(it)), room, "…") + end
 }
 
 // flow lays styled parts out after first: gap before the first part, a

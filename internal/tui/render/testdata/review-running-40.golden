@@ -79,8 +79,8 @@
   REVIEW  changes against 'main'
           gpt-6-astra high · 5 steps
           39.1k tokens · 42s
-    ├ SEARCH  ParseConfig in internal  …
-    ├ RAN     go test ./internal/config…
+    ├ SEARCH  ParseConfig i…  no matches
+    ├ RAN     go test ./interna…  exit 1
     ├ LIST    internal/config
     └ ⠋ RAN   git diff 1a2b3c4
 

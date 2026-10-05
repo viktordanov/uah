@@ -169,6 +169,13 @@ func TestScreens_ReviewVerdict(t *testing.T) {
 	assert.Regexp(t, regexp.QuoteMeta(color(theme.Warn))+`[;m]P2 [^\n]*Guard`, bad, "P2 in the warning color")
 	assert.Regexp(t, regexp.QuoteMeta(color(theme.Dim))+`[;m][^\x1b]*Maybe drop the retry`, bad, "a finding of low confidence is dim")
 	assert.Regexp(t, regexp.QuoteMeta(color(theme.Dim))+`[;m][^\x1b]*The retry might be needed`, bad, "its body too")
+	long := reviewed(codereview.Parse(`{"findings":[{"title":"[P2] Low","body":"` + strings.Repeat("word ", 60) + `","confidence_score":0.2,
+"code_location":{"absolute_file_path":"/workspace/proj/a.go","line_range":{"start":1,"end":2}}}],"overall_correctness":"patch is correct"}`))
+	for _, line := range strings.Split(tall(long), "\n") {
+		if strings.Contains(line, "word") {
+			assert.True(t, strings.HasPrefix(line, "\x1b["+color(theme.Dim)), "every row of a low-confidence body is dim: %q", line)
+		}
+	}
 
 	empty := screen(reviewed(codereview.Output{}), "")
 	assert.Contains(t, empty, "no findings")
@@ -208,6 +215,18 @@ func TestScreens_ReviewNarrow(t *testing.T) {
 			}
 		}
 	}
+	long := apply(reviewing(),
+		session.ReviewActivity{At: t0, ID: "r1", Event: reviewerBash("c9", "go test ./internal/config/... -run TestLoadEverythingWithAVeryLongName -count 1")},
+		session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolFinished{At: t0, CallID: "c9", Name: "Bash", OK: false, Detail: "exit 2", Duration: 3 * time.Second}},
+		session.ReviewActivity{At: t0, ID: "r1", Event: reviewerBash("c10", "rg -n SomethingLongEnoughToFillTheRow internal/config/deeper/package")},
+		session.ReviewActivity{At: t0, ID: "r1", Event: core.ToolFinished{At: t0, CallID: "c10", Name: "Bash", OK: false, Detail: "exit 1"}},
+		session.ReviewFinished{At: t0.Add(time.Minute), ID: "r1", Interrupted: true},
+		state.ToggleDetails{},
+	)
+	got := screenWidth(long, 40)
+	assert.Contains(t, got, "…  exit 2 · 3.0s", "a long command is cut, not how it ended")
+	assert.Contains(t, got, "…  no matches")
+	assert.Contains(t, got, "git diff 1a2b3c4  stopped")
 	golden(t, "review-60", screenWidth(reviewed(codereview.Parse(findings)), 60))
 	golden(t, "review-40", screenWidth(reviewed(codereview.Parse(findings)), 40))
 	golden(t, "review-running-40", screenWidth(reviewing(), 40))
