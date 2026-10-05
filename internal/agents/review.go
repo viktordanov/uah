@@ -113,8 +113,9 @@ func awaitReview(ctx context.Context, rs *session.Session, activity func(core.Ev
 	}
 }
 
-// reviewWatch folds the reviewer's events: its tool events go to
-// activity, and its run's result and failure are kept.
+// reviewWatch folds the reviewer's events: its tool events and model
+// responses (their tokens) go to activity, and its run's result and
+// failure are kept.
 type reviewWatch struct {
 	activity func(core.Event)
 	result   *core.Result
@@ -124,7 +125,7 @@ type reviewWatch struct {
 // observe takes one event and reports whether the review ended.
 func (w *reviewWatch) observe(e core.Event) bool {
 	switch e := e.(type) {
-	case core.ToolCalled, core.ToolStarted, core.ToolFinished:
+	case core.ToolCalled, core.ToolStarted, core.ToolFinished, core.ModelResponded:
 		if w.activity != nil {
 			w.activity(e)
 		}
