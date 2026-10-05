@@ -146,8 +146,8 @@ func (s *State) onReview(ev any) bool {
 	return true
 }
 
-// maxReviewSteps is how many of the reviewer's latest tool calls a review
-// keeps for the detailed view.
+// maxReviewSteps is how many of the reviewer's tool calls a review keeps
+// for the detailed view: the latest, and any still running.
 const maxReviewSteps = 100
 
 // reviewStep folds one of the reviewer's events into the review: a tool
@@ -163,9 +163,14 @@ func (s *State) reviewStep(r *Review, ev core.Event) {
 	}
 	switch e := ev.(type) {
 	case core.ToolCalled:
-		steps := r.Steps[max(len(r.Steps)-maxReviewSteps+1, 0):]
-		r.Steps = append(slices.Clip(steps), s.toolCall(e))
+		r.Steps = append(slices.Clip(r.Steps), s.toolCall(e)) // a new array
 		r.StepCount++
+		if len(r.Steps) > maxReviewSteps {
+			// The oldest finished call goes; a call still running stays,
+			// so its end still finds it.
+			i := max(slices.IndexFunc(r.Steps, func(it Item) bool { return it.Tool != ToolCalled && it.Tool != ToolRunning }), 0)
+			r.Steps = slices.Delete(r.Steps, i, i+1)
+		}
 	case core.ToolStarted:
 		step(e.CallID, func(it *Item) { it.Tool, it.Started = ToolRunning, e.At })
 	case core.ToolFinished:

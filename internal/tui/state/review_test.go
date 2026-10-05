@@ -141,7 +141,7 @@ func TestReview_Item(t *testing.T) {
 
 // TestReview_Steps keeps the reviewer's steps for the detailed view:
 // each tool call shaped as the session's own, its start and end, at most
-// the latest 100 with the count of all, the tokens of its model
+// the latest 100 and any still running, with the count of all, the tokens of its model
 // responses so far, and a copy per change, so an earlier Review keeps
 // its own steps.
 func TestReview_Steps(t *testing.T) {
@@ -177,6 +177,21 @@ func TestReview_Steps(t *testing.T) {
 	assert.Equal(t, 131, r.StepCount, "every call counts")
 	assert.Equal(t, "call:c31", r.Steps[0].Key, "the latest are kept")
 	assert.Equal(t, "call:c130", r.Steps[99].Key)
+
+	slow, _ := apply(opened(), session.ReviewStarted{At: t0, ID: "r2", Hint: "current changes"},
+		session.ReviewActivity{At: t0, ID: "r2", Event: core.ToolCalled{At: t0, CallID: "slow", Name: "Bash", Arguments: `{"command":"sleep 60"}`}})
+	for i := range 120 {
+		id := fmt.Sprintf("q%d", i)
+		slow, _ = apply(slow,
+			session.ReviewActivity{At: t0, ID: "r2", Event: core.ToolCalled{At: t0, CallID: id, Name: "Bash", Arguments: `{"command":"true"}`}},
+			session.ReviewActivity{At: t0, ID: "r2", Event: core.ToolFinished{At: t0, CallID: id, OK: true}})
+	}
+	r2 := slow.Items[0].Review
+	require.Len(t, r2.Steps, 100)
+	assert.Equal(t, "call:slow", r2.Steps[0].Key, "a call still running is never dropped")
+	assert.Equal(t, "call:q21", r2.Steps[1].Key, "the oldest finished ones go")
+	slow, _ = apply(slow, session.ReviewActivity{At: t0, ID: "r2", Event: core.ToolFinished{At: t0, CallID: "slow", OK: true}})
+	assert.Equal(t, state.ToolOK, slow.Items[0].Review.Steps[0].Tool, "and its end finds it")
 
 	before := s.Items[0].Review
 	ended, _ := apply(s, session.ReviewFinished{At: t0.Add(time.Minute), ID: "r1", Interrupted: true})
