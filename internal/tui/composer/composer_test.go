@@ -348,3 +348,37 @@ func TestSelection(t *testing.T) {
 	c.Paste("x")
 	assert.Equal(t, "x|", marked(c))
 }
+
+func TestUndo(t *testing.T) {
+	c := at(t, 40, "|")
+	typeText(&c, "hello world")
+	press(&c, "ctrl+_")
+	assert.Equal(t, "hello |", marked(c), "the last word typed is one step")
+	press(&c, "ctrl+/")
+	assert.Equal(t, "hello|", marked(c), "the space is its own step")
+	press(&c, "ctrl+7")
+	assert.Equal(t, "|", marked(c))
+	press(&c, "ctrl+_")
+	assert.Equal(t, "|", marked(c), "nothing left to undo")
+
+	c = at(t, 40, "ab|cd")
+	press(&c, "ctrl+k", "ctrl+u", "ctrl+_")
+	assert.Equal(t, "ab|", marked(c), "a kill comes back")
+	press(&c, "ctrl+_")
+	assert.Equal(t, "ab|cd", marked(c))
+
+	c = at(t, 40, "a|")
+	c.Paste("one\ntwo")
+	press(&c, "ctrl+_")
+	assert.Equal(t, "a|", marked(c), "a paste is one step")
+
+	c = at(t, 40, "ab|")
+	press(&c, "left", "ctrl+_")
+	assert.Equal(t, "a|b", marked(c), "a move is no step")
+
+	c = at(t, 40, "x|")
+	typeText(&c, "yz")
+	c.Reset()
+	press(&c, "ctrl+_")
+	assert.Equal(t, "|", marked(c), "a reset draft keeps no history")
+}

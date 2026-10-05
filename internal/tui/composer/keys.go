@@ -2,6 +2,7 @@ package composer
 
 import (
 	"slices"
+	"strings"
 	"unicode"
 )
 
@@ -52,6 +53,7 @@ const (
 	OpSelectAll
 	OpCopySelection
 	OpYank
+	OpUndo
 )
 
 // KeyMap maps key names to operations. A key it does not name types its
@@ -101,6 +103,7 @@ func DefaultKeyMap() KeyMap {
 	bind(OpSelectAll, "ctrl+g")
 	bind(OpCopySelection, "ctrl+shift+c")
 	bind(OpYank, "ctrl+y")
+	bind(OpUndo, "ctrl+_", "ctrl+/", "ctrl+7") // terminals send ctrl+/ as ctrl+_, which reads as ctrl+7 too
 
 	return km
 }
@@ -117,12 +120,28 @@ const (
 	ActionCopy
 )
 
-// Press applies a key. A blurred composer ignores it.
+// Press applies a key. A blurred composer ignores it. An edit can be undone
+// with ctrl+_; typed characters up to a space or a new line are one step.
 func (c *Composer) Press(k Key) Action {
 	if !c.focus {
 		return ActionNone
 	}
+	op := c.KeyMap[k.Name]
+	if op == OpUndo {
+		c.undoEdit()
+		c.typing, c.killing = false, false
+		c.fit()
+
+		return ActionNone
+	}
+	before, was := c.snap(), c.Value()
+	typing := c.typing
 	act := c.press(k)
+	typed := op == OpNone && k.Text != "" && !strings.ContainsAny(k.Text, " \t\n")
+	if c.Value() != was && (!typed || !typing) {
+		c.pushUndo(before)
+	}
+	c.typing = typed
 	c.fit()
 
 	return act
