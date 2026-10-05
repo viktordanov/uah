@@ -107,3 +107,40 @@ func TestFinding_Place(t *testing.T) {
 	assert.Equal(t, "/wx/b.go:7", at("/wx/b.go", 7, 0).Place("/w"))
 	assert.Equal(t, "(no location)", at("", 1, 2).Place("/w"))
 }
+
+// TestConfidence_Zero: a 0 the reviewer wrote is a confidence, and low; a
+// score it left out, or null, is none.
+func TestConfidence_Zero(t *testing.T) {
+	o := codereview.Parse(`{"findings":[{"title":"a","confidence_score":0},{"title":"b"},{"title":"c","confidence_score":null}],"overall_confidence_score":0}`)
+	c, ok := o.Findings[0].Confidence()
+	assert.True(t, ok)
+	assert.Zero(t, c)
+	assert.True(t, o.Findings[0].Low())
+	_, ok = o.Findings[1].Confidence()
+	assert.False(t, ok, "left out")
+	_, ok = o.Findings[2].Confidence()
+	assert.False(t, ok, "null")
+	_, ok = o.Confidence()
+	assert.True(t, ok, "the overall 0")
+	_, ok = codereview.Parse(`{"findings":[]}`).Confidence()
+	assert.False(t, ok)
+}
+
+// TestFinding_PlaceRoots tries each root in turn, and a name that starts
+// with two dots is still inside.
+func TestFinding_PlaceRoots(t *testing.T) {
+	f := codereview.Finding{CodeLocation: codereview.Location{AbsoluteFilePath: "/private/tmp/repo/a.go", LineRange: codereview.LineRange{Start: 3, End: 3}}}
+	assert.Equal(t, "a.go:3", f.Place("/tmp/repo", "/private/tmp/repo"))
+	assert.Equal(t, "/private/tmp/repo/a.go:3", f.Place("/tmp/repo"))
+	f.CodeLocation.AbsoluteFilePath = "/w/..cache/x.go"
+	assert.Equal(t, "..cache/x.go:3", f.Place("/w"))
+}
+
+// TestClean drops what a terminal would act on and keeps the text.
+func TestClean(t *testing.T) {
+	assert.Equal(t, "Clearthe screen", codereview.Clean("Clear\x1b[2Jthe screen"))
+	assert.Equal(t, "a\nb    c", codereview.Clean("a\rb\tc"))
+	assert.Equal(t, "link", codereview.Clean("\x1b]8;;http://x\x07link\x1b]8;;\x1b\\"))
+	assert.Equal(t, "x\ny", codereview.Clean("x\r\ny\x00\x07"))
+	assert.Equal(t, "日本 ok", codereview.Clean("日本 ok"))
+}
