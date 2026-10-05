@@ -117,31 +117,36 @@ func parentOf(dir, id string) string {
 
 // childSpans are the times a child worked: from a message that reached it
 // idle to its next answer, a response without tool calls. A message that
-// comes while it works extends its work.
+// comes while it works extends its work, and work that never ended in an
+// answer lasts until the end: the child was still working when it was
+// closed or the run ended.
 func childSpans(items []sessionfile.Item) []workSpan {
 	var out []workSpan
 	var cur *workSpan
 	for _, it := range items {
+		if cur != nil {
+			cur.to = it.RecordedAt
+		}
 		switch it.Kind {
 		case sessionfile.KindInput:
 			var in sessionfile.Input
 			if cur == nil && it.Decode(&in) == nil && in.Kind == sessionfile.InputExternal {
-				cur = &workSpan{from: it.RecordedAt}
+				cur = &workSpan{from: it.RecordedAt, to: it.RecordedAt}
 			}
 		case sessionfile.KindModelResponse:
 			var r sessionfile.ModelResponse
 			if cur == nil || it.Decode(&r) != nil {
 				continue
 			}
-			cur.to = it.RecordedAt
 			if !slices.ContainsFunc(r.Response.Output, func(o sessionfile.Output) bool { return o.Type == sessionfile.OutputToolCall }) {
 				out = append(out, *cur)
 				cur = nil
 			}
 		}
 	}
-	if cur != nil && !cur.to.IsZero() {
-		out = append(out, *cur) // interrupted, or still working when the run ended
+	if cur != nil {
+		cur.to = time.Unix(1<<40, 0)
+		out = append(out, *cur)
 	}
 
 	return out

@@ -51,3 +51,34 @@ func TestCountAgentUse(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, none.Used(), "a session that spawned nothing has no counts")
 }
+
+// TestCountAgentUse_WorkWithoutAnAnswer counts an interrupt that reaches a
+// child during a tool call, after its last response, and a close of a child
+// that never answered, as reaching working children.
+func TestCountAgentUse_WorkWithoutAnAnswer(t *testing.T) {
+	dir := t.TempDir()
+	parent, busy, silent := newSession(t, "main"), newSession(t, "subagent-1"), newSession(t, "subagent-2")
+	parent.request([2]string{"spawn_agent", `{"message":"one"}`}, [2]string{"spawn_agent", `{"message":"two"}`})
+	busy.item("input", map[string]any{"ID": "c1", "Kind": "external", "Payload": "one"})
+	silent.item("input", map[string]any{"ID": "c2", "Kind": "external", "Payload": "two"})
+	busy.request([2]string{"Bash", `{"command":"go test ./..."}`})
+	parent.request([2]string{"send_input", `{"target":"subagent-1","message":"stop","interrupt":true}`})
+	busy.item("input", map[string]any{"ID": "c3", "Kind": "external", "Payload": "stop"})
+	busy.request()
+	parent.request([2]string{"close_agent", `{"target":"subagent-2"}`})
+	parent.write(dir, "main")
+	for _, c := range []struct {
+		w  *sessionWriter
+		id string
+	}{{busy, "subagent-1"}, {silent, "subagent-2"}} {
+		c.w.write(dir, c.id)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "sessions", c.id+".uah.json"), []byte(`{"parent":"main"}`), 0o644))
+	}
+
+	a, err := bench.CountAgentUse(dir, "main")
+	require.NoError(t, err)
+	assert.Equal(t, 1, a.Interrupts)
+	assert.Equal(t, 1, a.ToRunning, "the interrupt came during the tool call")
+	assert.Equal(t, 1, a.ClosedRunning, "the closed child never answered")
+	assert.Equal(t, 2, a.Interventions())
+}
