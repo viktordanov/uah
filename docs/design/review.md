@@ -1,13 +1,14 @@
 # `/diff` and `/review`
 
-Status: built (ledger items 65, 120, and 136). The package READMEs hold the current contract; this record keeps the research and the decisions.
+Status: built (ledger items 65, 120, 136, and 139). The package READMEs hold the current contract; this record keeps the research and the decisions.
 
 Ledger item 65: `/diff` shows the workspace's git changes, and `/review` has a read-only reviewer look at a set of changes and list its findings, as Codex's commands do.
 
 1. [What Codex does](#what-codex-does)
 2. [The design](#the-design)
-3. [Decisions](#decisions)
-4. [Open](#open)
+3. [Limits](#limits)
+4. [Decisions](#decisions)
+5. [Open](#open)
 
 ## What Codex does
 
@@ -42,7 +43,7 @@ Checked against Codex rust-v0.156.1 (commit b412ff3). Paths are under `codex-rs/
 - `engine.Scope.NeverAsk`: every action that would ask is declined before the auto-reviewer, as Codex's `approval_policy = never`;
 - a sidecar with the parent as its parent, so `uah sessions` lists it; it is not one of the agent's subagents, so `/agents` and the agent tools never see it.
 
-Its tool events, its failed commands' output, and its model responses come back as `ReviewActivity` (the output for why a step failed, the responses for the tokens so far), and its last message is parsed with Codex's fallbacks (`codereview.Parse`). `ReviewFinished` carries the findings, `Interrupted`, or the error, and the tokens the reviewer's run used. Esc esc, `/stop`, and closing the session stop it.
+Its tool events, its failed commands' output, and its model responses come back as `ReviewActivity` (the output for why a step failed, the responses for the tokens so far). **The review ends at the reviewer's first answer**, a model response with a message and no tool call (`engine.Answered`), as Codex's review ends when its turn completes: when a command it started still runs, the reviewer's run is stopped as an interrupt stops it, which kills the command's process group, so no heartbeat or late result wakes it again. That answer is parsed with Codex's fallbacks (`codereview.Parse`). `ReviewFinished` carries the findings, `Interrupted`, or the error, the tokens the reviewer used, and the limit that stopped it, if one did ([Limits](#limits)). Esc esc, `/stop`, and closing the session stop it.
 
 **The findings.** A `KindReview` item (ledger item 136, after the owner's mockup): `REVIEW  changes against 'main'  · gpt-6-astra high · 7 steps · 48.0k tokens · 1m 12s`, and while it runs a tree of the reviewer's latest four steps and any still running, shaped as the session's tool lines (`├ READ    internal/sandbox/grants.go`), the spinner on a live one (`└ ⠋ RAN   go test …`) or on `└ ⠋ thinking`. When done, the line under it: `3 findings (1 P0 · 1 P1 · 1 P3) · ✗ patch is incorrect · confidence 82% · 2m 10s · gpt-6-astra high · 140.1k tokens`, broken after the verdict when it does not fit; then the explanation, and the findings sorted by priority, then confidence, each as `P0  title` with its confidence right-aligned (`91%`), its place, and its body as Markdown, cut to three lines in the compact view. The detailed view adds a `steps (N)` tree of every step (the latest 100 and any still running are kept) with its exit code and time. What the main agent gets is unchanged: Codex's text, in the reviewer's order, without the confidence. `internal/codereview` holds what the TUI and `uah review` share: `Level`, `Heading`, `Confidence`, `Sorted`, `Counts`, `Verdict`, and `Place`.
 
@@ -51,6 +52,22 @@ Its tool events, its failed commands' output, and its model responses come back 
 **Into the conversation.** As in Codex, the main agent gets the review: Codex's `exit_success.xml` (or `exit_interrupted.xml`) is held and goes out with your next message, as `Session.Inject` does; it starts no run. The transcript shows that message as a note, "the review went to the main agent with this message". A review that failed sends nothing.
 
 The prompts in `internal/codereview/prompts` are Codex's, verbatim (Apache-2.0, see `THIRD_PARTY_NOTICES.md`).
+
+## Limits
+
+Ledger item 139. On 2026-10-05 a `/review` with custom instructions ran for 1h 24m and 2.3M tokens until the user stopped it. The reviewer answered after 17 minutes, but an offline `pnpm install` it had started in `$TMPDIR` retried every lookup against the blocked network, and the run waited for that call. The runner's 10-minute tool heartbeat woke the reviewer six times, and it answered seven times in all. It could not stop the install: the sandbox lets a command signal only its own children, and its escalated `kill` was declined, since the reviewer never asks. Then the main agent found the reviewer's session in `~/.uah` and resumed it with `resume_agent`, which opened a second session on the busy file and queued a message that never arrived. This section keeps what changed.
+
+- **The review ends at the first answer** ([above](#the-design)). The runner's run still ends only when no call is pending; the reviewer's session is stopped from outside, at the answer.
+- **A time and a token limit**, `review_time_limit` (30 minutes) and `review_token_limit` (3,000,000: the input and output tokens of the reviewer's responses, cached input included). When one runs out before an answer, the reviewer's run is stopped, and one last turn tells it the limit was reached and asks for its answer with what it has; that turn offers no tool (`engine.Scope.NoTools`, which keeps the tools of past calls resolvable, so the history still loads) and lasts at most 3 minutes, or the time limit when that is shorter. Its answer is the review, marked `Limit`; without one the review fails. The TUI says "stopped at the time limit" (or the token limit) on the line under the review, and `uah review` in its last line and in `--json`'s `limit`.
+- **A limit on each command**, `review_command_timeout` (10 minutes, `engine.Scope.CommandTimeout`): the engine cancels a command that runs longer, as an interrupt does, and its result says it was stopped at the limit and must not be run again as it was.
+- **A session can stop its own commands.** The engine follows the process group of each command that runs (`embedded/commands.go`). A command made only of `kill`s, each with at most one signal option and PIDs (or `-group`s) inside those groups, runs outside the sandbox without asking, unless a `forbid` rule refuses it; what runs is rebuilt from what was checked, `kill -s NAME -- PID...`, so the shell cannot expand the model's text into other targets. Any other kill stays in the sandbox, which refuses it.
+- **The read-only sandbox has no network**, also with `[sandbox_workspace_write] network_access = true`, which is that sandbox's key in Codex too.
+- **The main agent cannot reach the reviewer.** The reviewer's sidecar says `"review": true`, and the agent tools refuse it by name: `resume_agent`, and `send_input` or `close_agent` on it, say that it is the reviewer of a `/review` the user started. A run of the main agent that starts while a review runs gets a developer note that says so, and that the findings come with the user's next message, so it has no reason to look in `~/.uah`. `resume_agent` also refuses a session another run holds, before anything is created.
+- **The TUI shows the wait**: while a review runs, a step that has run for a minute or more shows on the REVIEW line as `waiting on: pnpm install … (12m)`.
+
+The defaults come from the 35 other reviews in the owner's `~/.uah/sessions` (2026-10-03 to 2026-10-05): median 157 s and about 300k tokens, the longest 602 s, the most tokens 1.62M, the longest command 421 s, and no heartbeat in any of them. The limits are about three times the longest normal review, and the command limit is twice the 5-minute wake hold.
+
+Codex (rust-v0.160.0) has no time, token, or turn limit on a review. It does not need the rest: the review ends on the reviewer's `TurnComplete` (`core/src/tasks/review.rs`), the one-shot thread is then shut down (`core/src/codex_delegate.rs`), and the shutdown terminates its processes (`unified_exec_manager.terminate_all_processes`); its `exec_command` returns after at most 30 s and leaves the process to `write_stdin`, which can send Ctrl+C. Its Seatbelt profile has the same `same-sandbox` signal rule, its read-only policy has no network unless set on that policy, and its review thread keeps the parent's sandbox with `approval_policy = never`; uah's reviewer stays read-only.
 
 ## Decisions
 
