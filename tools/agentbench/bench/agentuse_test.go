@@ -54,7 +54,8 @@ func TestCountAgentUse(t *testing.T) {
 
 // TestCountAgentUse_WorkWithoutAnAnswer counts an interrupt that reaches a
 // child during a tool call, after its last response, and a close of a child
-// that never answered, as reaching working children.
+// that never answered, as reaching working children, and no work after the
+// close.
 func TestCountAgentUse_WorkWithoutAnAnswer(t *testing.T) {
 	dir := t.TempDir()
 	parent, busy, silent := newSession(t, "main"), newSession(t, "subagent-1"), newSession(t, "subagent-2")
@@ -66,6 +67,7 @@ func TestCountAgentUse_WorkWithoutAnAnswer(t *testing.T) {
 	busy.item("input", map[string]any{"ID": "c3", "Kind": "external", "Payload": "stop"})
 	busy.request()
 	parent.request([2]string{"close_agent", `{"target":"subagent-2"}`})
+	parent.request([2]string{"Bash", `{"command":"go test ./..."}`})
 	parent.write(dir, "main")
 	for _, c := range []struct {
 		w  *sessionWriter
@@ -81,4 +83,5 @@ func TestCountAgentUse_WorkWithoutAnAnswer(t *testing.T) {
 	assert.Equal(t, 1, a.ToRunning, "the interrupt came during the tool call")
 	assert.Equal(t, 1, a.ClosedRunning, "the closed child never answered")
 	assert.Equal(t, 2, a.Interventions())
+	assert.Equal(t, 2, a.BusyRequests, "the interrupt's and the close's requests; none after the close")
 }

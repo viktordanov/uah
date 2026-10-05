@@ -69,21 +69,22 @@ func CountAgentUse(stateDir, mainSession string) (AgentUse, error) {
 	if err != nil {
 		return a, err
 	}
+	_, page, err := sessionfile.Read(filepath.Join(dir, mainSession+".session.jsonl"), sessionfile.BeforeFirst, 0)
+	if err != nil {
+		return a, err
+	}
+	closes := closeTimes(page.Items)
 	busy := map[string][]workSpan{} // by child
 	for _, path := range files {
 		id := strings.TrimSuffix(filepath.Base(path), ".session.jsonl")
 		if id == mainSession || parentOf(dir, id) != mainSession {
 			continue
 		}
-		_, page, err := sessionfile.Read(path, sessionfile.BeforeFirst, 0)
+		_, items, err := sessionfile.Read(path, sessionfile.BeforeFirst, 0)
 		if err != nil {
 			return a, err
 		}
-		busy[id] = childSpans(page.Items)
-	}
-	_, page, err := sessionfile.Read(filepath.Join(dir, mainSession+".session.jsonl"), sessionfile.BeforeFirst, 0)
-	if err != nil {
-		return a, err
+		busy[id] = childSpans(items.Items, closes[id])
 	}
 	a.count(page.Items, func(child string, at time.Time) bool {
 		for id, spans := range busy {
@@ -115,12 +116,34 @@ func parentOf(dir, id string) string {
 	return sc.Parent
 }
 
+// closeTimes are the times the main agent closed each child.
+func closeTimes(items []sessionfile.Item) map[string][]time.Time {
+	out := map[string][]time.Time{}
+	for _, it := range items {
+		var r sessionfile.ModelResponse
+		if it.Kind != sessionfile.KindModelResponse || it.Decode(&r) != nil {
+			continue
+		}
+		for _, o := range r.Response.Output {
+			var tc sessionfile.ToolCall
+			var args struct {
+				Target string `json:"target"`
+			}
+			if o.Type == sessionfile.OutputToolCall && o.Decode(&tc) == nil && tc.Name == toolCloseAgent && json.Unmarshal([]byte(tc.Arguments), &args) == nil {
+				out[args.Target] = append(out[args.Target], it.RecordedAt)
+			}
+		}
+	}
+
+	return out
+}
+
 // childSpans are the times a child worked: from a message that reached it
 // idle to its next answer, a response without tool calls. A message that
-// comes while it works extends its work, and work that never ended in an
-// answer lasts until the end: the child was still working when it was
-// closed or the run ended.
-func childSpans(items []sessionfile.Item) []workSpan {
+// comes while it works extends its work. Work that never ended in an answer
+// lasts until the main agent closed the child, else until the child's last
+// item (an interrupt, an error, or the run's end).
+func childSpans(items []sessionfile.Item, closes []time.Time) []workSpan {
 	var out []workSpan
 	var cur *workSpan
 	for _, it := range items {
@@ -145,7 +168,13 @@ func childSpans(items []sessionfile.Item) []workSpan {
 		}
 	}
 	if cur != nil {
-		cur.to = time.Unix(1<<40, 0)
+		for _, at := range closes {
+			if !at.Before(cur.from) {
+				cur.to = at
+
+				break
+			}
+		}
 		out = append(out, *cur)
 	}
 
@@ -264,7 +293,7 @@ func (a *AgentUse) call(tc sessionfile.ToolCall, working func(child string) bool
 		if working(args.Target) {
 			a.ToRunning++
 		}
-	case "close_agent":
+	case toolCloseAgent:
 		a.Closes++
 		if working(args.Target) {
 			a.ClosedRunning++
