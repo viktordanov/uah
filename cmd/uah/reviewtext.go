@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -129,11 +130,14 @@ func command(arguments, label string) string {
 	return args.Command
 }
 
-// reviewWriter writes in the terminal's colors: none on a writer that is
-// not a terminal, and none, not even bold, when NO_COLOR is set to
-// anything.
-func reviewWriter(w io.Writer, environ []string) *colorprofile.Writer {
+// reviewWriter writes in the terminal's colors when tty says w is a
+// terminal: none on anything else, even with CLICOLOR_FORCE, and none, not
+// even bold, when NO_COLOR is set to anything.
+func reviewWriter(w io.Writer, tty bool, environ []string) *colorprofile.Writer {
 	out := colorprofile.NewWriter(w, environ)
+	if !tty {
+		out.Profile = colorprofile.NoTTY
+	}
 	for _, kv := range environ {
 		if v, ok := strings.CutPrefix(kv, "NO_COLOR="); ok && v != "" {
 			out.Profile = colorprofile.NoTTY
@@ -143,16 +147,27 @@ func reviewWriter(w io.Writer, environ []string) *colorprofile.Writer {
 	return out
 }
 
+// roots are the workspace and its resolved spelling, for the findings'
+// places: a reviewer may name /private/tmp/repo for /tmp/repo.
+func (o *reviewOutput) roots() []string {
+	ws := o.env.Workspace
+	if resolved, err := filepath.EvalSymlinks(ws); err == nil && ws != "" && resolved != ws {
+		return []string{ws, resolved}
+	}
+
+	return []string{ws}
+}
+
 // shape is a tool call's label and text as the TUI's tool lines read: a
 // command as READ, LIST, SEARCH, or RAN and its targets, another tool by
 // its name.
 func (o *reviewOutput) shape(name, arguments, label string) (string, string) {
 	if name != "Bash" {
-		return strings.ToUpper(name), label
+		return strings.ToUpper(name), codereview.Clean(label)
 	}
 	sum := cmdparse.Summarize(command(arguments, label), o.env)
 
-	return cmp.Or(sum.Label, "RAN"), sum.Text()
+	return cmp.Or(sum.Label, "RAN"), codereview.Clean(sum.Text())
 }
 
 // reviewStyles are the review's colors on stdout: the TUI's dark theme.
@@ -200,7 +215,7 @@ func (o *reviewOutput) print(w io.Writer) {
 	sep := st.dim.Render(" · ")
 	fmt.Fprintln(w, st.accent.Render("REVIEW")+"  "+o.started.Hint)
 	fmt.Fprintln(w, "        "+strings.Join(append(head, stats...), sep))
-	if e := strings.TrimSpace(r.OverallExplanation); e != "" {
+	if e := strings.TrimSpace(codereview.Clean(r.OverallExplanation)); e != "" {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, e)
 	} else if len(r.Findings) == 0 {
@@ -230,7 +245,7 @@ func (o *reviewOutput) printFinding(w io.Writer, st reviewStyles, f codereview.F
 	if low {
 		tag, title = st.dim, st.dim
 	}
-	line := tag.Render(prio) + "  " + title.Render(f.Heading())
+	line := tag.Render(prio) + "  " + title.Render(oneLine(codereview.Clean(f.Heading()), 400))
 	if c, ok := f.Confidence(); ok {
 		score := codereview.Percent(c)
 		if low {
@@ -240,8 +255,8 @@ func (o *reviewOutput) printFinding(w io.Writer, st reviewStyles, f codereview.F
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, line)
-	fmt.Fprintln(w, st.dim.Render("    "+f.Place(o.env.Workspace)))
-	for l := range strings.Lines(strings.TrimSpace(f.Body)) {
+	fmt.Fprintln(w, st.dim.Render("    "+codereview.Clean(f.Place(o.roots()...))))
+	for l := range strings.Lines(strings.TrimSpace(codereview.Clean(f.Body))) {
 		l = strings.TrimRight(l, "\r\n")
 		if l == "" {
 			fmt.Fprintln(w)
