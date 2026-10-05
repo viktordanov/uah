@@ -1,6 +1,7 @@
 package embedded
 
 import (
+	"cmp"
 	"time"
 
 	"github.com/viktordanov/uah-core/harness/coordinator"
@@ -14,7 +15,8 @@ const wakeHold = 5 * time.Minute
 
 // wakePolicy is the coordinator's wake policy: the model is not woken just
 // to hear that a call is still running. A turn's results wait until every
-// call it issued has finished, or a call has run for wakeHold.
-func wakePolicy() coordinator.WakePolicy {
-	return coordinator.WakePolicy{Hold: wakeHold, Progress: bash.Progress}
+// call it issued has finished, or a call has run for hold (wakeHold when
+// 0).
+func wakePolicy(hold time.Duration) coordinator.WakePolicy {
+	return coordinator.WakePolicy{Hold: cmp.Or(hold, wakeHold), Progress: bash.Progress}
 }

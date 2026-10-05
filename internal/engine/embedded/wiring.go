@@ -103,7 +103,10 @@ type wiring struct {
 	// opAllowed, under a tool policy, reports whether an operation the
 	// coordinator adds may run (policyOperations).
 	opAllowed func(operation.Operation) bool
-	closers   []closer
+	// commands follows the run's commands: their process groups, and the
+	// scope's limit on each (commands.go).
+	commands *commands
+	closers  []closer
 }
 
 // closer releases something a starting run opened. One that saves the
@@ -193,7 +196,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if err := w.effortUpdates(ctx, sw, s, req); err != nil {
 		return nil, err
 	}
-	operations := withPolicyOperations(operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx)), w.opAllowed)
+	operations := w.commands.wrap(withPolicyOperations(operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx)), w.opAllowed))
 	first := compaction.Trigger("")
 	switch {
 	case opts.Clear:
@@ -229,7 +232,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 		LLM:                   comp,
 		Tools:                 registry,
 		Operations:            operations,
-		Wake:                  wakePolicy(),
+		Wake:                  wakePolicy(w.e.cfg.WakeHold),
 		EffortUpdate:          sw.effortUpdate,
 	})
 	w.launch(runCtx, a, coord, obs, func() { s.store.RemoveObserver(prefetchID); s.store.RemoveObserver(observerID) })

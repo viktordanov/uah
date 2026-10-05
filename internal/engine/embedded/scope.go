@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/viktordanov/uah-core/harness/tool"
 
@@ -24,7 +25,7 @@ var builtinTools = []string{tool.BashName, tool.ViewImageName, tool.SkillUseName
 // SetScope narrows a session's tools and pre-approves some of its actions
 // from its next run (engine.Scoper).
 func (e *Engine) SetScope(sessionID string, s engine.Scope) {
-	if s.Tools == nil && len(s.Approve) == 0 && !s.NeverAsk {
+	if s.Tools == nil && len(s.Approve) == 0 && !s.NeverAsk && s.CommandTimeout == 0 && !s.NoTools {
 		e.scopes.Delete(sessionID)
 
 		return
@@ -92,6 +93,35 @@ func (s *scope) disallowResources(disallowed []string) []string {
 	}
 
 	return disallowed
+}
+
+// closed reports whether the scope offers no tool now (Scope.NoTools).
+func (s *scope) closed() bool { return s != nil && s.NoTools }
+
+// closedRegistry offers no tool and refuses every call; a past call's
+// result still reads through its own tool (Scope.NoTools).
+type closedRegistry struct{ tool.Registry }
+
+func (closedRegistry) StaticDefinitions() []tool.Definition { return nil }
+
+func (closedRegistry) Skills() []tool.Skill { return nil }
+
+func (r closedRegistry) Resolve(name string) (tool.Translator, bool) {
+	t, ok := r.Registry.Resolve(name)
+	if !ok {
+		return t, ok
+	}
+
+	return policyRefusal{Translator: t, name: name, why: "this session offers no tools now; answer instead"}, true
+}
+
+// commandTimeout is the limit on each command, 0 for none.
+func (s *scope) commandTimeout() time.Duration {
+	if s == nil {
+		return 0
+	}
+
+	return s.CommandTimeout
 }
 
 // mcpTools are the MCP tools the scope offers.

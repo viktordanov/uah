@@ -55,6 +55,9 @@ type sandboxedBash struct {
 	ctx  context.Context
 	cwd  string
 	warn io.Writer
+	// commands are the run's commands: a kill of the session's own ones
+	// runs outside the sandbox (commands.ownKill).
+	commands *commands
 }
 
 // sandboxShell is a translator that runs commands through a sandboxing
@@ -218,6 +221,9 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	if err != nil {
 		return refuse(tool.ErrorStatus(err.Error(), 0))
 	}
+	if sandboxed && b.commands.ownKill(args.Command) && !b.forbidden(args.Command) {
+		return func(tc tool.Context) tool.CallStatus { return b.Translator.Translate(tc, call) }
+	}
 	d := b.approver.Decide(ctx, approval.Request{
 		Command: args.Command, Cwd: b.cwd, Justification: args.Justification, PrefixRule: args.PrefixRule,
 		Escalated: escalated,
@@ -245,6 +251,16 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	}
 
 	return refuse(tool.CallStatus{Error: d.Reason})
+}
+
+// forbidden reports whether a forbid rule refuses the command.
+func (b sandboxedBash) forbidden(command string) bool {
+	if b.approver == nil {
+		return false
+	}
+	_, forbidden := b.approver.Forbidden(command)
+
+	return forbidden
 }
 
 // TranslateResult adds a hint when the sandbox likely blocked the command.
