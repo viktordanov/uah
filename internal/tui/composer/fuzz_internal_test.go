@@ -10,7 +10,7 @@ import (
 // fuzzKeys are the keys the fuzzer presses, by a byte's value.
 var fuzzKeys = []string{
 	"left", "right", "up", "down", "home", "end", "alt+f", "alt+b", "ctrl+home", "ctrl+end",
-	"backspace", "delete", "ctrl+w", "alt+d", "ctrl+k", "ctrl+u", "shift+enter", "pgup", "pgdown",
+	"backspace", "delete", "ctrl+w", "alt+d", "ctrl+k", "ctrl+u", "ctrl+y", "shift+enter", "pgup", "pgdown",
 	"alt+u", "alt+l", "alt+c", "ctrl+t", "shift+left", "shift+right", "alt+shift+f", "alt+shift+b",
 	"shift+up", "shift+down", "ctrl+g", "ctrl+shift+c", "ctrl+v",
 }

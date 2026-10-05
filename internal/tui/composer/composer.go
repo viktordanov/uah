@@ -44,6 +44,12 @@ type Composer struct {
 
 	focus bool
 	sel   selection
+
+	// killed is the text the last kills deleted, which ctrl+y yanks, as in
+	// Emacs and readline; killing is true while kills follow each other, so
+	// they add up.
+	killed  []rune
+	killing bool
 }
 
 // line is one line of the draft and its cached layout.
