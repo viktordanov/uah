@@ -84,15 +84,17 @@ func (c *Cache) At(x, y int, clamp bool) (pos state.TextPos, text string, ok boo
 	return pos, ansi.Strip(c.window[row]), true
 }
 
-// Edge says where screen row y lies from the last frame's transcript: -1
-// on its first row or above, 1 below it, and 0 inside, so a drag to the top
-// row scrolls up even where the transcript starts at the screen's top.
+// Edge says where screen row y lies from the last frame's transcript, for
+// a drag's edge scroll: negative on its first row or above, positive below
+// it, and 0 inside. Its size is one on the edge row and one more for each
+// row past it, so a drag to the top row scrolls up even where the
+// transcript starts at the screen's top.
 func (c *Cache) Edge(y int) int {
-	switch {
+	switch bottom := c.top + len(c.rows); {
 	case y <= c.top:
-		return -1
-	case y >= c.top+len(c.rows):
-		return 1
+		return y - c.top - 1
+	case y >= bottom:
+		return y - bottom + 1
 	}
 
 	return 0

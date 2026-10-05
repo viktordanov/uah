@@ -126,6 +126,10 @@ type Model struct {
 	prompts *history.Recorder
 	// calls keeps the session calls in the order Update made them.
 	calls *calls
+	// pointer is where the mouse is while a drag selects text, and
+	// edgeTicking says the drag's edge scroll waits for its tick (mouse.go).
+	pointer     struct{ x, y int }
+	edgeTicking bool
 }
 
 // Messages from goroutines and commands.
@@ -234,7 +238,7 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 		return m.onTerminalReport(msg)
 	case term.MouseWheelMsg:
 		return m.onWheel(msg)
-	case term.MouseClickMsg, term.MouseMotionMsg, term.MouseReleaseMsg:
+	case term.MouseClickMsg, term.MouseMotionMsg, term.MouseReleaseMsg, edgeMsg:
 		return m.onMouse(msg)
 	case term.KeyPressMsg:
 		return m.now().onKey(msg)

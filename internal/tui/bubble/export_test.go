@@ -23,3 +23,6 @@ func (m Model) Prompts() int { return m.st.History.Len() }
 
 // ComposerRows is how tall the composer grows on a terminal h rows high.
 func ComposerRows(h int) int { return composerRows(h) }
+
+// EdgeScrolling reports whether a drag's edge scroll waits for its tick.
+func (m Model) EdgeScrolling() bool { return m.edgeTicking }

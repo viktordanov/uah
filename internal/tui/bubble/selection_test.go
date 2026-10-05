@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/viktordanov/uah/internal/tui/bubble"
 	"github.com/viktordanov/uah/internal/tui/term"
 )
 
@@ -101,9 +102,9 @@ func TestTUI_SelectAndCopy(t *testing.T) {
 	assert.Empty(t, copies)
 }
 
-// TestTUI_SelectWhileScrolling: dragging to the transcript's top row
-// scrolls it and the selection grows with it, and so does the wheel during
-// a drag; the copy has every line selected.
+// TestTUI_SelectWhileScrolling: a drag held on the transcript's top row
+// scrolls it on a tick and the selection grows with it, and so does the
+// wheel during a drag; the copy has every line selected.
 func TestTUI_SelectWhileScrolling(t *testing.T) {
 	d, copies := copyDeps(t)
 	d.send(term.WindowSizeMsg{Width: 100, Height: 60})
@@ -118,11 +119,9 @@ func TestTUI_SelectWhileScrolling(t *testing.T) {
 
 	x, y := d.at("second message")
 	d.press(x+6, y)
-	for range 16 {
-		d.move(0, 0) // the top row: each move scrolls a line
-	}
+	d.move(0, 0) // the top row: held there, it scrolls
+	d.waitFor("first message")
 	assert.Contains(t, d.view(), "scrolled up")
-	assert.Contains(t, d.view(), "first message")
 	d.release(0, 0)
 	text := d.copied(copies, "copied ")
 	assert.True(t, strings.HasSuffix(text, "second"), text)
@@ -137,6 +136,47 @@ func TestTUI_SelectWhileScrolling(t *testing.T) {
 	text = d.copied(copies, "copied ")
 	assert.True(t, strings.HasSuffix(text, "second message"), "the wheel moved the text under the mouse: %q", text)
 	assert.Greater(t, strings.Count(text, "\n"), 0, text)
+}
+
+// TestTUI_EdgeScroll: a drag held below the transcript scrolls down, faster
+// further out, and stops at the bottom; held on the top row it scrolls up
+// to the top and stops there, so no tick runs while the mouse rests.
+func TestTUI_EdgeScroll(t *testing.T) {
+	d, copies := copyDeps(t)
+	d.send(term.WindowSizeMsg{Width: 100, Height: 60})
+	for i, text := range []string{"first message", "second message", "third message"} {
+		d.typeText(text)
+		d.key(term.KeyEnter, 0)
+		d.until("the answer", func() bool { return strings.Count(d.view(), "• hello") == i+1 })
+		d.waitIdle()
+	}
+	d.send(term.WindowSizeMsg{Width: 100, Height: 20})
+	for range 30 {
+		d.send(term.MouseWheelMsg{Button: term.MouseWheelUp})
+	}
+	require.Contains(t, d.view(), "first message", "at the top")
+
+	x, y := d.at("first message")
+	d.press(x, y)
+	_, below := d.at("Ask uah to do anything") // the composer, well below the transcript
+	d.move(x, below)
+	d.until("the bottom", func() bool { return !strings.Contains(d.view(), "scrolled up") })
+	assert.Contains(t, d.view(), "third message")
+	d.until("the tick stops", func() bool { return !d.m.(bubble.Model).EdgeScrolling() })
+	d.release(x, below)
+	text := d.copied(copies, "copied ")
+	assert.True(t, strings.HasPrefix(text, "first message"), text)
+	assert.Contains(t, text, "third message")
+
+	x, y = d.at("third message")
+	d.press(x+5, y)
+	d.move(x, 0)
+	d.waitFor("first message")
+	d.until("the tick stops at the top", func() bool { return !d.m.(bubble.Model).EdgeScrolling() })
+	d.release(x, 0)
+	text = d.copied(copies, "copied ")
+	assert.Contains(t, text, "first message")
+	assert.True(t, strings.HasSuffix(text, "third"), text)
 }
 
 // TestTUI_CopyToast: the copy's toast is drawn over the transcript's last
