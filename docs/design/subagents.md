@@ -11,6 +11,7 @@ Status: planned 2026-09-24, built the same day, then validated and hardened (see
 7. [Validation](#validation)
 8. [Round 2](#round-2)
 9. [Round 3](#round-3)
+10. [Round 4: leaving agents alone](#round-4-leaving-agents-alone)
 
 ## How Codex does it
 
@@ -210,3 +211,58 @@ Open:
 1. **Cross-run cache on openai-codex.** Requests that start a run get only the common prefix cached. Following Codex's transport (a websocket kept across turns, `x-codex-turn-state`) would need the runner's client; a probe with a longer history (tens of thousands of tokens) would show whether the backend caches more beyond some size.
 2. **`permissionMode`, `disallowedTools`, `skills`, `mcpServers`, `hooks`, `maxTurns`, `isolation`, and `color`** from Claude Code's front matter are not read. `permissionMode` could only make a child stricter; the others need features uah's children do not have.
 3. **Read, Grep, and Glob** have no tools of their own in uah; an agent limited to them gets no tools and a warning.
+
+## Round 4: leaving agents alone
+
+2026-10-06, ledger item 140, against Codex rust-v0.160.1. The owner: "our harness micromanages sub-agents a lot". Measured first, changed second, then an A/B run.
+
+### What the sessions showed
+
+The owner's `~/.uah/sessions` had 8 parent sessions that spawned subagents (22 children, not counting `/review` reviewers).
+
+- **Short polls.** 46 `wait_agent` calls, 21 of them timed out. None used the default; 22 asked for 10 s or less, and one parent waited 10 s thirteen times in 9 minutes.
+- **Noise messages.** Of 36 `send_input` calls, 22 were noise: 14 asked for status or told the agent to hurry, wrap up, or "return your final report now", 2 asked again for a result the harness had dropped, 2 corrected the parent's own earlier message, and 4 critiqued drafts the parent had read from the agent's files mid-run. 8 passed on the parent's own findings, and 6 were useful: a failure fixed or a new task for a finished agent. Both interrupts were noise. The owner wrote "stop micromanaging your subagents btw" into one of these sessions.
+- **Cost.** 194 parent model requests ran while a child worked. 60 of them only waited or messaged, and those read 5.4M input tokens.
+- **File-hunting.** One parent listed and read its agents' output files eight times while they ran, then interrupted them because it "has read it fully".
+
+### Causes
+
+1. **The notification came late.** `Session.Inject` held a child's `<subagent_notification>` for the parent's next run. So a parent that worked while its children ran heard of their end only by calling `wait_agent`. The notes were measured at 85 s to 17 minutes late. In one session six arrived together with the user's next message, after the parent had asked two finished agents for their reports. Codex puts the note into the active turn (`inject_no_new_turn` tries `inject_if_running` first, `core/src/session/inject.rs:170-188`). uah had held it to avoid cancelling a model request, but a developer message reaches the run without cancelling one.
+2. **The guidance said not to wait.** Codex's "After you delegate" text was kept as it is: "Call wait_agent very sparingly", "do meaningful non-overlapping work immediately", and "Do not repeatedly wait by reflex". Together with cause 1, keeping busy meant duplicating the agent's work, reading its files, or messaging it.
+3. **The wait's defaults.** A wait lasted 30 s by default and at least 10 s, as in Codex. A timeout returned `{"status":{},"timed_out":true}`, which did not say that the agents were fine.
+4. **A dropped answer.** A message to a working child starts another run after the current one, and the child's status kept only the last run's answer.
+5. **`send_input`** offered "interrupt=true to redirect work immediately".
+
+The parent model sees no status line while its children run; the TUI's agent lines are the user's. The `/review` note ("leave it alone unless the user asks") stays as it was.
+
+### As built
+
+- The notification goes into the parent's live run as a developer message (`Session.Inject`), and is held only when the parent is idle. A wait that returns a status the parent was already told about says so, and does not repeat the answer.
+- A child's completed status keeps every answer since it was last idle.
+- `wait_agent` waits 4.5 minutes without `timeout_ms`, and that is also the most it allows. This stays just under the engine's 5-minute wake hold, which would otherwise wake the parent only to say that the wait still runs. The least is one minute. A timeout adds a note: the agents are still working, nothing is wrong, wait again.
+- The descriptions: do your own part, then call `wait_agent` once with every agent's ID. A finished agent's answer comes on its own. Message a running agent only to pass on news from the user, to answer its question, or to stop a clear failure. Do not read its files. `send_input` says the same, and keeps `interrupt` for a failure.
+
+### A/B
+
+The control (A) is v1.9.5. B is this round without the last change, and C is this round as built, with a wait that does not repeat an answer the parent was already told about. All runs used gpt-6.1-sol at high effort in auto mode, with the owner's environment and adaptive effort at 2 steps (`-owner-env -uah-env UAH_ADAPTIVE_EFFORT=2-steps`). The tasks are the three new `go-subagents-*` tasks, which ask for subagents, and `go-branch-review`, where the model spawns some on its own. `go-subagent-audit` (4 runs per arm) never spawned: its prompt does not ask for subagents. A and C ran 8 times per task in the same window, 64 runs ([raw](../../tools/agentbench/history/2026-10-06-subagentcalm.jsonl), with B's 36 and A's first 36). Totals are sums over the runs, and wall time is the sum of per-task medians.
+
+| | A: v1.9.5 | C: as built | Change |
+| --- | ---: | ---: | ---: |
+| Passed | 31/32 | 31/32 | |
+| Wall | 1177 s | 1193 s | +1% |
+| Input tokens | 12.57M | 11.19M | −11% |
+| Output tokens | 138k | 133k | −4% |
+| Estimated cost | $5.14 | $4.83 | −6% |
+| Waits (timed out) | 90 (39) | 68 (1) | |
+| Messages and interrupts to a working agent | 2 | 1 | |
+| Parent requests while agents worked (only waits or messages) | 140 (71) | 95 (53) | −32% |
+| Their input tokens | 3.02M | 1.97M | −35% |
+| Notifications the parent got | 0 | 44 | |
+
+- **No more polling.** v1.9.5's parents waited 10 s again and again: 39 of 90 waits timed out. C's parents waited once per finished agent. The one timed-out wait asked for 60 s. Over all runs, B and C timed out 1 of 142 waits, and A 72 of 184.
+- **Fewer interventions.** A's parents read the agents' work in progress and messaged them while they worked ("Please add exact reported regression … before final"), or interrupted them ("Finish now with static findings; no more tools needed"). C's one intervention was an interrupt. The parent had mixed up two agents' packages: it asked a finished agent to redo its package, then stopped it once another agent had supplied that diagnosis.
+- **The same pass rate and wall time.** Both arms missed one `go-branch-review` each, the task's known weak spot. Per task, the wall time moved by −9% to +12%, within the spread of 8 runs. B's 36 runs, in an earlier window, gave the same picture against A's 36: 36/36 against 35/36, wall time level (1603 s against 1606 s), input −10%, and 0 timed-out waits against 33.
+- **One answer, once.** In B, 21 of 41 waits returned a status whose notification the parent had just received, 8.3 KB in all; in C those waits point at the notification.
+
+Kept: C. The A/B had no session as long as the owner's (a few minutes per agent), where the late notification did the most harm, so the gain there should be larger than these short tasks show.
+

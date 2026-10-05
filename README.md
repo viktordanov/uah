@@ -408,7 +408,7 @@ The body is the subagent's instructions. `tools` limits the tools it is offered 
 
 A subagent runs on the parent's provider. Ask for another model or effort ("use a subagent on gpt-6-luna with low effort"), set `model`, `effort`, and `fast: true` in its agent file, or set defaults in `[agents]`; see [agent files](docs/configuration.md#subagents). Ask for a forked subagent ("fork a subagent to write the tests for what we just discussed") to hand it the conversation so far through `fork_context`.
 
-To watch a subagent, type `/agents <name>` or press alt+← and alt+→: the TUI shows its transcript, and what you type goes to it. When a subagent finishes or is interrupted, the main agent is told with your next message, as in Codex. `uah sessions show subagent-1a2b3c4d` prints a finished one's transcript.
+To watch a subagent, type `/agents <name>` or press alt+← and alt+→: the TUI shows its transcript, and what you type goes to it. When a subagent finishes or is interrupted, the main agent is told with its final answer, as in Codex: at its next model request while it works, else with your next message. The main agent is told to leave a running subagent alone and wait for it, and to message it only with something new from you, an answer to its question, or to stop a clear failure. `uah sessions show subagent-1a2b3c4d` prints a finished one's transcript.
 
 ### Compaction and `/clear`
 
