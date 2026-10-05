@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/viktordanov/uah-core/harness/llm"
 
+	"github.com/viktordanov/uah/internal/agents"
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/compaction"
@@ -25,6 +26,8 @@ import (
 func flagDefaults() app.Inputs {
 	return app.Inputs{Workspace: "/ws", MaxDisk: "5G"}
 }
+
+var defaultReviewLimits = agents.ReviewLimits{Time: agents.DefaultReviewTime, Tokens: agents.DefaultReviewTokens, Command: agents.DefaultReviewCommand}
 
 func TestResolve(t *testing.T) {
 	t.Parallel()
@@ -290,7 +293,7 @@ func TestResolve(t *testing.T) {
 				Enabled: new(false), MaxThreads: new(2), MaxDepth: new(2), DefaultSubagentModel: "small", DefaultSubagentReasoningEffort: "low",
 			}},
 			want: func(r *app.Resolved) {
-				r.Agents = app.Agents{MaxThreads: 2, MaxDepth: 2, Model: "small", Effort: "low"}
+				r.Agents = app.Agents{MaxThreads: 2, MaxDepth: 2, Model: "small", Effort: "low", ReviewLimits: defaultReviewLimits}
 			},
 		},
 		{
@@ -425,7 +428,7 @@ func TestResolve(t *testing.T) {
 				Sandbox: sandbox.Policy{Mode: sandbox.WorkspaceWrite}, Compaction: compaction.Settings{Percent: 90, Elision: compaction.DefaultElision, KeepCalls: compaction.DefaultKeepCalls, Remote: true}, Approval: approval.OnRequest,
 				ApprovalsReviewer: review.ReviewerUser,
 				Review:            review.Config{Model: review.CodexModel, Effort: llm.ReasoningEffortLow, Timeout: review.DefaultTimeout},
-				Agents:            app.Agents{Enabled: true, MaxThreads: 4, MaxDepth: 1},
+				Agents:            app.Agents{Enabled: true, MaxThreads: 4, MaxDepth: 1, ReviewLimits: defaultReviewLimits},
 				WebSearch:         app.WebSearchLive,
 				Goals:             goal.Settings{MaxContinuations: goal.DefaultMaxContinuations},
 			}

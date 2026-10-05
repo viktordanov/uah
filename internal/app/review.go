@@ -6,6 +6,7 @@ import (
 
 	"github.com/viktordanov/uah-core/harness/llm"
 
+	"github.com/viktordanov/uah/internal/agents"
 	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/session"
@@ -56,4 +57,33 @@ func readReviewPolicy(r *Resolved) error {
 	r.Review.Policy = text
 
 	return err
+}
+
+// pickReviewLimits checks the /review limits: review_time_limit,
+// review_token_limit, and review_command_timeout, with the defaults from
+// the reviews uah ran before (agents.DefaultReviewTime and the others).
+// 0 sets no limit.
+func pickReviewLimits(cfg config.Config) (agents.ReviewLimits, error) {
+	l := agents.ReviewLimits{Time: agents.DefaultReviewTime, Tokens: agents.DefaultReviewTokens, Command: agents.DefaultReviewCommand}
+	for _, d := range []struct {
+		key, value string
+		to         *time.Duration
+	}{{"review_time_limit", cfg.ReviewTimeLimit, &l.Time}, {"review_command_timeout", cfg.ReviewCommandTimeout, &l.Command}} {
+		if d.value == "" {
+			continue
+		}
+		v, err := time.ParseDuration(d.value)
+		if err != nil || v < 0 {
+			return agents.ReviewLimits{}, usage(fmt.Errorf("invalid %s %q (want a duration such as 30m, or 0 for none)", d.key, d.value))
+		}
+		*d.to = v
+	}
+	if n := cfg.ReviewTokenLimit; n != nil {
+		if *n < 0 {
+			return agents.ReviewLimits{}, usage(fmt.Errorf("invalid review_token_limit %d (want 0 or more)", *n))
+		}
+		l.Tokens = *n
+	}
+
+	return l, nil
 }

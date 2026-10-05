@@ -69,6 +69,9 @@ type Options struct {
 	Interactive bool
 	// Parent is the spawning session of a subagent, recorded in the sidecar.
 	Parent string
+	// Review marks a /review's reviewer in its sidecar: the user's, not
+	// one of the parent's agents, so the agent tools never reach it.
+	Review bool
 	// Ask, when set, answers this session's approvals instead of its own
 	// prompts: a subagent asks through its parent.
 	Ask approval.Ask
@@ -211,7 +214,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 	if opts.SessionsDir != "" {
 		s.hooks.transcriptPath = filepath.Join(opts.SessionsDir, id+".session.jsonl")
 		if opts.Source != "" && !opts.Resumed {
-			if err := writeSidecar(opts.SessionsDir, id, Sidecar{Source: opts.Source, Created: time.Now().UTC(), Parent: opts.Parent}); err != nil {
+			if err := writeSidecar(opts.SessionsDir, id, Sidecar{Source: opts.Source, Created: time.Now().UTC(), Parent: opts.Parent, Review: opts.Review}); err != nil {
 				s.out <- Notice{At: time.Now(), Level: LevelWarning, Message: err.Error()}
 			}
 		}

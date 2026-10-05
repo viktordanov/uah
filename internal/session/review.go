@@ -28,12 +28,23 @@ type ReviewRequest struct {
 	Activity func(core.Event)
 }
 
-// ReviewAnswer is the reviewer's last message and the tokens its run
-// used.
+// ReviewAnswer is the reviewer's answer and the tokens it used. Limit
+// says which of the review's limits stopped it ("" for none).
 type ReviewAnswer struct {
 	Text   string
 	Tokens core.Tokens
+	Limit  ReviewLimit
 }
+
+// ReviewLimit is the limit that stopped a review: the reviewer was told
+// to answer with what it had, and stopped after that turn.
+type ReviewLimit string
+
+// The review's limits.
+const (
+	ReviewTimeLimit  ReviewLimit = "time"
+	ReviewTokenLimit ReviewLimit = "token"
+)
 
 // Reviewer runs reviews; internal/agents implements it. ReviewSettings
 // are the reviewer's settings for a parent with these. Review returns the
@@ -65,7 +76,9 @@ type ReviewActivity struct {
 }
 
 // ReviewFinished ends a review: its output, or Interrupted, or the error
-// that stopped it (Err), and the tokens the reviewer used.
+// that stopped it (Err), the tokens the reviewer used, and the limit that
+// stopped it, if one did (with its output, or with Err when the
+// reviewer did not answer even then).
 type ReviewFinished struct {
 	At          time.Time
 	ID          string
@@ -73,6 +86,7 @@ type ReviewFinished struct {
 	Interrupted bool
 	Err         string
 	Tokens      core.Tokens
+	Limit       ReviewLimit
 }
 
 func (e ReviewStarted) OccurredAt() time.Time  { return e.At }
@@ -121,7 +135,7 @@ func (s *Session) Review(ctx context.Context, target codereview.Target) error {
 				s.post(evNotify{event: ReviewActivity{At: time.Now(), ID: start.id, Event: e}})
 			},
 		})
-		fin.Output, fin.Tokens = codereview.Parse(answer.Text), answer.Tokens
+		fin.Output, fin.Tokens, fin.Limit = codereview.Parse(answer.Text), answer.Tokens, answer.Limit
 	}
 	switch {
 	case ctx.Err() != nil:
@@ -133,6 +147,13 @@ func (s *Session) Review(ctx context.Context, target codereview.Target) error {
 
 	return nil
 }
+
+// reviewRunningNote tells the main agent, in a run that starts while a
+// /review runs, that the review is the user's: the agent tools cannot
+// reach its reviewer, and its findings come with a later message.
+const reviewRunningNote = "A /review the user started is still running, in a reviewer session beside this one. " +
+	"It is the user's, not one of your agents: the agent tools cannot reach it, and there is no need to look for it in uah's files. " +
+	"Its findings come to you with the user's next message after it ends; the user stops it with esc esc or /stop."
 
 // reviewer is the engine's Reviewer, if it has one.
 func (s *Session) reviewer() (Reviewer, bool) {

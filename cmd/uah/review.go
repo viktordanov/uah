@@ -267,6 +267,9 @@ func (o *reviewOutput) summary() string {
 			parts = append(parts, "confidence "+codereview.Percent(c))
 		}
 	}
+	if f.Limit != "" {
+		parts = append(parts, "stopped at the "+string(f.Limit)+" limit")
+	}
 	t := f.Tokens
 
 	return strings.Join(append(parts,
@@ -286,6 +289,7 @@ type reviewJSON struct {
 	Target     string           `json:"target"`
 	Status     string           `json:"status"` // ok, interrupted, or failed
 	Error      string           `json:"error,omitempty"`
+	Limit      string           `json:"limit,omitempty"` // time or token: the limit that stopped it
 	Model      string           `json:"model"`
 	Effort     string           `json:"effort"`
 	DurationMS int64            `json:"duration_ms"`
@@ -295,7 +299,7 @@ type reviewJSON struct {
 func (o *reviewOutput) document() reviewJSON {
 	f, t := o.finished, o.finished.Tokens
 	doc := reviewJSON{
-		Target: o.started.Hint, Status: "ok", Error: f.Err, Model: o.started.Model, Effort: o.started.Effort,
+		Target: o.started.Hint, Status: "ok", Error: f.Err, Limit: string(f.Limit), Model: o.started.Model, Effort: o.started.Effort,
 		DurationMS: f.At.Sub(o.started.At).Milliseconds(), Output: f.Output,
 		Usage: stream.TokensDTO{
 			Input: t.InputTokens, CachedInput: t.CachedInputTokens, CacheWriteInput: t.CacheWriteInputTokens,
