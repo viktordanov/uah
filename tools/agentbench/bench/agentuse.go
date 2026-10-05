@@ -55,8 +55,7 @@ type agentOp struct {
 	}
 }
 
-// workSpan is a time a child worked: from a message to its last response
-// before the next one.
+// workSpan is a time a child worked.
 type workSpan struct{ from, to time.Time }
 
 // CountAgentUse reads the main session and its children under stateDir.
@@ -116,7 +115,9 @@ func parentOf(dir, id string) string {
 	return sc.Parent
 }
 
-// childSpans are the times a child worked.
+// childSpans are the times a child worked: from a message that reached it
+// idle to its next answer, a response without tool calls. A message that
+// comes while it works extends its work.
 func childSpans(items []sessionfile.Item) []workSpan {
 	var out []workSpan
 	var cur *workSpan
@@ -124,21 +125,23 @@ func childSpans(items []sessionfile.Item) []workSpan {
 		switch it.Kind {
 		case sessionfile.KindInput:
 			var in sessionfile.Input
-			if it.Decode(&in) != nil || in.Kind != sessionfile.InputExternal {
+			if cur == nil && it.Decode(&in) == nil && in.Kind == sessionfile.InputExternal {
+				cur = &workSpan{from: it.RecordedAt}
+			}
+		case sessionfile.KindModelResponse:
+			var r sessionfile.ModelResponse
+			if cur == nil || it.Decode(&r) != nil {
 				continue
 			}
-			if cur != nil && !cur.to.IsZero() {
+			cur.to = it.RecordedAt
+			if !slices.ContainsFunc(r.Response.Output, func(o sessionfile.Output) bool { return o.Type == sessionfile.OutputToolCall }) {
 				out = append(out, *cur)
-			}
-			cur = &workSpan{from: it.RecordedAt}
-		case sessionfile.KindModelResponse:
-			if cur != nil {
-				cur.to = it.RecordedAt
+				cur = nil
 			}
 		}
 	}
 	if cur != nil && !cur.to.IsZero() {
-		out = append(out, *cur)
+		out = append(out, *cur) // interrupted, or still working when the run ended
 	}
 
 	return out
