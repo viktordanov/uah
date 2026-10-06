@@ -180,7 +180,7 @@ func answeredText(e engine.QuestionsAnswered) string {
 // reason, as Codex's "Approve for me" never asks. Without auto-review and
 // outside Auto mode, the session's ask answers.
 func (w *wiring) reviewedAsk(sw *switcher, req core.Request) approval.Ask {
-	rv := review.New(sw.direct(), w.e.cfg.Review)
+	rv := review.New(sw.directKind(kindReview), w.e.cfg.Review)
 	t := w.e.transcript(req.SessionID)
 	unset := t.setOnUser(rv.Reset)
 	w.closers = append(w.closers, closer{close: func() error { unset(); return nil }})

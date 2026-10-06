@@ -7,6 +7,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/viktordanov/uah-core/harness/llm"
 
@@ -20,7 +21,9 @@ import (
 // for it, and to the ultra client at effort ultra, so /model, /fast, and
 // /effort apply from the next model request.
 type switcher struct {
-	build func(variant) (Client, error)
+	guardianMarkers bool
+	latestResponse  atomic.Pointer[string]
+	build           func(variant) (Client, error)
 
 	mu      sync.Mutex
 	model   string
@@ -263,10 +266,15 @@ func (s *switcher) currentModel() string {
 
 // direct is the current client without the live model override, for
 // one-shot calls that pick their own model; an empty model is the live one.
-func (s *switcher) direct() llm.Adapter {
+func (s *switcher) direct() llm.Adapter { return s.directKind(kindDirect) }
+
+func (s *switcher) directKind(kind string) llm.Adapter {
 	return adapterFunc(func(ctx context.Context, req llm.Request, opts llm.RequestOptions) (llm.Response, error) {
 		s.mu.Lock()
 		v, model := s.variant, s.model
+		if kind == kindReview {
+			v.priority = false
+		}
 		// At ultra the runner's effort is max: a call that kept it goes at
 		// ultra, one that picked its own effort does not, unless it picked
 		// ultra (compact_effort).
@@ -292,7 +300,7 @@ func (s *switcher) direct() llm.Adapter {
 		if s.cacheKey != "" {
 			opts.CacheKey = s.cacheKey
 		}
-		ctx, done := s.observe(ctx, kindDirect)
+		ctx, done := s.observe(ctx, kind)
 		resp, err := client.Respond(ctx, req, opts)
 
 		return resp, done(err) // llmcall wraps model errors

@@ -123,8 +123,9 @@ type Verdict struct {
 
 // Config is the reviewer's model, budget, and policy.
 type Config struct {
-	Model  string
-	Effort llm.ReasoningEffort
+	GuardianMarkers bool
+	Model           string
+	Effort          llm.ReasoningEffort
 	// Policy replaces the default security policy for every request that
 	// sets none; PolicyFile is the file it was read from ([review]
 	// policy_file), for display.

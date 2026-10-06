@@ -167,7 +167,10 @@ A session keeps its worktree grants in its sidecar, as it keeps its permission m
 | `model` | string | `codex-auto-review` on openai-codex, else the session's model | override | The review model, on the session's provider |
 | `effort` | string | `low` | override | The review effort: low, medium, high, xhigh, or max |
 | `timeout` | duration | `90s` | override | The limit for one review; a review that times out denies |
+| `guardian_markers` | bool | `false` | OR | Opt-in Codex billing-classification markers for openai-codex (ChatGPT auth). The backend decides billing classification; markers do not guarantee credits or a billing outcome. |
 | `policy_file` | path | Codex's review policy | override | A file whose text replaces the review policy, as Codex's `[auto_review] policy` does inline. The fixed framing and the answer format stay. An absolute path or one under `~/`; a missing or empty file stops the session from starting |
+
+Auto-review requests always omit `service_tier` and send `x-openai-subagent: guardian` in both the headers and `client_metadata`. With `guardian_markers = true`, openai-codex review requests also send `x-codex-guardian: reviewer` and `client_metadata.parent_response_id` when the run has received a `response.created` ID. Normal requests send `client_metadata.guardian_credits_requested = "true"`. These opt-in markers apply only to openai-codex; `originator` remains `uah-core`.
 
 `review_model` is a top-level key, Codex's, for the TUI's `/review` and `uah review` (a code review by a read-only subagent), not for the auto-reviewer above:
 

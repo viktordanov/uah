@@ -325,9 +325,10 @@ type Approvals struct {
 // codex-auto-review on openai-codex (else the session model), low effort,
 // a 90s timeout, and Codex's review policy.
 type Review struct {
-	Model   string `toml:"model"`
-	Effort  string `toml:"effort"`
-	Timeout string `toml:"timeout"`
+	GuardianMarkers bool   `toml:"guardian_markers"`
+	Model           string `toml:"model"`
+	Effort          string `toml:"effort"`
+	Timeout         string `toml:"timeout"`
 	// PolicyFile is a file whose text replaces the review policy, as
 	// Codex's [auto_review] policy does inline.
 	PolicyFile string `toml:"policy_file"`

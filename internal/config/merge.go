@@ -118,6 +118,7 @@ func mergeSandbox(base *Config, over Config) {
 	set(&base.ApprovalsReviewer, over.ApprovalsReviewer)
 	base.UserShellSandbox = base.UserShellSandbox || over.UserShellSandbox
 	set(&base.AdaptiveEffort, over.AdaptiveEffort)
+	base.Review.GuardianMarkers = base.Review.GuardianMarkers || over.Review.GuardianMarkers
 	set(&base.Review.Model, over.Review.Model)
 	set(&base.Review.Effort, over.Review.Effort)
 	set(&base.Review.Timeout, over.Review.Timeout)

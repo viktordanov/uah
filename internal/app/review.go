@@ -41,8 +41,9 @@ func pickReview(cfg config.Config, s session.Settings) (string, review.Config, e
 	}
 
 	return who, review.Config{
-		Model:  first(cfg.Review.Model, review.DefaultModel(s.Provider, s.Model)),
-		Effort: effort, Timeout: timeout, PolicyFile: policyFile,
+		GuardianMarkers: cfg.Review.GuardianMarkers,
+		Model:           first(cfg.Review.Model, review.DefaultModel(s.Provider, s.Model)),
+		Effort:          effort, Timeout: timeout, PolicyFile: policyFile,
 	}, nil
 }
 

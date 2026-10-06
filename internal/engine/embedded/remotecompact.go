@@ -82,7 +82,7 @@ var compactionTrigger = []byte(`{"type":"compaction_trigger"}`)
 func (c *modelCall) rewriteBody(req *http.Request) (*http.Request, error) {
 	item, hasItem := req.Context().Value(remoteItemsKey{}).(remoteItem)
 	searches := c.log != nil && len(c.log.snapshot()) > 0 // else the body would be read and copied for nothing
-	if !searches && !hasItem && c.remote == nil || req.Body == nil || req.Header.Get("Content-Encoding") != "" {
+	if !searches && !hasItem && c.remote == nil && c.kind != kindReview && !c.guardianMarkers || req.Body == nil || req.Header.Get("Content-Encoding") != "" {
 		return req, nil
 	}
 	body, err := io.ReadAll(req.Body)
@@ -100,6 +100,10 @@ func (c *modelCall) rewriteBody(req *http.Request) (*http.Request, error) {
 		body = appendInput(body, compactionTrigger)
 	}
 	clone := req.Clone(req.Context())
+	body, err = c.reviewMarkers(body, clone.Header)
+	if err != nil {
+		return nil, err
+	}
 	clone.Body, clone.ContentLength = io.NopCloser(bytes.NewReader(body)), int64(len(body))
 	clone.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
 

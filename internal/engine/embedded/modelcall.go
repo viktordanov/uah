@@ -27,7 +27,7 @@ import (
 
 // The kinds of model request: the coordinator's turns, and direct calls
 // (a compaction summary, an auto-review), which report only their retries.
-const kindTurn, kindDirect = "turn", "direct"
+const kindTurn, kindDirect, kindReview = "turn", "direct", "review"
 
 // callKey carries a request's modelCall to the transport.
 type callKey struct{}
@@ -35,16 +35,19 @@ type callKey struct{}
 // modelCall observes one model request. It queues events; a pump sends
 // them to emit, merged when they pile up.
 type modelCall struct {
-	ctx        context.Context
-	stop       context.CancelCauseFunc // ends the request, and the runner's retries, with an error
-	kind       string
-	emit       func(core.Event)
-	text       bool        // stream the text deltas
-	log        *searchLog  // record the web searches
-	remote     *remoteCall // a remote compaction's answer
-	max        int
-	diag       io.Writer // a line per attempt: the run's stderr.log
-	wake, done chan struct{}
+	guardianMarkers bool
+	parentResponse  string
+	latestResponse  *atomic.Pointer[string]
+	ctx             context.Context
+	stop            context.CancelCauseFunc // ends the request, and the runner's retries, with an error
+	kind            string
+	emit            func(core.Event)
+	text            bool        // stream the text deltas
+	log             *searchLog  // record the web searches
+	remote          *remoteCall // a remote compaction's answer
+	max             int
+	diag            io.Writer // a line per attempt: the run's stderr.log
+	wake, done      chan struct{}
 	// effort goes in each attempt's line.
 	effort effortLine
 
@@ -100,6 +103,13 @@ type attemptDiag struct {
 func (s *switcher) observe(ctx context.Context, kind string) (context.Context, func(error) error) {
 	ctx, stop := context.WithCancelCause(ctx)
 	c := &modelCall{ctx: ctx, stop: stop, kind: kind, emit: s.stream, max: s.max, diag: s.diag, wake: make(chan struct{}, 1), done: make(chan struct{}), final: map[string]bool{}}
+	c.guardianMarkers = s.guardianMarkers
+	if id := s.latestResponse.Load(); id != nil {
+		c.parentResponse = *id
+	}
+	if kind != kindReview {
+		c.latestResponse = &s.latestResponse
+	}
 	if kind == kindTurn {
 		c.text, c.log = s.text, s.searches
 	}

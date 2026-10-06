@@ -31,6 +31,7 @@ type streamEvent struct {
 	Message      string   `json:"message"`
 	Error        apiError `json:"error"`
 	Response     struct {
+		ID    string   `json:"id"`
 		Error apiError `json:"error"`
 	} `json:"response"`
 	Item struct {
@@ -62,6 +63,7 @@ var (
 	// streamTypes are the events the scanner decodes; a finished item,
 	// which can be large, only when it is one of doneTypes.
 	streamTypes = [][]byte{
+		[]byte(`"response.created"`),
 		[]byte(`"response.output_text.delta"`), []byte(`"response.reasoning_summary_text.delta"`), []byte(`"` + eventItemAdded + `"`),
 		[]byte(`"` + eventItemDone + `"`), []byte(`"response.function_call_arguments.delta"`), []byte(`"response.custom_tool_call_input.delta"`),
 		[]byte(`"` + eventCompleted + `"`), []byte(`"response.failed"`), []byte(`"` + eventIncomplete + `"`), []byte(`"` + eventError + `"`),
@@ -100,6 +102,10 @@ func (c *modelCall) event(ev streamEvent) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch ev.Type {
+	case "response.created":
+		if c.latestResponse != nil && ev.Response.ID != "" {
+			c.latestResponse.Store(&ev.Response.ID)
+		}
 	case eventCompleted, eventIncomplete:
 		c.terminal = ev.Type
 	case "response.failed", eventError:

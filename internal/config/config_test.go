@@ -352,3 +352,21 @@ func TestHistory(t *testing.T) {
 	require.NotNil(t, cfg.History.MaxBytes)
 	assert.Equal(t, int64(0), *cfg.History.MaxBytes, "the project file wins")
 }
+
+func TestGuardianMarkers(t *testing.T) {
+	for _, value := range []string{"", `[review]
+guardian_markers = false
+`, `[review]
+guardian_markers = true
+`} {
+		t.Run(value, func(t *testing.T) {
+			user := filepath.Join(t.TempDir(), "config.toml")
+			write(t, user, value)
+			cfg, _, err := config.Load(user, t.TempDir())
+			require.NoError(t, err)
+			assert.Equal(t, value == `[review]
+guardian_markers = true
+`, cfg.Review.GuardianMarkers)
+		})
+	}
+}

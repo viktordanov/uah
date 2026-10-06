@@ -52,6 +52,7 @@ func (w *wiring) client(req core.Request, opts engine.Options) (string, *switche
 		return c, nil
 	})
 	if err == nil {
+		sw.guardianMarkers = guardianMarkers(p.Name, w.e.cfg.Review.GuardianMarkers)
 		sw.verbosity = func(model string) llm.Verbosity {
 			v, _ := w.e.models.Verbosity(p.Name, model, w.e.cfg.Verbosity)
 
