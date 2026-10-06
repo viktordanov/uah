@@ -12,6 +12,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/app"
+	"github.com/viktordanov/uah/internal/citations"
 )
 
 const (
@@ -79,7 +80,7 @@ func writeLastMessage(path string, last *core.Result, stderr io.Writer, runErr e
 	}
 	answer := ""
 	if last != nil {
-		answer = last.Answer
+		answer = citations.Strip(last.Answer)
 	}
 	if answer == "" {
 		fmt.Fprintf(stderr, "uah: no final answer; wrote an empty %s\n", path)

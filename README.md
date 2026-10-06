@@ -330,6 +330,7 @@ On openai and openai-codex, the model can search the web with the provider's hos
 
 - The search runs on the provider's servers, so the sandbox's network rule does not block it, and it needs no approval, in every permission mode.
 - To turn it off, set `web_search = "disabled"` in the [configuration](#configuration) or in `/config`.
+- The citation markers the model writes after a search (private-use characters that read as `citeturn2view0`) are hidden in the TUI, in `uah exec`'s answer and `-o` file, and in `uah sessions show`; uah has no source list to link them to (`internal/citations`).
 - The model sees its past searches on later turns, as in Codex: uah keeps them beside the session and puts them back into its requests. A resumed transcript does not show them.
 
 The [web search design](docs/design/web-search.md) compares it with Codex.
@@ -441,7 +442,7 @@ Hooks in a project's `.uah/config.toml` run only after `uah hooks trust`; hooks 
 
 ### The `/config` panel
 
-Type `/config` in the TUI. It lists the basic settings (compaction, the model and effort, fast mode, adaptive effort, the permission mode, web search, the details view, the mouse, and file links) with each value and its source. ↑↓ choose, enter or space changes, esc closes. Each change is saved to your user file, keeping its comments, and applies to the running session where it can; compaction settings apply from the next session. A flag, a configuration layer, or a trusted project file that sets the same key still wins, and `/config` says so.
+Type `/config` in the TUI. It lists the basic settings (compaction, the model and effort, fast mode, adaptive effort, the permission mode, the number of open subagents, web search, the details view, the mouse, and file links) with each value and its source. ↑↓ choose, enter or space changes, esc closes. Each change is saved to your user file, keeping its comments, and applies to the running session where it can; compaction settings apply from the next session. A flag, a configuration layer, or a trusted project file that sets the same key still wins, and `/config` says so.
 
 ### Inspect the configuration
 

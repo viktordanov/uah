@@ -17,6 +17,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/app"
+	"github.com/viktordanov/uah/internal/citations"
 	"github.com/viktordanov/uah/internal/contextprep"
 	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/goal"
@@ -271,9 +272,9 @@ func printTranscript(w io.Writer, info session.Info, runs []session.LoadedRun) {
 				fmt.Fprint(w, patch.Plain(m.Files, "    "))
 			case core.AssistantMessage:
 				if m.Final {
-					fmt.Fprintf(w, "✓ %s\n", m.Text)
+					fmt.Fprintf(w, "✓ %s\n", citations.Strip(m.Text))
 				} else if m.Text != "" {
-					fmt.Fprintf(w, "· %s\n", oneLine(m.Text, 200))
+					fmt.Fprintf(w, "· %s\n", oneLine(citations.Strip(m.Text), 200))
 				}
 			case core.RunnerError:
 				fmt.Fprintf(w, "error: %s\n", m.Message)

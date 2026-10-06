@@ -15,6 +15,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/app"
+	"github.com/viktordanov/uah/internal/citations"
 	"github.com/viktordanov/uah/internal/session"
 )
 
@@ -191,7 +192,7 @@ func (o *runOutput) handle(e core.Event) {
 		result := v.Result
 		o.last, o.status = &result, result.Status
 		if o.jsonl == nil && result.Answer != "" {
-			fmt.Fprintln(o.stdout, result.Answer)
+			fmt.Fprintln(o.stdout, citations.Strip(result.Answer))
 		}
 	case session.InputFailed:
 		o.failed("not delivered: " + v.Reason)
