@@ -50,7 +50,7 @@ Many other parts follow Codex's behavior (configuration keys, rules, approvals, 
 
 ## unreal-agent
 
-<https://github.com/unreallabsai/unreal-agent>, v0.1.1. uah's runtime, [uah-core](https://github.com/viktordanov/uah-core) (used as a library throughout), derives from unreal-agent v0.2.0 and is distributed under the MIT License below, with this notice kept; uah-core began as the fork <https://github.com/viktordanov/unreal-agent>. Adapted in uah:
+<https://github.com/unreallabsai/unreal-agent>, v0.1.1. uah's runtime, [uah-core](https://github.com/viktordanov/uah-core) (used as a library throughout), started from unreal-agent v0.2.0 and is distributed under the MIT License below, with this notice kept. Adapted in uah:
 
 | uah | From unreal-agent |
 | --- | --- |
