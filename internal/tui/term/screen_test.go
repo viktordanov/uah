@@ -144,6 +144,23 @@ func TestScreenFrameScrolls(t *testing.T) {
 	assert.NotContains(t, string(s.Frame([]string{"head", "2", "3", "4", "5", "6", "foot"}, nil)), "r\x1b[")
 }
 
+// TestScreenScrollRegionSkipsRowsInPlace: rows that already show their
+// line, such as two equal rows below the moved block, do not stretch the
+// scroll region, so they are neither moved nor written again.
+func TestScreenScrollRegionSkipsRowsInPlace(t *testing.T) {
+	rows := func(from int) []string {
+		out := []string{"head"}
+		for i := from; i < from+8; i++ {
+			out = append(out, string(rune('a'+i)))
+		}
+
+		return append(out, "~", "~", "foot")
+	}
+	s := drawn(t, 10, 12, rows(0), nil)
+	out := string(s.Frame(rows(1), nil))
+	assert.Equal(t, "\x1b[m\x1b[2;9r\x1b[1S\x1b[r\x1b[9H\x1b[m\x1b[Ki\x1b[m", out, "only the block moves")
+}
+
 func TestDivergence(t *testing.T) {
 	for _, tc := range []struct {
 		name, old, line string

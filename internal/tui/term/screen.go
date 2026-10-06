@@ -31,7 +31,9 @@ import (
 //   - When the rows moved up or down (a transcript that grows at the
 //     bottom, or a scroll), the terminal moves them itself in a scroll
 //     region (DECSTBM with SU or SD), and only the rows that came in are
-//     written.
+//     written. The region spans only rows that need the move, so a row
+//     that already shows its line, such as a blank row like one far from
+//     the moved block, does not stretch it.
 //
 // A frame is one write, hidden from view while it draws with synchronized
 // output (mode 2026) when the terminal supports it, and the cursor hidden
@@ -378,15 +380,20 @@ func (s *Screen) scroll(lines []string) {
 	if bestK == 0 {
 		return
 	}
-	// The region: from the first row whose line moved to the last.
+	// The region: from the first row whose line moved to the last. A row
+	// that already shows its line in place needs no move and does not
+	// stretch the region.
 	top, bot := -1, -1
 	for y := max(0, -bestK); y < n && y+bestK < s.h; y++ {
-		if lines[y] != "" && lines[y] == s.shown[y+bestK] {
+		if lines[y] != "" && lines[y] == s.shown[y+bestK] && lines[y] != s.shown[y] {
 			if top < 0 {
 				top = y
 			}
 			bot = y
 		}
+	}
+	if top < 0 {
+		return
 	}
 	// Rows top..bot take their lines from top+k..bot+k, so the region spans
 	// both.
