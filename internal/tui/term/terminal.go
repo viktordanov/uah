@@ -125,6 +125,9 @@ type terminal struct {
 	// syncAsked is set when DECRQM 2026 was sent; only its answer turns
 	// synchronized output on.
 	syncAsked bool
+	// syncInMux asks about mode 2026 inside tmux or screen too
+	// (Options.SyncInMultiplexer).
+	syncInMux bool
 	entered   bool
 	// released is when the terminal was last taken back after Exec.
 	released time.Time
@@ -135,7 +138,7 @@ type fder interface{ Fd() uintptr }
 
 func openTerminal(o Options) (*terminal, error) {
 	t := &terminal{
-		in: o.In, out: o.Out, env: o.Env, w: o.Width, h: o.Height, profile: o.Profile,
+		in: o.In, out: o.Out, env: o.Env, w: o.Width, h: o.Height, profile: o.Profile, syncInMux: o.SyncInMultiplexer,
 		input: make(chan Msg, 64), eofEnds: o.endOnEOF,
 	}
 	if t.profile == colorprofile.Unknown {
@@ -201,7 +204,7 @@ func (t *terminal) enter() error {
 	}
 	t.entered = true
 	seq := altScreenOn + cursorHide + autowrapOff + pasteOn + keysOn + queryKeys + queryBackground
-	if !t.syncAsked && querySyncFor(t.env) {
+	if !t.syncAsked && querySyncFor(t.env, t.syncInMux) {
 		seq += querySync
 		t.syncAsked = true
 	}
@@ -391,8 +394,14 @@ func (t *terminal) write(s string) error {
 // querySyncFor reports whether to ask the terminal about mode 2026, as
 // Bubble Tea did: not Apple's Terminal, which does not answer, and not over
 // ssh, where the answer can arrive after the program ended, unless the
-// terminal's name says it supports the mode.
-func querySyncFor(env []string) bool {
+// terminal's name says it supports the mode. Inside tmux or screen it asks
+// only when inMux allows it: there the mode makes the multiplexer send the
+// whole pane to its clients on every frame, about 2 KB for a spinner's
+// tick.
+func querySyncFor(env []string, inMux bool) bool {
+	if !inMux && multiplexed(env) {
+		return false
+	}
 	termType := lookupEnv(env, "TERM")
 	for _, name := range []string{"ghostty", "wezterm", "alacritty", "kitty", "rio"} {
 		if strings.Contains(termType, name) {
@@ -405,6 +414,14 @@ func querySyncFor(env []string) bool {
 	prog, ok := lookup(env, "TERM_PROGRAM")
 
 	return !ok || !strings.Contains(prog, "Apple")
+}
+
+// multiplexed reports whether the program runs inside tmux or screen.
+func multiplexed(env []string) bool {
+	termType := lookupEnv(env, "TERM")
+
+	return hasEnv(env, "TMUX") || hasEnv(env, "STY") || lookupEnv(env, "TERM_PROGRAM") == "tmux" ||
+		strings.HasPrefix(termType, "tmux") || strings.HasPrefix(termType, "screen")
 }
 
 func lookupEnv(env []string, key string) string {

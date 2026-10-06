@@ -350,6 +350,14 @@ type TUI struct {
 	// "editor" opens it in $VISUAL or $EDITOR at its line, "open" with the
 	// system's default app, and "off" draws paths as plain text.
 	FileLinks string `toml:"file_links"`
+	// SyncInMultiplexer turns on synchronized output (mode 2026) inside
+	// tmux or screen too. Off by default: there the mode makes the
+	// multiplexer send its whole pane to its clients on every frame.
+	SyncInMultiplexer bool `toml:"sync_in_multiplexer"`
+	// KeepBlanks writes the blanks at a row's end as spaces, for a
+	// terminal that does not erase with the background in force. Off by
+	// default: they are dropped or written as an erase (EL).
+	KeepBlanks bool `toml:"keep_blanks"`
 }
 
 // History configures <home>/history.jsonl, the prompts ↑ and ctrl+r

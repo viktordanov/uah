@@ -21,6 +21,8 @@ func merge(base, over Config) Config {
 	set(&base.ModelVerbosity, over.ModelVerbosity)
 	base.Fast = base.Fast || over.Fast
 	base.TUI.Details = base.TUI.Details || over.TUI.Details
+	base.TUI.SyncInMultiplexer = base.TUI.SyncInMultiplexer || over.TUI.SyncInMultiplexer
+	base.TUI.KeepBlanks = base.TUI.KeepBlanks || over.TUI.KeepBlanks
 	if over.TUI.Mouse != nil {
 		base.TUI.Mouse = over.TUI.Mouse
 	}

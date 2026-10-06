@@ -476,6 +476,8 @@ developer_instructions = "Review the diff you are given. List only real bugs, ea
 | `mouse` | bool | true | override, can unset | Report the mouse to the TUI: the wheel scrolls the transcript, and a drag, a double click, or a triple click selects its text and copies it to the clipboard (OSC 52 and pbcopy, wl-copy, or xclip); the terminal's own selection then needs Option (iTerm2, Terminal) or Shift held. `false` leaves the mouse to the terminal: it selects text as usual and its wheel sends ↑ and ↓, which recall earlier prompts on an empty composer and scroll the transcript on a draft of your own; shift+↑/↓ and pgup/pgdn always scroll. See the [selection design](design/selection.md) |
 | `title` | bool | true | override, can unset | Show the session's state in the terminal's title: `uah · <workspace name>` when idle, `uah · working · <workspace name>` while the agent works, and `uah · approve? · <workspace name>` while an approval waits. `false` turns it off: uah sets no title |
 | `file_links` | string | `peek` | override | What a click on a file path in the transcript does. The paths are a tool call's files (`READ`), a patch's and `/diff`'s file headers, a `/review` finding's place, and the words of the agent's messages that name a file in the workspace; they are underlined and carry their line. `peek` shows the file in an overlay over the session, scrolled to the line (↑↓ and j k, pgup and pgdn, g and G, the wheel; `e` opens it in the editor, `o` with the system, esc, q, or ctrl+c closes it). `editor` opens it in `$VISUAL` or `$EDITOR` at the line: a terminal editor in place of the TUI, as ctrl+g does, and code, cursor, zed, or subl in a window of their own. `open` opens it with the system's default app (`open` on macOS, `xdg-open` elsewhere). `off` draws paths as plain text. A click needs `mouse = true`; the paths are also OSC 8 hyperlinks (`file://host/path`), which the terminal's own cmd+click or ctrl+click opens, also with the mouse off. Any other value stops uah with an error. See the [file links design](design/file-links.md) |
+| `sync_in_multiplexer` | bool | false | OR | Use synchronized output (mode 2026) inside tmux or screen too (`TMUX`, `STY`, `TERM_PROGRAM=tmux`, or a `TERM` that starts with `tmux` or `screen`). Off by default: there the mode makes the multiplexer send its whole pane to its clients on every frame, 10 to 30 times the bytes, for example about 100 KB/s instead of 10 while an answer streams. Turn it on if frames tear in your multiplexer |
+| `keep_blanks` | bool | false | OR | Write the blanks at the end of a row as spaces. Off by default: blanks without a style are dropped, since each row is erased before it is written, and blanks on a background that reach the row's end are written as an erase to the end of the line, which fills them with the background. Turn it on for a terminal that erases without the background in force, if rows such as the composer's band end early |
 
 ### History
 
@@ -601,6 +603,8 @@ details = false
 mouse = true                       # false: the terminal selects text
 title = true                       # false: no state in the terminal title
 file_links = "peek"                # or editor, open, off: what a click on a file path does
+sync_in_multiplexer = false        # true: synchronized output inside tmux or screen too
+keep_blanks = false                # true: write a row's trailing blanks as spaces
 
 [history]
 persistence = "save-all"           # or none: write no prompts to ~/.uah/history.jsonl

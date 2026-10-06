@@ -103,6 +103,9 @@ type Deps struct {
 	// FileLinks is what a click on a file path does, [tui] file_links:
 	// "peek", "editor", "open", or "off" ("" too: no links).
 	FileLinks string
+	// Terminal are the terminal's options from [tui]: synchronized output
+	// inside tmux or screen, and blanks written as spaces.
+	Terminal term.Options
 	// Launch runs a program of its own for a file link, the system's
 	// opener or a windowed editor, and waits for it (default: in a process
 	// group of its own); tests catch the command.
@@ -195,7 +198,7 @@ func (m Model) onBackground(msg term.BackgroundColorMsg) Model {
 
 // Run runs the TUI on the terminal and blocks until it exits.
 func Run(ctx context.Context, deps Deps) (Exit, error) {
-	final, err := term.Run(ctx, New(ctx, deps), term.Options{})
+	final, err := term.Run(ctx, New(ctx, deps), deps.Terminal)
 	fm, ok := final.(Model)
 	if !ok {
 		return Exit{}, err // the caller wraps it

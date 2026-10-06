@@ -599,10 +599,19 @@ func TestTitleDropsControlCharacters(t *testing.T) {
 }
 
 func TestQuerySyncFor(t *testing.T) {
-	assert.True(t, querySyncFor([]string{"TERM=xterm-256color"}))
-	assert.False(t, querySyncFor([]string{"TERM=xterm-256color", "TERM_PROGRAM=Apple_Terminal"}))
-	assert.False(t, querySyncFor([]string{"TERM=xterm-256color", "SSH_TTY=/dev/ttys001"}))
-	assert.True(t, querySyncFor([]string{"TERM=xterm-ghostty", "SSH_TTY=/dev/ttys001"}))
+	assert.True(t, querySyncFor([]string{"TERM=xterm-256color"}, false))
+	assert.False(t, querySyncFor([]string{"TERM=xterm-256color", "TERM_PROGRAM=Apple_Terminal"}, false))
+	assert.False(t, querySyncFor([]string{"TERM=xterm-256color", "SSH_TTY=/dev/ttys001"}, false))
+	assert.True(t, querySyncFor([]string{"TERM=xterm-ghostty", "SSH_TTY=/dev/ttys001"}, false))
+	for _, env := range [][]string{
+		{"TERM=tmux-256color", "TMUX=/tmp/tmux-501/default,1,0"},
+		{"TERM=screen-256color"},
+		{"TERM=xterm-256color", "TERM_PROGRAM=tmux"},
+		{"TERM=xterm-kitty", "STY=1234.pts-0.host"},
+	} {
+		assert.False(t, querySyncFor(env, false), "not inside a multiplexer: %v", env)
+		assert.True(t, querySyncFor(env, true), "unless asked to: %v", env)
+	}
 }
 
 func contains(list []string, s string) bool { return count(list, s) > 0 }

@@ -19,6 +19,7 @@ import (
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/store"
 	"github.com/viktordanov/uah/internal/tui/bubble"
+	"github.com/viktordanov/uah/internal/tui/term"
 	"github.com/viktordanov/uah/internal/usage/cachestats"
 )
 
@@ -87,14 +88,18 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		Mouse:       st.Config.TUI.MouseOn(),
 		Title:       st.Config.TUI.TitleOn(),
 		FileLinks:   st.Config.TUI.FileLinksMode(),
-		History:     &prompts,
-		Version:     buildVersion(),
-		Config:      tuiConfig(cmd),
-		SaveConfig:  tuiSaveConfig(ctx, cmd),
-		Images:      &images.Store{Dir: images.DirIn(st.StateDir)},
-		Clipboard:   clipboard.System(),
-		PasteText:   clipboard.SystemTextReader().ReadText,
-		CopyText:    clipboard.SystemWriter().WriteText,
+		Terminal: term.Options{
+			SyncInMultiplexer: st.Config.TUI.SyncInMultiplexer,
+			KeepBlanks:        st.Config.TUI.KeepBlanks,
+		},
+		History:    &prompts,
+		Version:    buildVersion(),
+		Config:     tuiConfig(cmd),
+		SaveConfig: tuiSaveConfig(ctx, cmd),
+		Images:     &images.Store{Dir: images.DirIn(st.StateDir)},
+		Clipboard:  clipboard.System(),
+		PasteText:  clipboard.SystemTextReader().ReadText,
+		CopyText:   clipboard.SystemWriter().WriteText,
 		// ctrl+g refuses a draft directory these roots expose.
 		WritableRoots: st.Sandbox.WritableRoots,
 		Open: func(ctx context.Context, id string) (*session.Session, []session.LoadedRun, error) {

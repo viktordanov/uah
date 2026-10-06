@@ -23,7 +23,7 @@ import (
 // sequences count as safe before a change), and each written row ends any
 // link it opened.
 //
-// Three things keep a frame small:
+// Four things keep a frame small:
 //   - Rows whose line did not change are not written.
 //   - A changed row is written from the first cell that changed, when
 //     everything before it is text whose width all terminals agree on;
@@ -34,6 +34,10 @@ import (
 //     written. The region spans only rows that need the move, so a row
 //     that already shows its line, such as a blank row like one far from
 //     the moved block, does not stretch it.
+//   - A row's trailing blanks are not written as spaces: blanks without a
+//     background are dropped, since every write erases the row first, and
+//     blanks on a background that reach the row's end are an erase on it
+//     (eraseTail).
 //
 // A frame is one write, hidden from view while it draws with synchronized
 // output (mode 2026) when the terminal supports it, and the cursor hidden
@@ -50,8 +54,11 @@ type Screen struct {
 	// noScroll and noSpans turn the scroll and span optimizations off, for
 	// tests and measurements.
 	noScroll, noSpans bool
-	buf               bytes.Buffer
-	out               []byte
+	// keepBlanks writes trailing blanks as spaces (Options.KeepBlanks)
+	// instead of eraseTail's shorter form.
+	keepBlanks bool
+	buf        bytes.Buffer
+	out        []byte
 }
 
 // NewScreen returns a screen w by h cells that shows nothing yet.
@@ -169,8 +176,7 @@ func (s *Screen) writeRow(y int, old, line string) {
 			// that fills the row would clear its last cell.
 			s.move(y, col)
 			s.buf.WriteString("\x1b[m\x1b[K")
-			s.buf.WriteString(sgr)
-			s.writeClipped(line[at:], s.w-col)
+			s.writeClipped(sgr+line[at:], s.w-col) // the styles in force, so eraseTail sees them
 
 			return
 		}
@@ -184,7 +190,11 @@ func (s *Screen) writeRow(y int, old, line string) {
 // hyperlink (OSC 8) it opened, so a link cut with the row, or left open,
 // does not run on into the next row written.
 func (s *Screen) writeClipped(line string, w int) {
-	s.buf.WriteString(clip(line, w))
+	c := clip(line, w)
+	if !s.keepBlanks {
+		c = eraseTail(c, w)
+	}
+	s.buf.WriteString(c)
 	if strings.Contains(line, "\x1b]8;") {
 		s.buf.WriteString("\x1b]8;;\x1b\\")
 	}

@@ -35,6 +35,14 @@ type Options struct {
 	// Profile is the colour profile the output is downsampled to (default:
 	// detected from Out and Env); styles below true colour are converted.
 	Profile colorprofile.Profile
+	// SyncInMultiplexer asks tmux or screen about synchronized output
+	// (mode 2026) too. It is off by default: inside one, the mode makes
+	// the multiplexer send its whole pane to its clients on every frame.
+	SyncInMultiplexer bool
+	// KeepBlanks writes a row's trailing blanks as spaces, instead of
+	// dropping them or erasing to the row's end on their background (EL),
+	// for a terminal that erases without the background in force.
+	KeepBlanks bool
 
 	// clock is the time source (default the real one); loop tests fake it.
 	clock clock
@@ -151,6 +159,7 @@ func (p *Program) Run(ctx context.Context) (final Model, err error) {
 	}
 	w, h := t.size()
 	p.screen = NewScreen(w, h)
+	p.screen.keepBlanks = p.opts.KeepBlanks
 	if err := t.startInput(ctx); err != nil {
 		_ = t.leave("")
 
