@@ -19,7 +19,10 @@ type AgentWatch struct {
 	// session closes, when Stop is called, or when the view fell too far
 	// behind (open it again to catch up).
 	Next <-chan core.Event
-	Stop func()
+	// Closed is whether the agent's session had closed: History holds all
+	// of its runs, and Next is closed already.
+	Closed bool
+	Stop   func()
 	// Send gives the agent a message, as the parent's send_input does; when
 	// says when it reaches the agent's live run (Session.Send).
 	Send func(text string, when When) error

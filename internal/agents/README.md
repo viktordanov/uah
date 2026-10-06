@@ -144,15 +144,16 @@ Hooks come from `Config.Hooks`, the session's runner:
 
 `Manager` implements `session.AgentWatcher`, and `Session.WatchAgent(ref)` reaches it through the embedded engine's `Subagents()`. A watch finds the parent's child by ID or nickname and returns:
 
-- `History`: the child's runs from before this process, from its run records;
+- `History`: the child's runs from before this process, from its run records; for a closed child, all of its runs, since its log is gone;
 - `Events`: its session's events since it opened in this process, which the watcher logs (the newest 20,000, trimmed in steps of a quarter; dropped when the child closes, whose runs stay on disk);
 - `Next`: the events that follow, on a channel of 4,096. A view that falls a whole queue behind is closed rather than holding up the child; the TUI opens it again;
 - `Send`: a message to the child through `submit`, as `send_input` sends it, so the child's status and `wait_agent` see it; its `session.When` says when it reaches the child's live run (`Session.Send`: now for ctrl+enter, after the next tool call for enter, after the run for tab);
 - `SteerQueued`: the child's queued messages now, in order (`steerQueued`, over `Session.SteerQueued`), for enter or ctrl+enter on the view's empty composer. A child a user interrupt left with its queue is `running` again;
 - `Interrupt`: stops the child's current work and its own children's (`interruptTree`, which the parent's `Interrupt` also uses for each child); the child stays open;
+- `Closed`: whether the child's session had closed. `Next` is then closed from the start;
 - `Stop`: the end of the watch.
 
-The TUI's `/agents <name>` view is built on it (see the TUI README).
+`TestAgents_WatchClosed` checks that a closed child's watch is closed and brings the run from this process from disk. The TUI's `/agents <name>` view is built on it (see the TUI README).
 <!-- /memoria:section -->
 
 <!-- memoria:section id="review" files="review.go reviewrun.go reviewagent.go" -->

@@ -37,16 +37,18 @@ func (m *Manager) WatchAgent(parentID, ref string) (*session.AgentWatch, error) 
 	} else {
 		c.subs = append(c.subs, next)
 	}
-	opened, dir := c.opened, m.tmpl.SessionsDir
+	opened, closed, dir := c.opened, c.closed, m.tmpl.SessionsDir
 	m.mu.Unlock()
 
+	// A closed child dropped its log, so its runs since it opened come
+	// from disk too.
 	var history []session.LoadedRun
 	if runs, err := session.Load(filepath.Dir(dir), c.id); err == nil {
-		history = slices.DeleteFunc(runs, func(r session.LoadedRun) bool { return !r.Record.Result.StartedAt.Before(opened) })
+		history = slices.DeleteFunc(runs, func(r session.LoadedRun) bool { return !closed && !r.Record.Result.StartedAt.Before(opened) })
 	}
 
 	return &session.AgentWatch{
-		ID: c.id, Nickname: c.nickname, History: history, Events: events, Next: next,
+		ID: c.id, Nickname: c.nickname, History: history, Events: events, Next: next, Closed: closed,
 		Stop:        func() { m.unwatch(c, next) },
 		Send:        func(text string, when session.When) error { _, err := m.submit(c, text, when); return err },
 		SteerQueued: func() error { return m.steerQueued(c) },

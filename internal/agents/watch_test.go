@@ -67,3 +67,31 @@ func TestAgents_Watch(t *testing.T) {
 	}), "the user's message reached the child")
 	assert.Equal(t, engine.AgentCompleted, ev.agentState(engine.AgentCompleted).State)
 }
+
+// TestAgents_WatchClosed: a closed child's watch is closed from the start
+// and brings all of its runs from disk, since its log is gone.
+func TestAgents_WatchClosed(t *testing.T) {
+	e := newEnv(t, agents.Config{},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-Z look"}`)}},
+		callWith("wait_agent", `{"targets":["ID"]}`),
+		callWith("close_agent", `{"target":"ID"}`),
+		fakellm.Reply{Text: "done"},
+	)
+	e.llm.Route("CHILD-Z", fakellm.Reply{Text: "the answer"})
+	s, ev := e.open(t, false)
+	_, err := s.Submit("start one")
+	require.NoError(t, err)
+	ev.finished()
+
+	var w *session.AgentWatch
+	require.Eventually(t, func() bool {
+		w, err = s.WatchAgent("ada")
+		require.NoError(t, err)
+
+		return w.Closed
+	}, waitTimeout, time.Millisecond)
+	_, open := <-w.Next
+	assert.False(t, open, "nothing follows")
+	require.Len(t, w.History, 1, "the run from this process, from disk")
+	assert.Equal(t, "the answer", w.History[0].Record.Result.Answer)
+}

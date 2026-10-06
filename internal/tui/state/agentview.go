@@ -114,6 +114,7 @@ func (s State) agentNames() []string {
 // far with the reducer the session's transcript uses.
 func (s *State) openAgentView(e AgentViewOpened) {
 	st := New(s.Now)
+	st.SessionID = e.ID // the agent's session is open, even before it has runs
 	st.Priority, st.Yolo, st.Details, st.ShowReasoning, st.Windows, st.Keys = s.Priority, s.Yolo, s.Details, s.ShowReasoning, s.Windows, s.Keys
 	if len(e.History) > 0 {
 		st, _ = Reduce(st, HistoryLoaded{SessionID: e.ID, Runs: e.History})

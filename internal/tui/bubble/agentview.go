@@ -83,9 +83,11 @@ func (m Model) onAgentEvents(msg agentEventsMsg) (term.Model, term.Cmd) {
 
 // onAgentWatchEnded reopens the view when the watch closed while it was
 // still shown: the manager closes a view that fell a whole queue behind,
-// and opening it again catches up.
+// and opening it again catches up. When the agent's session closed, the
+// reopened watch is closed too and brings its whole transcript from disk;
+// the view then stays as it is.
 func (m Model) onAgentWatchEnded(msg agentWatchEndedMsg) (term.Model, term.Cmd) {
-	if msg.gen != m.watchGen || m.watch == nil || m.st.View == nil || m.st.View.ID != msg.id {
+	if msg.gen != m.watchGen || m.watch == nil || m.watch.Closed || m.st.View == nil || m.st.View.ID != msg.id {
 		return m, nil
 	}
 
