@@ -223,7 +223,7 @@ type Context struct {
 }
 
 // Agents configures subagents with Codex's [agents] keys. Unset values
-// take the defaults: enabled, 4 open agents per session, depth 1, and the
+// take the defaults: enabled, 6 open agents per session, depth 1, and the
 // parent's model and effort.
 type Agents struct {
 	Enabled                        *bool `toml:"enabled"`

@@ -82,6 +82,8 @@ func (m Model) run(e state.Effect) term.Cmd { //nolint:gocyclo // a dispatch swi
 		return withSession(func(s *session.Session) error { return s.Interrupt() })
 	case state.EffClear:
 		return withSession(func(s *session.Session) error { return s.Clear() })
+	case state.EffAgentLimit:
+		return withSession(func(s *session.Session) error { return s.SetAgentLimit(e.Max) })
 	case state.EffRewind:
 		return withSession(func(s *session.Session) error { return s.Rewind(e.ID) })
 	case state.EffCompact:

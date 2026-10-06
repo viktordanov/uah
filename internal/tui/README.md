@@ -245,6 +245,7 @@ MCP prompts (`state/mcp.go`) join the commands: "/" starting a draft loads them 
 | Fast mode | `fast` | Toggles | This session too, as `/fast`, where the engine has it |
 | Adaptive effort | `adaptive_effort` | Cycles off, 1 step, and 2 steps; while selected, the panel says what it does ([engine README](../engine/README.md#adaptive-effort)) | This session too, as `/adaptive` |
 | Permission mode | `permission_mode` | Cycles read only, workspace, auto, as shift+tab does without `--yolo`; yolo is never saved | This session too, as shift+tab |
+| Open subagents | `[agents] max_concurrent_threads_per_session` | Type a number; empty or 0 removes it for the default, 6; while selected, the panel says what it does | This session too: `EffAgentLimit` calls `Session.SetAgentLimit`, which the agents' manager takes for spawns from then on |
 | Web search | `web_search` | Cycles live and disabled | New sessions |
 | Details view | `[tui] details` | Toggles | At once |
 | Mouse | `[tui] mouse` | Toggles | At once |

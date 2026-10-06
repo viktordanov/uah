@@ -28,6 +28,7 @@ func configValues() map[string]state.ConfigValue {
 		"tui.details":                    {Value: "false", Source: "default"},
 		"tui.mouse":                      {Value: "false", Source: "user file"},
 		"tui.file_links":                 {Value: "peek", Source: "default"},
+		"agents.max_concurrent_threads_per_session": {Value: "6", Source: "default"},
 	}
 }
 
@@ -56,7 +57,7 @@ func TestConfig_OpensAndShowsValuesWithSources(t *testing.T) {
 
 	s, _ = apply(s, state.ConfigLoaded{Path: "/cfg.toml", Values: configValues()})
 	rows := s.ConfigRows()
-	require.Len(t, rows, 12)
+	require.Len(t, rows, 13)
 	got := map[string][2]string{}
 	for _, r := range rows {
 		got[r.Label] = [2]string{r.Value, r.Source}
@@ -69,6 +70,7 @@ func TestConfig_OpensAndShowsValuesWithSources(t *testing.T) {
 	assert.Equal(t, [2]string{"live", "default"}, got["Web search"])
 	assert.Equal(t, [2]string{"off", "default"}, got["Adaptive effort"], "off is shown as is")
 	assert.Equal(t, [2]string{"peek", "default"}, got["File links"])
+	assert.Equal(t, [2]string{"6", "default"}, got["Open subagents"])
 
 	s, _ = apply(s, state.ConfigEsc{})
 	assert.Nil(t, s.Config, "esc closes")
@@ -79,8 +81,9 @@ func TestConfig_TogglesAndAppliesLive(t *testing.T) {
 	s, effects := apply(s, state.ConfigChange{Delta: 1})
 	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "tui.mouse", Value: true}}, effects)
 	assert.True(t, s.Mouse, "the TUI reports the mouse at once")
-	assert.Equal(t, "on", s.ConfigRows()[10].Value)
-	assert.Equal(t, state.SourceUser, s.ConfigRows()[10].Source)
+	mouse := configRow(s, "Mouse")
+	assert.Equal(t, "on", mouse.Value)
+	assert.Equal(t, state.SourceUser, mouse.Source)
 
 	s, effects = apply(s, state.ConfigSaved{Key: "tui.mouse", Value: true})
 	assert.Equal(t, []state.Effect{state.EffLoadConfig{}}, effects, "reload the sources")
@@ -294,4 +297,31 @@ func TestConfig_WarnsWhenAnotherSourceWins(t *testing.T) {
 
 	s, _ = apply(s, state.ConfigSaved{Key: "fast", Value: true, Err: assert.AnError})
 	assert.Equal(t, session.LevelError, s.Items[len(s.Items)-1].Level)
+}
+
+// configRow is the /config row with the label.
+func configRow(s state.State, label string) state.ConfigRow {
+	for _, r := range s.ConfigRows() {
+		if r.Label == label {
+			return r
+		}
+	}
+
+	return state.ConfigRow{}
+}
+
+// TestConfig_AgentLimit: the subagent limit is a typed number that
+// applies to the session at once; empty removes it for the default.
+func TestConfig_AgentLimit(t *testing.T) {
+	s := openConfig(t, opened(), "Open subagents")
+	s, _ = apply(s, state.ConfigChange{Delta: 1}, state.ConfigType{Text: "\b"}, state.ConfigType{Text: "8"})
+	s, effects := apply(s, state.ConfigEnter{})
+	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "agents.max_concurrent_threads_per_session", Value: int64(8)}}, effects)
+
+	s, effects = apply(s, state.ConfigSaved{Key: "agents.max_concurrent_threads_per_session", Value: int64(8)})
+	assert.Contains(t, effects, state.Effect(state.EffAgentLimit{Max: 8}))
+	assert.Contains(t, s.Items[len(s.Items)-1].Text, "applies now")
+
+	_, effects = apply(s, state.ConfigSaved{Key: "agents.max_concurrent_threads_per_session"})
+	assert.Contains(t, effects, state.Effect(state.EffAgentLimit{}), "removed: the default")
 }

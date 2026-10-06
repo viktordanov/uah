@@ -15,9 +15,10 @@ import (
 	"github.com/viktordanov/uah/internal/session"
 )
 
-// Defaults, Codex's.
+// Defaults: six open agents per session tree, above Codex's four, which
+// parallel work ran out of; and Codex's depth.
 const (
-	DefaultMaxThreads = 4
+	DefaultMaxThreads = 6
 	DefaultMaxDepth   = 1
 )
 
@@ -437,4 +438,16 @@ func first(values ...string) string {
 	}
 
 	return ""
+}
+
+// SetMaxThreads changes how many children a session tree keeps open, for
+// spawns and resumes from now on; n of 0 or less is the default. Agents
+// already open stay open.
+func (m *Manager) SetMaxThreads(n int) {
+	if n <= 0 {
+		n = DefaultMaxThreads
+	}
+	m.mu.Lock()
+	m.cfg.MaxThreads = n
+	m.mu.Unlock()
 }

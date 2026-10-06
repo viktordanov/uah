@@ -181,7 +181,7 @@ The manager knows only the children of the current process. `resume_agent(id)` r
 <!-- memoria:section id="limits" files="manager.go ops.go" -->
 ## Limits
 
-- **Concurrency.** `MaxThreads` (`max_concurrent_threads_per_session`, default 4) counts the open children in the whole tree under the root session, checked under the lock so parallel spawns keep it. Finished children count until closed, as in Codex.
+- **Concurrency.** `MaxThreads` (`max_concurrent_threads_per_session`, default 6, above Codex's 4, which parallel work ran out of) counts the open children in the whole tree under the root session, checked under the lock so parallel spawns keep it. Finished children count until closed, as in Codex. `SetMaxThreads` changes the limit while the manager runs, for spawns and resumes from then on (`/config`'s "Open subagents" row, through `Session.SetAgentLimit`); open agents stay. `TestAgents_LimitChangesLive` checks it.
 - **Depth.** Subagents never start subagents: `MaxDepth` is at most 1, a rule rather than a setting. `New` clamps a higher value, and `app.Setup` does too, with a notice, for `[agents] max_depth` above 1. It is compared with a session's depth, which comes from the live children and then the sidecars, so a resumed child keeps its depth. A child is not offered the tools, as in Codex at its depth limit, except a forked child, which keeps its parent's tools for the prompt cache; a spawn or resume from a child is refused with Codex's message, `Agent depth limit reached. Solve the task yourself.` `MaxDepth` 0 offers no tools; `app.Setup` uses it when `[agents] enabled = false`, and past calls still get an answer. `TestDepth_ChildrenNeverSpawn` pins both with `MaxDepth` 5.
 <!-- /memoria:section -->
 

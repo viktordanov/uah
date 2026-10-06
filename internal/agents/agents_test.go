@@ -163,6 +163,32 @@ func TestAgents_LimitAndClose(t *testing.T) {
 	assert.Len(t, ids(lastParent(e)), 2, "the spawn after the close worked")
 }
 
+// TestAgents_LimitChangesLive: a limit set while the session runs, as
+// /config sets it, applies to the next spawn.
+func TestAgents_LimitChangesLive(t *testing.T) {
+	e := newEnv(t, agents.Config{MaxThreads: 1},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-L one"}`)}},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-L two"}`)}},
+		fakellm.Reply{Text: "first"},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-L three"}`)}},
+		fakellm.Reply{Text: "second"},
+	)
+	e.llm.Route("CHILD-L")
+	s, ev := e.open(t, false)
+	_, err := s.Submit("spawn two")
+	require.NoError(t, err)
+	ev.finished()
+	assert.Contains(t, lastOutputs(e), "agent limit reached: 1 agents are open")
+
+	require.NoError(t, s.SetAgentLimit(2))
+	_, err = s.Submit("spawn another")
+	require.NoError(t, err)
+	ev.finished()
+	outputs := lastOutputs(e)
+	assert.Equal(t, 1, strings.Count(outputs, "agent limit reached"), "only the spawn before the change failed")
+	assert.Equal(t, 2, strings.Count(outputs, `"agent_id"`), "the new limit took the third spawn")
+}
+
 // TestAgents_ChildApprovalAsksTheParent shows a child's escalation in the
 // parent's session, labelled with the child's nickname.
 func TestAgents_ChildApprovalAsksTheParent(t *testing.T) {

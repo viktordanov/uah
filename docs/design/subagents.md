@@ -47,7 +47,7 @@ Follow Codex's v1 tool set, which covers Claude Code's single tool as its simple
 | `close_agent(id)` | Stops a child |
 
 - **Children** are ordinary uah sessions (`session.Open` with a new ID and a sidecar `source: "subagent"` plus the parent's ID), so they are resumable, listed under the parent in `uah sessions`, and hidden from the resume picker.
-- **Configuration** mirrors Codex: `[agents] enabled, max_concurrent_threads_per_session (default 4), max_depth (default 1: children cannot spawn), default_subagent_model, default_subagent_reasoning_effort`.
+- **Configuration** mirrors Codex: `[agents] enabled, max_concurrent_threads_per_session (default 6; Codex's is 4), max_depth (default 1: children cannot spawn), default_subagent_model, default_subagent_reasoning_effort`.
 - **Roles** use Codex's role files, loaded from `~/.config/uagent/agents/*.toml` and trusted `.uagent/agents/*.toml`. The spawn tool description lists them, followed by Codex's restraint guidance, adapted.
 - **TUI.** A child's progress is one line under the spawning tool call ("• agent reviewer: running 0:42"); `/agents` lists children; ctrl+t details show each child's tool lines.
 - **Tests.** `fakellm` scripts for parent and child (one server, requests routed by the session ID in the prompt-cache key): spawn → wait → answer, a child's approval surfacing in the parent, the concurrency limit, depth 1.

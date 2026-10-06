@@ -61,3 +61,25 @@ func (s *Session) WatchAgent(id string) (*AgentWatch, error) {
 
 	return w.WatchAgent(s.id, id) // the agents' own errors
 }
+
+// AgentLimiter changes the subagent limit of a running engine;
+// internal/agents implements it.
+type AgentLimiter interface {
+	SetMaxThreads(n int)
+}
+
+// SetAgentLimit changes how many subagents the session keeps open at once,
+// for spawns from now on; 0 is the default.
+func (s *Session) SetAgentLimit(n int) error {
+	e, ok := s.eng.(SubagentsEngine)
+	if !ok {
+		return ErrNoSubagents
+	}
+	l, ok := e.Subagents().(AgentLimiter)
+	if !ok {
+		return ErrNoSubagents
+	}
+	l.SetMaxThreads(n)
+
+	return nil
+}

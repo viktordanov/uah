@@ -49,7 +49,11 @@ type (
 	}
 )
 
+// EffAgentLimit sets the session's subagent limit now; 0 is the default.
+type EffAgentLimit struct{ Max int }
+
 func (EffLoadConfig) effect() {}
+func (EffAgentLimit) effect() {}
 func (EffSaveConfig) effect() {}
 
 // Panel intents, from keys while the panel is open.
@@ -249,17 +253,22 @@ func (s *State) configSaved(e ConfigSaved) []Effect {
 		what = e.Key + " removed (the default applies)"
 	}
 	s.notice(session.LevelInfo, fmt.Sprintf("saved %s%s; %s", what, path, appliesWhen(e.Key, s.Priority)))
-	if s.Config == nil {
-		return nil
+	var effects []Effect
+	if e.Key == keyAgentLimit {
+		n, _ := e.Value.(int64) // nil, the default, is 0
+		effects = append(effects, EffAgentLimit{Max: int(n)})
+	}
+	if s.Config != nil {
+		effects = append(effects, EffLoadConfig{})
 	}
 
-	return []Effect{EffLoadConfig{}}
+	return effects
 }
 
 // appliesWhen says when a saved key takes effect.
 func appliesWhen(key string, fastLive bool) string {
 	switch {
-	case key == keyDetails || key == keyMouse || key == keyFileLinks:
+	case key == keyDetails || key == keyMouse || key == keyFileLinks || key == keyAgentLimit:
 		return "applies now"
 	case key == keyFast && !fastLive:
 		return "applies to new sessions on a provider with fast mode"

@@ -38,6 +38,7 @@ const (
 	keyFileLinks    = "tui.file_links"
 	keyWebSearch    = "web_search"
 	keyAdaptive     = "adaptive_effort"
+	keyAgentLimit   = "agents.max_concurrent_threads_per_session"
 )
 
 // rowKind is how a /config row changes.
@@ -79,6 +80,7 @@ var configKeys = []struct {
 	{keyFast, "Fast mode", rowToggle, ""},
 	{keyAdaptive, "Adaptive effort", rowChoice, adaptiveHelp},
 	{keyMode, "Permission mode", rowChoice, ""},
+	{keyAgentLimit, "Open subagents", rowNumber, agentLimitHelp},
 	{keyWebSearch, "Web search", rowChoice, ""},
 	{keyDetails, "Details view", rowToggle, ""},
 	{keyMouse, "Mouse", rowToggle, ""},
@@ -103,6 +105,9 @@ const adaptiveHelp = "Adaptive effort: think one or two effort levels less on fo
 
 // fileLinksHelp says what a click on a file path does.
 const fileLinksHelp = "File links: a click on a file path peeks at it in an overlay, opens it in $VISUAL or $EDITOR at its line, or with the system's default app; off draws paths as plain text"
+
+// agentLimitHelp says what the subagent limit does.
+const agentLimitHelp = "Open subagents: how many subagents a session keeps open at once; a spawn past it fails until one is closed. Empty or 0 is the default, 6"
 
 // sessionModel is the compaction model's choice for "the session's model".
 const sessionModel = "session model"
@@ -228,7 +233,12 @@ func typed(row ConfigRow, text string) (any, error) {
 		}
 		n, err := strconv.ParseInt(text, 10, 64)
 		if err != nil || n < 0 {
-			return nil, fmt.Errorf("%s wants a number of tokens, not %q", row.Label, text)
+			what := "a number"
+			if row.Key == keyTokenLimit {
+				what = "a number of tokens"
+			}
+
+			return nil, fmt.Errorf("%s wants %s, not %q", row.Label, what, text)
 		}
 
 		return n, nil

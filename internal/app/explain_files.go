@@ -62,6 +62,7 @@ func fileSettings(workspace string, l config.Layers, r Resolved, cfg config.Conf
 		added(l, "shell_environment_policy.exclude", list(env.Exclude), func(c config.Config) any { return c.ShellEnvironmentPolicy.Exclude }),
 		added(l, "shell_environment_policy.include_only", list(env.IncludeOnly), func(c config.Config) any { return c.ShellEnvironmentPolicy.IncludeOnly }),
 		added(l, "shell_environment_policy.set", setMap(env.Set), func(c config.Config) any { return c.ShellEnvironmentPolicy.Set }),
+		overridden(l, "agents.max_concurrent_threads_per_session", r.Agents.MaxThreads, func(c config.Config) any { return c.Agents.MaxThreadsValue() }),
 		added(l, "tui.details", cfg.TUI.Details, func(c config.Config) any { return c.TUI.Details }),
 		overridden(l, "tui.mouse", cfg.TUI.MouseOn(), func(c config.Config) any { return c.TUI.Mouse }),
 		overridden(l, "tui.title", cfg.TUI.TitleOn(), func(c config.Config) any { return c.TUI.Title }),

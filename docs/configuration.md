@@ -400,7 +400,7 @@ Codex keys uah does not support are errors: `bearer_token`, `http_headers_helper
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
 | `enabled` | bool | true | override, can unset | Offer `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent` |
-| `max_concurrent_threads_per_session` | int | 4 | override | Open subagents per session tree; Codex's `max_threads` is an alias |
+| `max_concurrent_threads_per_session` | int | 6 | override | Open subagents per session tree, above Codex's 4; Codex's `max_threads` is an alias. `/config` changes it as "Open subagents", also for the running session |
 | `max_threads` | int | none | override | Codex's older name for `max_concurrent_threads_per_session` |
 | `max_depth` | int | 1 | override | 1 offers subagents, 0 turns them off. Subagents never start subagents: a value above 1 is used as 1, with a notice |
 | `default_subagent_model` | string | the parent's model | override | Model for subagents a role or call does not set; on openai-codex it must be in Codex's model catalog, as `spawn_agent`'s `model` must. A fork (`fork_context`) does not take it: it keeps the parent's model unless its call sets one, so it shares the parent's prompt cache, where Codex v0.156.1 applies the default to forks too |
@@ -532,7 +532,7 @@ uah config --session 3f2a      # as resuming a session would
 uah config --json | jq '.settings[] | select(.sources != ["default"])'
 ```
 
-`/config` in the TUI shows the same values and sources for the basic settings (auto-compact and its token limit, `compact_model`, `model`, `effort`, `fast`, `adaptive_effort`, `permission_mode`, `[tui] details`, `mouse`, and `file_links`) and changes them in the user file (`--config` or the default path). It edits one key in place and keeps the file's comments and formatting, with the editor `uah mcp add` uses; a change that would stop a session from starting is undone. The layers and the project file are never written, and a value one of them sets still wins over the change.
+`/config` in the TUI shows the same values and sources for the basic settings (auto-compact and its token limit, `compact_model`, `model`, `effort`, `fast`, `adaptive_effort`, `permission_mode`, `[agents] max_concurrent_threads_per_session`, `[tui] details`, `mouse`, and `file_links`) and changes them in the user file (`--config` or the default path). It edits one key in place and keeps the file's comments and formatting, with the editor `uah mcp add` uses; a change that would stop a session from starting is undone. The layers and the project file are never written, and a value one of them sets still wins over the change.
 
 ## Examples
 
