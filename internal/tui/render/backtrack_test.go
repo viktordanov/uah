@@ -129,3 +129,32 @@ func backtrackRuns(t *testing.T) state.State {
 
 	return s
 }
+
+// TestFindMarksTheMatches: while searching, the window holds the shown
+// match, every line is dim, and the query is drawn on the accent in the
+// shown item and on the dimmer tint in the others.
+func TestFindMarksTheMatches(t *testing.T) {
+	s := apply(backtrackRuns(t), state.FindOpen{Query: "2"})
+	var docs []state.SearchDoc
+	for _, it := range s.Items {
+		if it.Kind == state.KindUser || it.Kind == state.KindAssistant {
+			docs = append(docs, state.SearchDoc{Key: it.Key, Text: it.Text})
+		}
+	}
+	s = apply(s, state.Found{Gen: 1, Keys: state.FindIn(docs, "2", nil)})
+	s = apply(s, state.FindMove{Delta: -1})
+	assert.Equal(t, "message 2", itemText(s, s.Find.Key()), "the earlier match")
+
+	c := render.NewCache(render.Amber)
+	raw := rawScreen(s, c)
+	golden(t, "find-marks", fadeMarks(raw, render.Amber.Dim))
+	assert.Contains(t, raw, "\x1b[48;2;255;196;0;38;2;42;42;42m2\x1b[m", "the shown match on the accent")
+	assert.Contains(t, raw, "\x1b[48;2;92;70;8m2\x1b[m", "the other match on the tint")
+	assert.NotContains(t, ansi.Strip(raw), "message 8", "the window holds the match")
+}
+
+func itemText(s state.State, key string) string {
+	it, _ := s.Item(key)
+
+	return it.Text
+}

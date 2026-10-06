@@ -42,14 +42,15 @@ func (c *Cache) selectWindow(s state.State, out []string, refs []state.TextPos) 
 	}
 	for j := pad; j < len(out); j++ {
 		if from, to, ok := s.SelectedCols(c.rows[j].Key, c.rows[j].Line); ok {
-			out[j] = c.styles.highlight(out[j], from, to)
+			out[j] = c.styles.highlight(out[j], from, to, c.styles.selectOn)
 		}
 	}
 }
 
-// highlight draws cells [from, to) of a line on the selection's
-// background, in the terminal's own text color; the rest keeps its styles.
-func (st *Styles) highlight(line string, from, to int) string {
+// highlight draws cells [from, to) of a line with the SGR on, such as the
+// selection's background in the terminal's own text color; the rest keeps
+// its styles.
+func (st *Styles) highlight(line string, from, to int, on string) string {
 	from, to = snap(ansi.Strip(line), from, to)
 	if from >= to {
 		return line
@@ -58,7 +59,7 @@ func (st *Styles) highlight(line string, from, to int) string {
 	// The styles in force where the selection ends carry on after it.
 	resume := strings.Join(sgr.FindAllString(before, -1), "")
 
-	return ansi.Truncate(line, from, "") + "\x1b[m" + st.selectOn + ansi.Strip(ansi.Cut(line, from, to)) + "\x1b[m" +
+	return ansi.Truncate(line, from, "") + "\x1b[m" + on + ansi.Strip(ansi.Cut(line, from, to)) + "\x1b[m" +
 		resume + ansi.TruncateLeft(line, to, "")
 }
 

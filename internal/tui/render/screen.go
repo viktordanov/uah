@@ -129,7 +129,10 @@ func transcript(s state.State, c *Cache, w, height int, head []string) []string 
 	for _, l := range window {
 		out = append(out, ansi.Truncate(l, w, ""))
 	}
-	if s.Backtrack != nil {
+	switch {
+	case s.Find != nil:
+		c.styles.fade(out[height-len(window):], start, 0, 0)
+	case s.Backtrack != nil:
 		c.styles.fade(out[height-len(window):], start, len(all)-d.below-d.selected, d.selected)
 	}
 	refs := rowRefs(d.keys, d.rev, len(all)-d.count)[start:end]
@@ -138,6 +141,7 @@ func transcript(s state.State, c *Cache, w, height int, head []string) []string 
 		c.bottom = refs[len(refs)-1]
 	}
 	c.selectWindow(s, out, refs)
+	c.markMatches(s, out)
 	c.notes(s, out, w)
 
 	return out
@@ -163,7 +167,7 @@ type gathered struct {
 // anchor are the scroll, however many arrived since.
 func (c *Cache) gather(s state.State, w, height int) gathered {
 	anchor := -2 // the anchor's item, or -2 for none
-	if s.Backtrack == nil && s.Anchor.Key != "" && s.Pinned() {
+	if focusKey(s) == "" && s.Anchor.Key != "" && s.Pinned() {
 		anchor = s.Order(s.Anchor.Key)
 	}
 	d := gathered{scroll: s.Scroll, below: -1, banner: -1}

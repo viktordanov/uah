@@ -54,17 +54,31 @@ func (c *Cache) ownLines(s state.State, i, w int) []string {
 	return c.lines(it, w, s.Now, view{reasoning: s.ShowReasoning, details: s.Details})
 }
 
-// backtrackScroll is how far the transcript scrolls up so the selected
-// message shows a third of the way down the window, or its top when it is
-// taller; ok is false when no message is selected.
+// focusKey is the item the window holds still on: the search's match, or
+// else the message selected to go back to; "" for none.
+func focusKey(s state.State) string {
+	if key := s.Find.Key(); key != "" {
+		return key
+	}
+	if s.Backtrack != nil {
+		return s.Backtrack.Key
+	}
+
+	return ""
+}
+
+// backtrackScroll is how far the transcript scrolls up so the focused
+// item (focusKey) shows a third of the way down the window, or its top
+// when it is taller; ok is false when nothing is focused.
 func backtrackScroll(s state.State, c *Cache, w, height int) (scroll int, ok bool) {
-	if s.Backtrack == nil {
+	key := focusKey(s)
+	if key == "" {
 		return 0, false
 	}
 	below := 0
 	for i, it := range slices.Backward(s.Items) {
 		n := len(c.transcriptLines(s, i, w))
-		if it.Key != s.Backtrack.Key {
+		if it.Key != key {
 			below += n
 
 			continue

@@ -15,7 +15,7 @@ func (m Model) anchor() Model {
 		}
 		st = *v.St
 	}
-	if m.st.Mode != state.ModeChat || m.st.Backtrack != nil || !st.Pinned() || m.w <= 0 || m.h <= 0 {
+	if m.st.Mode != state.ModeChat || m.st.Backtrack != nil || m.st.Find != nil || !st.Pinned() || m.w <= 0 || m.h <= 0 {
 		return m
 	}
 	m.View()

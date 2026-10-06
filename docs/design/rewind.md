@@ -43,6 +43,7 @@ Checked against the [checkpointing](https://code.claude.com/docs/en/checkpointin
 | ↑, ←, k (while one is selected) | An earlier message |
 | ↓, →, j | A later message |
 | enter | Go back to before the message: it returns to the composer with its images |
+| / | Search your messages and the agent's answers; esc comes back here, on your message at or above the match ([TUI README](../../internal/tui/README.md#keys)) |
 | esc, ctrl+c | Cancel |
 | any other key | Cancel, then the key does what it does (a typed letter goes into the composer) |
 

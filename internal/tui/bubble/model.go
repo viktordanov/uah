@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/viktordanov/uagent/core"
@@ -133,6 +134,9 @@ type Model struct {
 	prompts *history.Recorder
 	// calls keeps the session calls in the order Update made them.
 	calls *calls
+	// findGen is the newest transcript search's generation, so a stale
+	// one stops early (find.go).
+	findGen *atomic.Int64
 	// pointer is where the mouse is while a drag selects text, and
 	// edgeTicking says the drag's edge scroll waits for its tick (mouse.go).
 	pointer     struct{ x, y int }
@@ -171,7 +175,7 @@ func New(ctx context.Context, deps Deps) Model {
 	m := Model{
 		ctx: ctx, deps: deps, st: st,
 		cache: render.NewCache(render.Amber), theme: render.Amber, composer: newComposer(render.NewStyles(render.Amber)),
-		calls: &calls{},
+		calls: &calls{}, findGen: &atomic.Int64{},
 	}
 	if deps.History != nil {
 		m.prompts = history.NewRecorder(*deps.History)
@@ -293,7 +297,7 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 	case state.Failed, state.SessionsLoaded, state.ActivityLoaded, state.FilesLoaded, state.MCPListed, state.ContextShown,
 		state.ModelsLoaded, state.ConfigLoaded, state.ConfigSaved, state.ImageAttached, state.ImageFailed, state.DraftEdited:
 		return m.dispatch(msg)
-	case state.UsageLoaded, state.CacheLoaded, state.Copied, state.DiffShown, state.ReviewTargetsLoaded, state.PromptsLoaded:
+	case state.UsageLoaded, state.CacheLoaded, state.Copied, state.DiffShown, state.ReviewTargetsLoaded, state.PromptsLoaded, state.Found:
 		return m.dispatch(msg)
 	case state.LinksResolved, state.PeekLoaded, state.FileOpened, state.LinkTimer:
 		return m.now().dispatch(msg) // a toast starts now, not at the last tick

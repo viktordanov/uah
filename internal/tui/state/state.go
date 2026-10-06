@@ -165,6 +165,9 @@ type State struct {
 	// Backtrack, when set, is the earlier message selected to go back to
 	// (backtrack.go).
 	Backtrack *Backtrack
+	// Find, when set, is an open search of the transcript
+	// (transcriptsearch.go).
+	Find *TranscriptSearch
 	// History is the prompt history ↑ and ctrl+r recall (history.go).
 	History PromptHistory
 	// Selection, when set, is transcript text selected with the mouse

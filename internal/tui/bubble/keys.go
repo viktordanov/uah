@@ -51,6 +51,9 @@ func (m Model) onKey(msg term.KeyPressMsg) (term.Model, term.Cmd) { //nolint:goc
 	if m.st.ModelPicker != nil {
 		return m.onModelPickerKey(msg)
 	}
+	if m.st.Find != nil {
+		return m.onFindKey(msg)
+	}
 	if m.st.Backtrack != nil {
 		if intent := backtrackIntent(msg.String()); intent != nil {
 			return m.dispatch(intent)
@@ -228,7 +231,7 @@ func questionIntent(key, draft string, typing bool) any {
 
 // backtrackIntent maps a key while an earlier message is selected: ↑, ←,
 // and k select an earlier message, ↓, →, and j a later one, enter goes
-// back to it, and esc and ctrl+c cancel. nil means the key cancels and
+// back to it, / searches the transcript, and esc and ctrl+c cancel. nil means the key cancels and
 // does what it does.
 func backtrackIntent(key string) any {
 	switch key {
@@ -238,6 +241,8 @@ func backtrackIntent(key string) any {
 		return state.BacktrackMove{Delta: 1}
 	case keyEnter:
 		return state.BacktrackSelect{}
+	case "/":
+		return state.FindOpen{}
 	case keyEsc, keyCtrlC:
 		return state.BacktrackCancel{}
 	}

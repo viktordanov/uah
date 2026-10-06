@@ -35,6 +35,7 @@ func Commands() []Command {
 		{Name: "new", Help: "start a new session", run: func(*State, string) []Effect { return []Effect{EffOpenSession{}} }},
 		{Name: "stop", Help: "interrupt the live run; queued messages stay", WhileBusy: true, run: func(s *State, _ string) []Effect { return s.interrupt() }},
 		{Name: "clear", Help: "start the agent fresh in this session; the session keeps its history (embedded engine)", WhileBusy: true, run: cmdClear},
+		{Name: "search", Args: "[text]", Help: "find text in your messages and the agent's answers; ↑↓ or j k move between matches, esc goes back to editing a message (/ while going back)", WhileBusy: true, Bare: true, run: cmdSearch},
 		{Name: "rewind", Help: "go back to an earlier message and edit it; what followed leaves the context (esc esc; embedded engine)", run: cmdRewind},
 		{Name: "goal", Args: "[objective|edit|pause|resume|clear|status]", Help: "set or view the goal of a long task: the agent keeps working, turn after turn, until it marks the goal complete or a budget stops it", WhileBusy: true, Bare: true, run: cmdGoal},
 		{Name: "compact", Args: "[focus]", Help: "summarize the context to free it; your messages stay as written, and words after it steer the summary (embedded engine)", WhileBusy: true, run: cmdCompact},
@@ -248,7 +249,7 @@ func cmdHelp(s *State, _ string) []Effect {
 		fmt.Fprintf(&b, "%-18s %s (MCP prompt)\n", name, p.Description)
 	}
 	b.WriteString("\n" + s.Keys.sendHelp() + "\n")
-	b.WriteString("esc esc interrupt, or while idle on an empty prompt go back to an earlier message (↑/k earlier, ↓/j later, enter edit, esc cancels) · ↑ edit the last queued message, else earlier prompts (↓ later) · ctrl+r search earlier prompts · shift+tab permission mode · alt+, alt+. effort · alt+e adaptive effort · ctrl+s sessions · ctrl+n new · ctrl+g edit the prompt in $VISUAL or $EDITOR · ctrl+t details · wheel, shift+↑↓, pgup/pgdn scroll (end: bottom) · drag, double or triple click select and copy · ctrl+c ctrl+c quit")
+	b.WriteString("esc esc interrupt, or while idle on an empty prompt go back to an earlier message (↑/k earlier, ↓/j later, / search, enter edit, esc cancels) · ↑ edit the last queued message, else earlier prompts (↓ later) · ctrl+r search earlier prompts · shift+tab permission mode · alt+, alt+. effort · alt+e adaptive effort · ctrl+s sessions · ctrl+n new · ctrl+g edit the prompt in $VISUAL or $EDITOR · ctrl+t details · wheel, shift+↑↓, pgup/pgdn scroll (end: bottom) · drag, double or triple click select and copy · ctrl+c ctrl+c quit")
 	s.notice(session.LevelInfo, b.String())
 
 	return nil

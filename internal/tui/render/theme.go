@@ -113,9 +113,13 @@ type Styles struct {
 	// back to an earlier message.
 	dimOn string
 	// selectOn switches the selection's background on (selection.go).
-	selectOn  string
-	breath    []lipgloss.Style
-	codeStyle *chroma.Style
+	selectOn string
+	// matchOn and tintOn draw the transcript search's matches: the shown
+	// one in the band's color on the accent, the others on the
+	// selection's dimmer tint (find.go).
+	matchOn, tintOn string
+	breath          []lipgloss.Style
+	codeStyle       *chroma.Style
 	// categoryColors color /context's categories.
 	categoryColors map[string]lipgloss.Style
 	// diffStyles draw added and removed diff lines.
@@ -162,6 +166,10 @@ func NewStyles(t Theme) *Styles {
 	st.dimOn = fmt.Sprintf("\x1b[38;2;%d;%d;%dm", r, g, b)
 	r, g, b = rgb(t.Selection)
 	st.selectOn = fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b)
+	st.tintOn = st.selectOn
+	ar, ag, ab := rgb(t.Accent)
+	br, bg, bb := rgb(t.Band)
+	st.matchOn = fmt.Sprintf("\x1b[48;2;%d;%d;%d;38;2;%d;%d;%dm", ar, ag, ab, br, bg, bb)
 	st.breath = make([]lipgloss.Style, 0, len(t.Breath))
 	for _, c := range t.Breath {
 		st.breath = append(st.breath, lipgloss.NewStyle().Foreground(c).Bold(true))

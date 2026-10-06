@@ -179,6 +179,38 @@ func TestTUI_BacktrackKeys(t *testing.T) {
 	assert.Empty(t, d.draft())
 }
 
+// TestTUI_FindInTheTranscript: / while going back searches the
+// transcript off the update loop; ↑ moves while typing, enter ends the
+// query, then k and j move, and esc goes back to choosing a message.
+func TestTUI_FindInTheTranscript(t *testing.T) {
+	deps, _ := rewindDeps(t, fakellm.Reply{Text: "answer one"}, fakellm.Reply{Text: "answer two"})
+	d := start(t, deps)
+	for _, text := range []string{"first", "second"} {
+		d.typeText(text)
+		d.key(term.KeyEnter, 0)
+		d.waitFor("answer " + map[string]string{"first": "one", "second": "two"}[text])
+		d.waitIdle()
+	}
+
+	d.key(term.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
+	d.waitFor("▶ second")
+	d.typeText("/answer")
+	d.waitFor("/answer · 2 of 2")
+	d.key(term.KeyUp, 0)
+	d.waitFor("/answer · 1 of 2")
+	d.key(term.KeyEnter, 0)
+	d.key('j', 0)
+	d.waitFor("/answer · 2 of 2 · ↑/k earlier")
+	d.key('k', 0)
+	d.waitFor("/answer · 1 of 2")
+	assert.Empty(t, d.draft(), "the query never reached the composer")
+	d.key(term.KeyEscape, 0)
+	d.waitFor("▶ first")
+	d.key(term.KeyEscape, 0)
+	assert.NotContains(t, d.view(), "▶")
+}
+
 func TestComposerRows(t *testing.T) {
 	for h, want := range map[int]int{10: 8, 16: 8, 24: 12, 30: 15, 40: 20, 100: 50} {
 		assert.Equal(t, want, bubble.ComposerRows(h), "a terminal %d rows high", h)

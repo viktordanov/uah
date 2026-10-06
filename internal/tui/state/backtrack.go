@@ -39,13 +39,17 @@ func (EffRewind) effect() {}
 
 const (
 	backtrackPrimed = "esc again to edit a previous message"
-	backtrackHint   = "editing a previous message · ↑/k earlier · ↓/j later · enter edit from here · esc or any other key cancels"
+	backtrackHint   = "editing a previous message · ↑/k earlier · ↓/j later · / search · enter edit from here · esc or any other key cancels"
 	noBacktrack     = "No previous message to edit."
 )
 
-// onBacktrack handles the selection's intents, and esc on an empty
-// composer while idle; ok is false for any other event.
+// onBacktrack handles the transcript search (transcriptsearch.go), the
+// selection's intents, and esc on an empty composer while idle; ok is
+// false for any other event.
 func (s *State) onBacktrack(ev any) (effects []Effect, ok bool) {
+	if effects, ok := s.onFind(ev); ok {
+		return effects, true
+	}
 	if s.Backtrack != nil {
 		return s.onSelecting(ev)
 	}
