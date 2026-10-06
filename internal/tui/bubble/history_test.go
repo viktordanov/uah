@@ -154,6 +154,31 @@ func TestTUI_HistoryLeavesBacktrackAlone(t *testing.T) {
 	assert.Equal(t, "second", d.draft())
 }
 
+// TestTUI_BacktrackKeys: while an earlier message is selected, k and j
+// move the selection as ↑ and ↓ do, and esc leaves it.
+func TestTUI_BacktrackKeys(t *testing.T) {
+	deps, _ := rewindDeps(t, fakellm.Reply{Text: "answer one"}, fakellm.Reply{Text: "answer two"})
+	d := start(t, deps)
+	for _, text := range []string{"first", "second"} {
+		d.typeText(text)
+		d.key(term.KeyEnter, 0)
+		d.waitFor("answer " + map[string]string{"first": "one", "second": "two"}[text])
+		d.waitIdle()
+	}
+
+	d.key(term.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
+	d.waitFor("▶ second")
+	d.key('k', 0)
+	d.waitFor("▶ first")
+	d.key('j', 0)
+	d.waitFor("▶ second")
+	assert.Empty(t, d.draft(), "k and j moved the selection, not typed")
+	d.key(term.KeyEscape, 0)
+	assert.NotContains(t, d.view(), "▶", "esc left the selection")
+	assert.Empty(t, d.draft())
+}
+
 func TestComposerRows(t *testing.T) {
 	for h, want := range map[int]int{10: 8, 16: 8, 24: 12, 30: 15, 40: 20, 100: 50} {
 		assert.Equal(t, want, bubble.ComposerRows(h), "a terminal %d rows high", h)

@@ -69,7 +69,7 @@ func TestTUI_RewindToAnEarlierMessage(t *testing.T) {
 	d.waitFor("esc again to edit a previous message")
 	d.key(term.KeyEscape, 0)
 	d.waitFor("▶ third")
-	d.key(term.KeyEscape, 0)
+	d.key(term.KeyUp, 0)
 	d.waitFor("▶ second")
 	d.key(term.KeyEnter, 0)
 	d.until("the cut", func() bool { return !strings.Contains(d.view(), "answer two") })

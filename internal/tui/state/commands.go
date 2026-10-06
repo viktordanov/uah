@@ -248,7 +248,7 @@ func cmdHelp(s *State, _ string) []Effect {
 		fmt.Fprintf(&b, "%-18s %s (MCP prompt)\n", name, p.Description)
 	}
 	b.WriteString("\n" + s.Keys.sendHelp() + "\n")
-	b.WriteString("esc esc interrupt, or while idle on an empty prompt go back to an earlier message (esc/↑ earlier, ↓ later, enter edit) · ↑ edit the last queued message, else earlier prompts (↓ later) · ctrl+r search earlier prompts · shift+tab permission mode · alt+, alt+. effort · alt+e adaptive effort · ctrl+s sessions · ctrl+n new · ctrl+g edit the prompt in $VISUAL or $EDITOR · ctrl+t details · wheel, shift+↑↓, pgup/pgdn scroll (end: bottom) · drag, double or triple click select and copy · ctrl+c ctrl+c quit")
+	b.WriteString("esc esc interrupt, or while idle on an empty prompt go back to an earlier message (↑/k earlier, ↓/j later, enter edit, esc cancels) · ↑ edit the last queued message, else earlier prompts (↓ later) · ctrl+r search earlier prompts · shift+tab permission mode · alt+, alt+. effort · alt+e adaptive effort · ctrl+s sessions · ctrl+n new · ctrl+g edit the prompt in $VISUAL or $EDITOR · ctrl+t details · wheel, shift+↑↓, pgup/pgdn scroll (end: bottom) · drag, double or triple click select and copy · ctrl+c ctrl+c quit")
 	s.notice(session.LevelInfo, b.String())
 
 	return nil

@@ -226,21 +226,19 @@ func questionIntent(key, draft string, typing bool) any {
 	return nil
 }
 
-// backtrackIntent maps a key while an earlier message is selected, as
-// Codex's backtrack: esc, ↑, and ← select an earlier message, ↓ and → a
-// later one, enter goes back to it, and ctrl+c cancels. nil means the key
-// cancels and does what it does.
+// backtrackIntent maps a key while an earlier message is selected: ↑, ←,
+// and k select an earlier message, ↓, →, and j a later one, enter goes
+// back to it, and esc and ctrl+c cancel. nil means the key cancels and
+// does what it does.
 func backtrackIntent(key string) any {
 	switch key {
-	case keyEsc:
-		return state.Esc{Empty: true}
-	case keyUp, "left":
+	case keyUp, "left", "k":
 		return state.BacktrackMove{Delta: -1}
-	case keyDown, "right":
+	case keyDown, "right", "j":
 		return state.BacktrackMove{Delta: 1}
 	case keyEnter:
 		return state.BacktrackSelect{}
-	case keyCtrlC:
+	case keyEsc, keyCtrlC:
 		return state.BacktrackCancel{}
 	}
 

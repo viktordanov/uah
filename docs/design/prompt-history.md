@@ -112,7 +112,7 @@ Claude Code keeps history per project, which is its working directory, and ↑ r
 | ↑ on an empty composer | Scroll the transcript (for a wheel sent as ↑ without mouse reporting) | Recall the previous prompt | Codex. With `[tui] mouse` on, the default, the wheel arrives as mouse events and still scrolls |
 | ↑ / ↓ on a recalled prompt, cursor at its start or end | Move the cursor or scroll | Recall the previous or next prompt | Codex's `should_handle_navigation` |
 | ↑ / ↓ on a draft of your own | Move the cursor; on the first or last row, scroll the transcript | The same | A draft is never replaced by a stray arrow |
-| esc esc, then ↑ / ↓ | Choose an earlier or later message to go back to | The same | The selection takes its keys before history |
+| esc esc, then ↑ / ↓ (or k / j) | Choose an earlier or later message to go back to | The same | The selection takes its keys before history |
 | shift+↑ / shift+↓, pgup / pgdn, wheel | Scroll | The same | Codex uses shift+↑/↓ for the effort; uah keeps them for scrolling and uses alt+, / alt+. for the effort |
 | ctrl+r | Show or hide reasoning summaries | Reverse search | Codex binds ctrl+r to the search and has no key for reasoning. `/reasoning` still shows or hides them |
 | ctrl+s | Session picker | The same, except inside the search, where it goes to a newer match | Codex's `history_search_next` only applies while searching |

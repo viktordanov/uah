@@ -40,10 +40,10 @@ Checked against the [checkpointing](https://code.claude.com/docs/en/checkpointin
 | --- | --- |
 | esc on an empty composer, idle | Primes: "esc again to edit a previous message" in the status line |
 | esc again (within 2 seconds) | Selects your latest message, marks it `▶ … ↵ edit from here`, and scrolls to it |
-| esc, ↑, ← (while one is selected) | An earlier message |
-| ↓, → | A later message |
+| ↑, ←, k (while one is selected) | An earlier message |
+| ↓, →, j | A later message |
 | enter | Go back to before the message: it returns to the composer with its images |
-| ctrl+c | Cancel |
+| esc, ctrl+c | Cancel |
 | any other key | Cancel, then the key does what it does (a typed letter goes into the composer) |
 
 `/rewind` selects the latest message at once. ↑ on an empty composer still takes the last queued message back, since backtrack never starts with a queue. The selection lives in the reducer (`state.Backtrack`, `internal/tui/state/backtrack.go`); the renderer marks the message and computes the scroll that shows it a third of the way down (`internal/tui/render/backtrack.go`). Cancelling changes nothing.

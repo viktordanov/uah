@@ -13,9 +13,9 @@ import (
 // Going back to an earlier message, as Codex's backtrack
 // (codex-rs/tui/src/app_backtrack.rs, rust-v0.156.1): esc on an empty
 // composer while idle primes it, a second esc selects your latest message,
-// esc or ↑ steps to earlier ones and ↓ to later ones, enter goes back to
-// before the selected message and puts it in the composer, and any other
-// key cancels. /rewind selects at once. The transcript is cut when the
+// ↑ or k steps to earlier ones and ↓ or j to later ones, enter goes back
+// to before the selected message and puts it in the composer, and esc or
+// any other key cancels. /rewind selects at once. The transcript is cut when the
 // session reports engine.Rewound.
 
 // Backtrack is the selection while going back: Key is the selected user
@@ -39,7 +39,7 @@ func (EffRewind) effect() {}
 
 const (
 	backtrackPrimed = "esc again to edit a previous message"
-	backtrackHint   = "editing a previous message · esc/↑ earlier · ↓ later · enter edit from here · any other key cancels"
+	backtrackHint   = "editing a previous message · ↑/k earlier · ↓/j later · enter edit from here · esc or any other key cancels"
 	noBacktrack     = "No previous message to edit."
 )
 
@@ -83,11 +83,9 @@ func (s *State) onSelecting(ev any) ([]Effect, bool) {
 	switch e := ev.(type) {
 	case BacktrackMove:
 		s.moveBacktrack(e.Delta)
-	case Esc:
-		s.moveBacktrack(-1)
 	case BacktrackSelect:
 		return s.selectBacktrack(), true
-	case BacktrackCancel:
+	case BacktrackCancel, Esc:
 		s.Backtrack, s.Status = nil, ""
 	default:
 		return nil, false

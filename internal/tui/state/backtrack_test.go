@@ -56,18 +56,22 @@ func TestBacktrack_EscEscSelectsTheLatestAndStepsBack(t *testing.T) {
 	require.NotNil(t, s.Backtrack)
 	assert.Equal(t, "third", selectedText(s))
 
-	s, _ = apply(s, state.Esc{Empty: true}, state.BacktrackMove{Delta: -1})
-	assert.Equal(t, "first", selectedText(s), "esc and ↑ step back")
+	s, _ = apply(s, state.BacktrackMove{Delta: -1}, state.BacktrackMove{Delta: -1})
+	assert.Equal(t, "first", selectedText(s), "↑ steps back")
 	s, _ = apply(s, state.BacktrackMove{Delta: -1})
 	assert.Equal(t, "first", selectedText(s), "the first stays")
 	s, _ = apply(s, state.BacktrackMove{Delta: 1})
 	assert.Equal(t, "look [Image #1]", selectedText(s))
+
+	s, _ = apply(s, state.Esc{Empty: true})
+	assert.Nil(t, s.Backtrack, "esc leaves the selection")
+	assert.Empty(t, s.Status)
 }
 
 func TestBacktrack_SelectPutsTheMessageInTheComposerAndCutsOnRewound(t *testing.T) {
 	s := talked(t)
 	n := len(s.Items)
-	s, _ = apply(s, state.Esc{Empty: true}, state.Esc{Empty: true}, state.Esc{Empty: true})
+	s, _ = apply(s, state.Esc{Empty: true}, state.Esc{Empty: true}, state.BacktrackMove{Delta: -1})
 	s, effects := apply(s, state.BacktrackSelect{})
 	require.Len(t, effects, 2)
 	assert.Equal(t, state.EffRewind{ID: "m2"}, effects[0])
