@@ -5,14 +5,16 @@ package sandbox
 
 import "strings"
 
-// deniedKeywords are Codex's SANDBOX_DENIED_KEYWORDS, matched in lower case.
+// deniedKeywords are Codex's SANDBOX_DENIED_KEYWORDS, matched in lower case,
+// without its bare "sandbox", "seccomp", and "landlock": those name Codex's
+// own filters, which uah does not use (Seatbelt and bubblewrap make a
+// denied call fail with the errors below), and as plain words they flagged
+// any failed command whose output mentioned them, such as a search for
+// "sandbox" that ended with exit 1.
 var deniedKeywords = []string{
 	"operation not permitted",
 	"permission denied",
 	"read-only file system",
-	"seccomp",
-	"sandbox",
-	"landlock",
 	"failed to write file",
 }
 
@@ -28,14 +30,20 @@ var networkKeywords = []string{
 }
 
 // Denied reports whether a failed sandboxed command was probably stopped by
-// the sandbox, as Codex guesses: a non-zero exit code and output that
-// mentions a denial. There is no certain way to tell; a command can print
+// the sandbox, as Codex guesses: a non-zero exit code and an error that
+// mentions a denial. Errors go to stderr, so only stderr is read when the
+// command wrote any; stdout is read when stderr is empty, as for a command
+// run with 2>&1. There is no certain way to tell; a command can print
 // "permission denied" for its own reasons. Codex checks the keywords before
 // its quick-reject exit codes (2, 126, 127), so those codes never override a
 // keyword; its 128+SIGSYS rule is for its seccomp filter, which uah has not.
-func Denied(exitCode int, output string) bool {
+func Denied(exitCode int, stdout, stderr string) bool {
 	if exitCode == 0 {
 		return false
+	}
+	output := stderr
+	if strings.TrimSpace(output) == "" {
+		output = stdout
 	}
 	lower := strings.ToLower(output)
 	for _, k := range deniedKeywords {

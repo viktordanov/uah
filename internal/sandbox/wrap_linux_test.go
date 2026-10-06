@@ -105,12 +105,12 @@ func TestLinuxWorkspaceWrite(t *testing.T) {
 	code, out = sh(t, p, "echo hi > "+filepath.Join(r.outside, "x"))
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, out, "Read-only file system")
-	assert.True(t, sandbox.Denied(code, out), out)
+	assert.True(t, sandbox.Denied(code, out, ""), out)
 	assert.NoFileExists(t, filepath.Join(r.outside, "x"))
 
 	code, out = sh(t, p, "echo '[x]' >> .git/config")
 	assert.NotEqual(t, 0, code)
-	assert.True(t, sandbox.Denied(code, out), out)
+	assert.True(t, sandbox.Denied(code, out, ""), out)
 	data, err := os.ReadFile(filepath.Join(r.ws, ".git", "config"))
 	require.NoError(t, err)
 	assert.Equal(t, "[core]\n", string(data))
@@ -118,7 +118,7 @@ func TestLinuxWorkspaceWrite(t *testing.T) {
 	require.NoError(t, os.Mkdir(filepath.Join(r.ws, ".uah"), 0o700))
 	code, out = sh(t, p, "mkdir .uah/rules")
 	assert.NotEqual(t, 0, code)
-	assert.True(t, sandbox.Denied(code, out), out)
+	assert.True(t, sandbox.Denied(code, out, ""), out)
 
 	// A protected name that does not exist yet is not protected on Linux.
 	code, out = sh(t, p, "mkdir .codex")
@@ -135,7 +135,7 @@ func TestLinuxReadOnly(t *testing.T) {
 
 	code, out = sh(t, p, "echo hi > a")
 	assert.NotEqual(t, 0, code)
-	assert.True(t, sandbox.Denied(code, out), out)
+	assert.True(t, sandbox.Denied(code, out, ""), out)
 	assert.NoFileExists(t, filepath.Join(r.ws, "a"))
 }
 
@@ -150,7 +150,7 @@ func TestLinuxNetwork(t *testing.T) {
 	code, out := run(t, r.policy(sandbox.WorkspaceWrite, false), nil, bash, "-c", "exec 3<>/dev/tcp/1.1.1.1/443")
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, strings.ToLower(out), "network is unreachable")
-	assert.True(t, sandbox.Denied(code, out), out)
+	assert.True(t, sandbox.Denied(code, out, ""), out)
 }
 
 func TestLinuxInheritedOutput(t *testing.T) {
@@ -173,7 +173,7 @@ func TestLinuxExitCode(t *testing.T) {
 	code, out := sh(t, r.policy(sandbox.WorkspaceWrite, false), "echo failing >&2; exit 7")
 	assert.Equal(t, 7, code)
 	assert.Equal(t, "failing\n", out)
-	assert.False(t, sandbox.Denied(code, out))
+	assert.False(t, sandbox.Denied(code, out, ""))
 }
 
 // TestLinuxReadOnlyTempDir checks that a read-only command, run through the
@@ -208,7 +208,7 @@ EOF`)
 	for _, target := range []string{filepath.Join(r.ws, "a"), filepath.Join(r.outside, "a"), filepath.Join(r.base, "tmpdir", "a")} {
 		code, out = shRun("echo hi > " + target)
 		assert.NotEqual(t, 0, code, target)
-		assert.True(t, sandbox.Denied(code, out), out)
+		assert.True(t, sandbox.Denied(code, out, ""), out)
 	}
 }
 

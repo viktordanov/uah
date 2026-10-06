@@ -35,10 +35,21 @@ func TestDenied(t *testing.T) {
 		{"grep no match", 1, "", false},
 		{"compile error", 2, "./main.go:3:1: syntax error: non-declaration statement outside function body\n", false},
 		{"make failure", 2, "make: *** [Makefile:3: all] Error 1\n", false},
+		{"a search that mentions the sandbox", 1, "internal/sandbox/denied.go\nsandbox: see README\n", false},
+		{"seccomp in a word", 1, "docs/seccomp.md: no match\n", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			assert.Equal(t, c.want, sandbox.Denied(c.code, c.output))
+			assert.Equal(t, c.want, sandbox.Denied(c.code, c.output, ""), "as stdout alone, as with 2>&1")
+			assert.Equal(t, c.want, sandbox.Denied(c.code, "", c.output), "as stderr")
 		})
 	}
+}
+
+// TestDenied_StderrFirst: when a command wrote to stderr, only stderr
+// tells a denial, so a denial phrase in its stdout, such as a matched log
+// line, does not.
+func TestDenied_StderrFirst(t *testing.T) {
+	assert.False(t, sandbox.Denied(1, "log: Permission denied for user x\n", "grep: warning: something\n"))
+	assert.True(t, sandbox.Denied(1, "partial output\n", "touch: /Users/u/x: Operation not permitted\n"))
 }
