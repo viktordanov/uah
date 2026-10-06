@@ -102,3 +102,22 @@ func TestFind_Command(t *testing.T) {
 	assert.Nil(t, busy.Find)
 	assert.Nil(t, busy.Backtrack)
 }
+
+// TestFind_Stay: FindStay leaves the search and going back with the
+// window pinned where it was drawn; a window at the bottom just follows.
+func TestFind_Stay(t *testing.T) {
+	s := talked(t)
+	s, _ = apply(s, state.Esc{Empty: true}, state.Esc{Empty: true}, state.FindOpen{Query: "first"})
+	at := state.TextPos{Key: s.Items[1].Key, Line: 2}
+	s, _ = apply(s, state.FindStay{At: at, Scroll: 9, Width: 100})
+	assert.Nil(t, s.Find)
+	assert.Nil(t, s.Backtrack)
+	assert.Empty(t, s.Status)
+	assert.True(t, s.Pinned())
+	assert.Equal(t, at, s.Anchor)
+	assert.Equal(t, 9, s.Scroll)
+
+	bottom, _ := apply(talked(t), state.FindOpen{Query: "first"}, state.FindStay{At: at, Width: 100})
+	assert.False(t, bottom.Pinned())
+	assert.Empty(t, bottom.Anchor.Key)
+}

@@ -12,9 +12,11 @@ import (
 // it, ignoring case, are found off the update loop (EffFindInTranscript)
 // and the window shows the newest. While typing, ↑ and ↓ move between
 // them; enter ends the query, and then ↑ or k go to an earlier match and
-// ↓ or j to a later one. Esc goes back to choosing a message to edit, on
-// your message at or above the match, or leaves when going back is not
-// possible. The window holds the match a third of the way down, whatever
+// ↓ or j to a later one. Enter then leaves the search and going back with
+// the window scrolled back to the match, as if scrolled there (FindStay):
+// no run is stopped and nothing is cut. Esc goes back to choosing a
+// message to edit, on your message at or above the match, or leaves when
+// going back is not possible. The window holds the match a third of the way down, whatever
 // arrives below, and every line but the matches is drawn dim.
 
 // TranscriptSearch is an open search of the transcript.
@@ -48,8 +50,17 @@ type (
 	FindType struct{ Text string }
 	// FindMove goes to an earlier (-1) or a later (+1) match.
 	FindMove struct{ Delta int }
-	// FindEnter ends the query; while browsing it leaves as esc does.
+	// FindEnter ends the query; while browsing without a match it leaves
+	// as esc does.
 	FindEnter struct{}
+	// FindStay leaves the search and going back with the window where the
+	// last frame drew it: At is the line on its bottom row, Scroll the
+	// lines below it, as Anchored reports them.
+	FindStay struct {
+		At     TextPos
+		Scroll int
+		Width  int
+	}
 	// FindEsc leaves the search for choosing a message to edit.
 	FindEsc struct{}
 	// FindCancel leaves the search and going back altogether (ctrl+c).
@@ -116,6 +127,13 @@ func (s *State) onFind(ev any) ([]Effect, bool) {
 		f.Browsing = true
 	case FindEsc:
 		s.leaveFind()
+
+		return nil, true
+	case FindStay:
+		s.Find, s.Backtrack, s.Status = nil, nil, ""
+		s.Anchor, s.Scroll, s.NewBelow = e.At, e.Scroll, false
+		s.anchorLayout = layout{width: e.Width, details: s.Details, reasoning: s.ShowReasoning}
+		s.follow()
 
 		return nil, true
 	case FindCancel:
@@ -198,7 +216,7 @@ func (s *State) findHint() string {
 		fmt.Fprintf(&b, " · %d of %d", f.At+1, len(f.Keys))
 	}
 	if f.Browsing {
-		b.WriteString(" · ↑/k earlier · ↓/j later · esc back")
+		b.WriteString(" · ↑/k earlier · ↓/j later · enter stay here · esc back")
 	} else {
 		b.WriteString(" · ↑↓ move · enter done · esc back")
 	}

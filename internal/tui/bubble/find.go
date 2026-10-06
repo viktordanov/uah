@@ -13,6 +13,7 @@ const findPause = 40 * time.Millisecond
 
 // onFindKey maps a key while the transcript search is open: text edits
 // the query until enter, then j and k move; ↑ and ↓ move either way.
+// Enter on a match after that leaves with the window where it is.
 func (m Model) onFindKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 	browsing := m.st.Find.Browsing
 	switch key := msg.String(); {
@@ -20,6 +21,11 @@ func (m Model) onFindKey(msg term.KeyPressMsg) (term.Model, term.Cmd) {
 		return m.dispatch(state.FindMove{Delta: -1})
 	case key == keyDown || (browsing && key == "j"):
 		return m.dispatch(state.FindMove{Delta: 1})
+	case key == keyEnter && browsing && m.st.Find.Key() != "":
+		m.View() // the frame the window shows now, laid out in the cache
+		at, scroll := m.cache.Anchor()
+
+		return m.dispatch(state.FindStay{At: at, Scroll: scroll, Width: m.w})
 	case key == keyEnter:
 		return m.dispatch(state.FindEnter{})
 	case key == keyEsc:

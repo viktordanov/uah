@@ -211,6 +211,42 @@ func TestTUI_FindInTheTranscript(t *testing.T) {
 	assert.NotContains(t, d.view(), "▶")
 }
 
+// TestTUI_FindStaysOnTheMatch: enter on a match leaves the search and
+// going back with the window scrolled back to it; nothing is cut, and end
+// returns to the bottom.
+func TestTUI_FindStaysOnTheMatch(t *testing.T) {
+	var replies []fakellm.Reply
+	for i := 1; i <= 8; i++ {
+		replies = append(replies, fakellm.Reply{Text: fmt.Sprintf("answer %d", i)})
+	}
+	deps, llm := rewindDeps(t, replies...)
+	d := start(t, deps)
+	for i := 1; i <= 8; i++ {
+		d.typeText(fmt.Sprintf("message %d", i))
+		d.key(term.KeyEnter, 0)
+		d.waitFor(fmt.Sprintf("answer %d", i))
+		d.waitIdle()
+	}
+
+	d.key(term.KeyEscape, 0)
+	d.key(term.KeyEscape, 0)
+	d.typeText("/answer 2")
+	d.waitFor("/answer 2 · 1 of 1")
+	d.key(term.KeyEnter, 0)
+	d.waitFor("enter stay here")
+	d.key(term.KeyEnter, 0)
+	view := d.view()
+	assert.Contains(t, view, "answer 2")
+	assert.NotContains(t, view, "answer 8", "the window stays scrolled back")
+	assert.NotContains(t, view, "▶")
+	assert.NotContains(t, view, "/answer 2")
+	assert.Empty(t, d.draft())
+	assert.Len(t, llm.Requests(), 8, "nothing was sent or cut")
+
+	d.key(term.KeyEnd, 0)
+	d.waitFor("answer 8")
+}
+
 func TestComposerRows(t *testing.T) {
 	for h, want := range map[int]int{10: 8, 16: 8, 24: 12, 30: 15, 40: 20, 100: 50} {
 		assert.Equal(t, want, bubble.ComposerRows(h), "a terminal %d rows high", h)
