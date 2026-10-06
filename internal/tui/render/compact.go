@@ -241,10 +241,15 @@ func (st *Styles) workingLine(now time.Time, w state.Wait, run time.Time, width 
 		return ansi.Truncate(lead+words(w.Path), width, "…")
 	}
 	times := elapsed(now.Sub(run))
-	// The wait's own time only when it reads differently: a wait that
-	// began within the run's first second shows one time, not "6s · 6s".
-	if wait := elapsed(now.Sub(w.Since)); w.Since.After(run) && wait != times {
-		times = wait + " · " + times
+	// The wait's own time only when it began a whole unit of the shown
+	// time after the run, so the two always read differently. Comparing
+	// the rounded times instead would flicker between one time and two.
+	unit := time.Second
+	if now.Sub(run) >= time.Hour {
+		unit = time.Minute
+	}
+	if w.Since.Sub(run) >= unit {
+		times = elapsed(now.Sub(w.Since)) + " · " + times
 	}
 	full := st.dim.Render(" (" + times + " • " + cmp.Or(w.Hint, "esc to interrupt") + ")")
 	paths := shortPaths(w.Path)

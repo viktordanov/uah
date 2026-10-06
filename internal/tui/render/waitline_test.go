@@ -49,6 +49,12 @@ func TestWaitLine(t *testing.T) {
 		state.Tick{Now: t0.Add(6 * time.Second)},
 	)
 	assert.Contains(t, screen(early, ""), "Waiting for your answer (6s • esc to interrupt)")
+
+	// It stays one time at every tick within a second.
+	for ms := 6000; ms < 7000; ms += 100 {
+		got := screen(apply(early, state.Tick{Now: t0.Add(time.Duration(ms) * time.Millisecond)}), "")
+		assert.Regexp(t, `Waiting for your answer \([67]s • esc to interrupt\)`, got, "at %dms", ms)
+	}
 }
 
 // TestWaitLine_Narrow: a long path, a long command or an approval gives
