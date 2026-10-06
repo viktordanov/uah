@@ -98,7 +98,7 @@ This audit (items 33 and 51 of the ledger) lists each behavior and the code that
 | Permission mode to sandbox | `approval.Mode.Sandbox()`; the session sends the mode as `Options.Mode`, and the engine switches the shell per command (`embedded/mode.go`) |
 | The sandbox | `internal/sandbox`: `Wrap` and `Shell`; the engine picks a shell per command |
 | Rules: `allow`, `forbidden`, `prompt` | `approval.Approver.Decide`, called in the Bash tool (`embedded/sandboxtool.go`) |
-| Escalation, approvals, auto-review, Auto mode | The approver, `embedded/autoreview.go`, and the session's ask |
+| Escalation, approvals, auto-review, Auto mode | The approver, `embedded/autoreview.go`, and the session's ask; the review request's markers and no service tier, `embedded/reviewmarkers.go` |
 | MCP servers | `internal/mcp`, `embedded/mcptool.go` |
 | Subagents | `internal/agents`, `embedded/agenttool.go` |
 | The agent's questions (`request_user_input`) | `embedded/questiontool.go`; the session relays them (`internal/session/questions.go`) |

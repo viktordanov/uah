@@ -35,6 +35,7 @@ The breaker opens after 3 denials in a row or 10 in the last 50 reviews, as in C
 | Setting | Default | Key |
 | --- | --- | --- |
 | Model | `codex-auto-review` on openai-codex, else the session's model | `[review] model` |
+| Request markers | Always no `service_tier` and `x-openai-subagent: guardian` (header and `client_metadata`), as Codex sends; Codex's billing-classification markers (`x-codex-guardian: reviewer`, `parent_response_id`, and `guardian_credits_requested` on normal requests) only on openai-codex and only when opted in (`embedded/reviewmarkers.go`) | `[review] guardian_markers`, off |
 | Effort | low | `[review] effort` |
 | Timeout | 90 s | `[review] timeout` |
 | Policy | Codex's, `prompts/policy.md` | `[review] policy_file` |
