@@ -5,7 +5,7 @@
 Subagents are child sessions that a session's agent starts, messages, waits for, and closes through Codex's v1 multi-agent tools. `internal/agents` implements them behind the `engine.Subagents` seam: the embedded engine offers the tools and runs their calls in the background, and the package owns the tools, the children's lifecycle, approvals through the parent, limits, hooks, and resume.
 <!-- /memoria:export -->
 
-This README describes how the package works for someone changing it. The root README describes the feature for users, and [the design record](../../docs/design/subagents.md) keeps the research, the decisions, and the validation findings.
+This README describes how the package works for someone changing it. The [task guide](../../docs/guide.md#subagents-and-agent-files) describes the feature for users, and [the design record](../../docs/design/subagents.md) keeps the research, the decisions, and the validation findings.
 
 1. [The seam](#the-seam)
 2. [Parity with the root session](#parity-with-the-root-session)

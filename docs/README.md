@@ -1,13 +1,13 @@
-<!-- memoria:section id="overview" files="design/harness.md design/tui.md design/implementation.md design/state.md design/sandbox-research.md design/sandbox.md design/subagents.md design/compaction.md design/mcp.md design/usage.md design/images.md configuration.md ledger.md documentation/architecture.md documentation/memoria.md context-preparation.md design/shell-mode.md design/streaming.md design/markdown.md design/rewind.md design/selection.md design/codex-auth.md design/hosting.md design/editor.md design/system-prompt.md design/web-search.md design/review.md design/prompt-history.md design/tool-calls.md design/keys.md design/questions.md design/goal.md design/file-links.md" -->
+<!-- memoria:section id="overview" files="guide.md design/harness.md design/tui.md design/implementation.md design/state.md design/sandbox-research.md design/sandbox.md design/subagents.md design/compaction.md design/mcp.md design/usage.md design/images.md configuration.md ledger.md documentation/architecture.md documentation/memoria.md context-preparation.md design/shell-mode.md design/streaming.md design/markdown.md design/rewind.md design/selection.md design/codex-auth.md design/hosting.md design/editor.md design/system-prompt.md design/web-search.md design/review.md design/prompt-history.md design/tool-calls.md design/keys.md design/questions.md design/goal.md design/file-links.md" -->
 # Documentation
 
 <!-- memoria:export id="summary" -->
-The configuration reference, the context preparation guide, design records for the harness, the TUI, state storage, sandboxing, compaction, MCP, subagents, pasted images, streaming, Markdown rendering, going back to an earlier message, selecting text with the mouse, editing the prompt in an editor, the system prompt, web search, `/diff` and `/review`, goals (`/goal`), prompt history and the composer's height, how tool calls read in the transcript, file links and the peek overlay, keeping the ChatGPT login fresh, and running uah as a terminal host backend, plus the architecture rules and documentation procedure for uah.
+The task guides for using uah, the configuration reference, the context preparation guide, design records for the harness, the TUI, state storage, sandboxing, compaction, MCP, subagents, pasted images, streaming, Markdown rendering, going back to an earlier message, selecting text with the mouse, editing the prompt in an editor, the system prompt, web search, `/diff` and `/review`, goals (`/goal`), prompt history and the composer's height, how tool calls read in the transcript, file links and the peek overlay, keeping the ChatGPT login fresh, and running uah as a terminal host backend, plus the architecture rules and documentation procedure for uah.
 <!-- /memoria:export -->
 
 Where to start:
 
-1. The [root README](../README.md): what uah does and how to use it, and a link to every package README.
+1. The [root README](../README.md): what uah does, how to start, and a link to every package README.
 2. The [architecture rules](documentation/architecture.md): the packages, what may import what, and the rules every change follows.
 3. The package README of the code you change: its current contract.
 4. The [configuration reference](configuration.md).
@@ -49,8 +49,9 @@ Design:
 
 Reference:
 
-1. [Configuration](configuration.md): every configuration key with its type, default, flag, and merge rule; the home `~/.uah` and its files, the configuration layers, the precedence, and complete examples.
-2. [Context preparation](context-preparation.md): the message every new session starts with, its blocks, the module format and when a module applies, placeholders, where modules come from, the library, security, the commands, recipes, and troubleshooting.
+1. [Using uah](guide.md): task guides, grouped by what you are doing: models and effort, permission modes and rules, questions, goals, subagents, images, shell mode, web search, `/review`, compaction, sessions and the transcript, headless mode, and setting up AGENTS.md, skills, MCP servers, hooks, prompts, and `/config`.
+2. [Configuration](configuration.md): every configuration key with its type, default, flag, and merge rule; the home `~/.uah` and its files, the configuration layers, the precedence, and complete examples.
+3. [Context preparation](context-preparation.md): the message every new session starts with, its blocks, the module format and when a module applies, placeholders, where modules come from, the library, security, the commands, recipes, and troubleshooting.
 
 Work:
 

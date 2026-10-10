@@ -52,5 +52,5 @@ Run `memoria guidance --changed` to list the READMEs reviewed under older guidan
 
 ## Adding a README
 
-Add a README only for a reader who needs a contract of its own. Give it a `summary` export, link it from the root README (the handoff), import that summary where the root README mentions the topic, and run `memoria render README.md`.
+Add a README only for a reader who needs a contract of its own. Give it a `summary` export, link it from the code map in the root README (the handoff), and run `memoria render README.md`.
 Then follow the review loop.

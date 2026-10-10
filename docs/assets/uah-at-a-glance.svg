@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="340" viewBox="0 0 1000 340" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">uah at a glance</title>
+  <desc id="desc">You send messages from the TUI or uah exec to a uah session and get answers back. The session prepares the model's context from AGENTS.md, skills, and the prepared context, and keeps goals, subagents, and compaction. It sends requests to the model, on your ChatGPT plan through the Codex login or on an API key, and runs the model's tool calls on your machine: shell commands, apply_patch, and MCP tools, in the sandbox, with approvals.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7d8590"/>
+    </marker>
+  </defs>
+
+  <!-- You -->
+  <rect x="20" y="115" width="170" height="110" rx="10" fill="#6e7681"/>
+  <text x="105" y="155" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">You</text>
+  <text x="105" y="182" text-anchor="middle" font-size="14" fill="#ffffff">the TUI, or</text>
+  <text x="105" y="202" text-anchor="middle" font-size="14" fill="#ffffff">uah exec</text>
+
+  <!-- Session -->
+  <rect x="330" y="75" width="300" height="190" rx="10" fill="#3b74c4"/>
+  <text x="480" y="113" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">uah session</text>
+  <text x="480" y="145" text-anchor="middle" font-size="14" fill="#ffffff">prepared context</text>
+  <text x="480" y="170" text-anchor="middle" font-size="14" fill="#ffffff">AGENTS.md and skills</text>
+  <text x="480" y="195" text-anchor="middle" font-size="14" fill="#ffffff">goals and subagents</text>
+  <text x="480" y="220" text-anchor="middle" font-size="14" fill="#ffffff">compaction</text>
+  <text x="480" y="245" text-anchor="middle" font-size="14" fill="#ffffff">sessions you can resume</text>
+
+  <!-- Model -->
+  <rect x="730" y="20" width="250" height="120" rx="10" fill="#2e8b57"/>
+  <text x="855" y="55" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">The model</text>
+  <text x="855" y="85" text-anchor="middle" font-size="14" fill="#ffffff">your ChatGPT plan, through</text>
+  <text x="855" y="105" text-anchor="middle" font-size="14" fill="#ffffff">the Codex login,</text>
+  <text x="855" y="125" text-anchor="middle" font-size="14" fill="#ffffff">or an API key</text>
+
+  <!-- Machine -->
+  <rect x="730" y="200" width="250" height="120" rx="10" fill="#c0573a"/>
+  <text x="855" y="235" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Your machine</text>
+  <text x="855" y="265" text-anchor="middle" font-size="14" fill="#ffffff">shell commands, apply_patch,</text>
+  <text x="855" y="285" text-anchor="middle" font-size="14" fill="#ffffff">MCP tools; in the sandbox,</text>
+  <text x="855" y="305" text-anchor="middle" font-size="14" fill="#ffffff">with approvals</text>
+
+  <!-- You <-> session -->
+  <line x1="192" y1="150" x2="326" y2="150" stroke="#7d8590" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="259" y="140" text-anchor="middle" font-size="14" fill="#7d8590">messages</text>
+  <line x1="328" y1="190" x2="194" y2="190" stroke="#7d8590" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="261" y="212" text-anchor="middle" font-size="14" fill="#7d8590">answers</text>
+
+  <!-- session -> model -->
+  <line x1="632" y1="120" x2="726" y2="85" stroke="#7d8590" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="672" y="88" text-anchor="middle" font-size="14" fill="#7d8590">requests</text>
+
+  <!-- session -> machine -->
+  <line x1="632" y1="220" x2="726" y2="255" stroke="#7d8590" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="676" y="268" text-anchor="middle" font-size="14" fill="#7d8590">tool calls</text>
+</svg>

@@ -5,22 +5,22 @@ Section IDs identify a concern within a README. Keep the ID stable when a headin
 | ID | Concern |
 | --- | --- |
 | `overview` | What the README covers and why it exists |
-| `usage` | Commands, inputs, and results |
+| `usage` | Where to start, install, keys, and what carries over from Codex and Claude Code: the root README's; commands, inputs, and results elsewhere |
 | `tui` | Keys, commands, and views of the terminal UI |
 | `engines` | The engine |
 | `compaction` | Compaction and the context meter |
 | `instructions` | AGENTS.md discovery and the host prompt |
-| `context`, `contextprep` | Context preparation: the root README's introduction to the feature, and its summary under How it works |
+| `context`, `contextprep` | Context preparation: the root README's introduction to the feature, and the context preparation package's README |
 | `hooks` | Hook events, contract, and trust |
 | `mcp` | MCP servers: configuration, tools, and results |
-| `patch`, `format`, `apply`, `diff`, `tool` | File edits: the patch package's README and its summary in the root README |
+| `patch`, `format`, `apply`, `diff`, `tool` | File edits: the patch package's README |
 | `lifecycle` | How a long-lived component starts, runs, fails, and stops |
 | `calls` | How a request flows through the components that serve it |
 | `approvals` | What asks the user before it runs, and how |
 | `auth` | Authorization, logins, and where credentials are stored |
 | `extending` | Where and how to add to a package |
 | `subagents` | Subagent tools, `[agents]` keys, and role files |
-| `goals`, `goal`, `texts`, `display` | Goals (`/goal`): the root README's task and summary, the session's and the TUI's sections, and the goal package's README: the goal, the texts the model reads, and what the user sees |
+| `goals`, `goal`, `texts`, `display` | Goals (`/goal`): the session's and the TUI's sections, and the goal package's README: the goal, the texts the model reads, and what the user sees |
 | `seam`, `parity`, `lifecycle`, `tools`, `events`, `fork`, `watch`, `resume`, `limits`, `roles`, `extending` | The subagent package's README: its contract with the engine, a child's parity with the root session, a child's lifecycle, the tools, events and hooks, forking, watching a child, resume, limits, roles, and how to extend it |
 | `configuration` | Configuration files and precedence |
 | `development` | Building, testing, linting, and CI |
