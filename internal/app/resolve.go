@@ -153,6 +153,9 @@ type Resolved struct {
 	// NoSkills turns skills off: none is discovered or offered
 	// (--no-skills, or [skills] enabled = false).
 	NoSkills bool
+	// NoSkillMentions keeps "$name" in a message from loading the skill
+	// ([tui] skill_mentions = false).
+	NoSkillMentions bool
 }
 
 // UsageError is an error in what the user asked for, such as an invalid
@@ -251,7 +254,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 		Settings: s, MaxDisk: maxDisk, Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
 		Sandbox: policy, Env: envPolicy, Compaction: compact, CompactPromptFile: promptFile, Approval: approvalPolicy, Rules: configured,
 		ApprovalsReviewer: reviewer, Review: reviewCfg, Agents: agentSettings, WebSearch: webSearch, Verbosity: verbosity, DefaultModel: defaulted,
-		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills,
+		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills, NoSkillMentions: !cfg.TUI.SkillMentionsOn(),
 	}, nil
 }
 

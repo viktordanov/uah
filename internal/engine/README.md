@@ -82,7 +82,7 @@ Every feature runs on the one engine. What still varies is the provider and the 
 A run keeps uagent's disk limit and session lock and writes run records. uah sends no timeout, so uagent puts no wall-clock limit on a run or a subagent's run. The engine never loads the workspace `.env`.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="behaviors" files="embedded/tools.go embedded/mode.go embedded/skills.go embedded/pretooluse.go embedded/questiontool.go embedded/policy.go embedded/grants.go" -->
+<!-- memoria:section id="behaviors" files="embedded/tools.go embedded/mode.go embedded/skills.go embedded/mentions.go embedded/pretooluse.go embedded/questiontool.go embedded/policy.go embedded/grants.go" -->
 ## Where each behavior lives
 
 This audit (items 33 and 51 of the ledger) lists each behavior and the code that does it.
@@ -90,7 +90,7 @@ This audit (items 33 and 51 of the ledger) lists each behavior and the code that
 | Behavior | Where |
 | --- | --- |
 | Instructions (AGENTS.md and the host prompt) | `internal/app` loads them into `Settings.SystemPrompt`; the session sends it with each request |
-| Skills | `embedded/skills.go`, through the runner's `SkillUse`, from Codex's folders, the runner's `.harness/skills`, and last uah's system skills (`internal/systemskills`), written to `~/.uah/skills/.system` when a session starts; none with `Config.NoSkills` (`--no-skills`) |
+| Skills | `embedded/skills.go`, through the runner's `SkillUse`, from Codex's folders, the runner's `.harness/skills`, and last uah's system skills (`internal/systemskills`), written to `~/.uah/skills/.system` when a session starts; none with `Config.NoSkills` (`--no-skills`). A user message that names a skill as `$name` loads it (`embedded/mentions.go`, as Codex's skill injection): a developer message with its `SKILL.md`, as `<skill><name>…</name><path>…</path>…</skill>`, goes before the message, at a run's start and for a message sent into a live run (`agent.Send`), so the model has it without a `SkillUse` call, and a compaction keeps it whole as it keeps every developer message (`compaction.Developer`). Only a `$` that starts a word, and only a name the run may load, counts: `$HOME` stays text; none with skills off, `Config.NoSkillMentions` (`[tui] skill_mentions = false`), or a tool policy or subagent scope that refuses `SkillUse` |
 | The tool policy (`[tools] allow` and `deny`, `--tools`, `--deny-tools`) | `internal/toolpolicy` (names, matching, narrowing); `internal/config` narrows the files' lists, `internal/app` the resumed session's and the flags'; `embedded/policy.go` applies it to the registry ([below](#the-tool-registry)) |
 | SessionStart, UserPromptSubmit, PostToolUse, Stop, SessionEnd hooks | `internal/session/hooks.go` |
 | PreToolUse hooks | `embedded/pretooluse.go`, around the tool registry |
@@ -338,6 +338,7 @@ The tests run against `testing/fakellm`, a scripted Responses API, and need no t
 | --- | --- |
 | `TestEmbedded_MatchesTheRunner` | The real `uah-core-runner` (built from go.mod's version) and the embedded engine get the same script and must produce the same events, session items, and model requests but for the engine's own tools (`apply_patch`, and `SkillUse` for the system skills). `go test -short` skips it |
 | `TestEmbedded_CodexSkills`, `TestEmbedded_SystemSkills` | The skill folders' order; the system skills written under `~/.uah/skills/.system` and offered, and replaced by a skill of the same name in another folder |
+| `TestEmbedded_SkillMentionLoadsTheSkill`, `mentions_internal_test.go` | A `$name` mention loading the skill's `SKILL.md` as a developer message once, kept in the history for the next run, none for `$HOME` or with `NoSkillMentions`; which `$` words are mentions |
 | `TestEmbedded_SteersALiveRun`, `TestEmbedded_ChangesSettingsLive`, `TestEmbedded_InterruptThenContinue` | Live input, live settings, and interrupts |
 | `TestEmbedded_ResumesAProcessSession` | A session the real runner started resumes on the embedded engine with its history. `go test -short` skips it |
 | `patch_test.go`, `patch_tool_test.go` | `apply_patch` end to end: the custom tool's definition, patches inside and outside the workspace, read only, protected paths, declines, verification, hooks and their `updatedInput`, the approver's input, the live mode, a directory swapped for a symlink between the check and the job (`BeforePatchWrite`), forbid rules in workspace and yolo; a session recorded with the function tool rewinds, resumes, and goes on with a custom call, its old call sent back as recorded |

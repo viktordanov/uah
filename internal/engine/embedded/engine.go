@@ -132,6 +132,9 @@ type Config struct {
 	// NoSkills turns skills off: no skill is discovered, and none is
 	// listed in the prompt or offered through SkillUse.
 	NoSkills bool
+	// NoSkillMentions keeps a message's "$name" from loading the skill
+	// ([tui] skill_mentions = false, which also turns off the "$" menu).
+	NoSkillMentions bool
 	// Subagents, when set, offers its tools to the runs it attaches and
 	// hears when the user interrupts a run; the engine closes it when it is
 	// an io.Closer.

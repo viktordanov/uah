@@ -30,6 +30,9 @@ type agent struct {
 	// stopApprovals ends the hooks and approvals in progress, which the
 	// coordinator waits for before it reads an interrupt.
 	stopApprovals context.CancelFunc
+	// mentioned is a message with the skills it mentions before it
+	// (withMentions).
+	mentioned func(core.UserInput) []core.UserInput
 
 	interrupted atomic.Bool
 	stopOnce    sync.Once
@@ -66,14 +69,24 @@ func (a *agent) Interrupt() {
 func (a *agent) Terminate() { a.interrupted.Store(true); a.cancel() }
 func (a *agent) Kill()      { a.Terminate() }
 
-// Send delivers a message to the running agent.
+// Send delivers a message to the running agent, after the skills it
+// mentions.
 func (a *agent) Send(in core.UserInput) error {
-	input, err := messageInput(in)
-	if err != nil {
-		return err
+	messages := []core.UserInput{in}
+	if a.mentioned != nil {
+		messages = a.mentioned(in)
+	}
+	for _, m := range messages {
+		input, err := messageInput(m)
+		if err != nil {
+			return err
+		}
+		if err := a.submit(input); err != nil {
+			return err
+		}
 	}
 
-	return a.submit(input)
+	return nil
 }
 
 // messageInput is a message as the inbox takes it: the user's, or a

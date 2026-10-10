@@ -3,6 +3,7 @@ package embedded_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -100,4 +101,36 @@ func TestEmbedded_SkillsListsTheMenu(t *testing.T) {
 	assert.Empty(t, off.Skills(e.Workspace))
 	denied := embedded.New(embedded.Config{StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, Tools: toolpolicy.Policy{Deny: []string{"SkillUse"}}})
 	assert.Empty(t, denied.Skills(e.Workspace))
+}
+
+// TestEmbedded_SkillMentionLoadsTheSkill: a message that names a skill as
+// "$name" gives the run the skill's SKILL.md, a developer message before
+// it, as Codex does; a "$" word that names no skill loads nothing, the
+// next run keeps the skill in its history without loading it again, and
+// [tui] skill_mentions = false loads none.
+func TestEmbedded_SkillMentionLoadsTheSkill(t *testing.T) {
+	e := newEnv(t, fakellm.Reply{Text: "ok"}, fakellm.Reply{Text: "ok"})
+	writeSkill(t, filepath.Join(e.Workspace, ".agents", "skills"), "release", "Cut a release")
+	s, ev := e.open(t, e.embedded(), "")
+	_, err := s.Submit("cut it with $release, not $HOME")
+	require.NoError(t, err)
+	ev.finished()
+	_, err = s.Submit("again")
+	require.NoError(t, err)
+	ev.finished()
+
+	reqs := e.llm.Requests()
+	require.Len(t, reqs[0].DeveloperTexts, 1)
+	loaded := reqs[0].DeveloperTexts[0]
+	assert.True(t, strings.HasPrefix(loaded, "<skill>\n<name>release</name>\n<path>"), loaded)
+	assert.Contains(t, loaded, "Steps.\n</skill>")
+	assert.Equal(t, []string{loaded}, reqs[1].DeveloperTexts, "once, in the history")
+
+	off := newEnv(t, fakellm.Reply{Text: "ok"})
+	writeSkill(t, filepath.Join(off.Workspace, ".agents", "skills"), "release", "Cut a release")
+	s, ev = off.open(t, embedded.New(embedded.Config{StateDir: off.StateDir, Provider: "openai", Getenv: off.getenv, NoSkillMentions: true}), "")
+	_, err = s.Submit("cut it with $release")
+	require.NoError(t, err)
+	ev.finished()
+	assert.Empty(t, off.llm.Requests()[0].DeveloperTexts)
 }

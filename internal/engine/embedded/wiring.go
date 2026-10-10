@@ -151,7 +151,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if req.SessionID == "" {
 		req.SessionID = uuid.NewString() // as openStore would, so the prepared context knows it
 	}
-	messages = w.prepared(ctx, req, messages)
+	messages = w.prepared(ctx, req, w.withMentions(req, messages))
 	model, sw, err := w.client(req, opts)
 	if err != nil {
 		return nil, err
@@ -214,6 +214,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 		return nil, err
 	}
 	a.compactor, a.mode, a.stopApprovals = comp, w.mode, stopApprovals
+	a.mentioned = func(in core.UserInput) []core.UserInput { return w.withMentions(req, []core.UserInput{in}) }
 
 	builder := newContextBuilder(registry, model, req)
 	for _, t := range w.hostedTools(req.Provider, req.SessionID) {
