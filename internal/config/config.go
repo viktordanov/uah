@@ -363,6 +363,9 @@ type TUI struct {
 	// terminal that does not erase with the background in force. Off by
 	// default: they are dropped or written as an erase (EL).
 	KeepBlanks bool `toml:"keep_blanks"`
+	// SkillMentions completes a skill's name after "$" in the composer, as
+	// Codex does (on when unset, SkillMentionsOn).
+	SkillMentions *bool `toml:"skill_mentions"`
 }
 
 // History configures <home>/history.jsonl, the prompts ↑ and ctrl+r
@@ -397,6 +400,10 @@ func (t TUI) FileLinksMode() string {
 
 	return t.FileLinks
 }
+
+// SkillMentionsOn reports whether "$" completes skill names: on unless set
+// false.
+func (t TUI) SkillMentionsOn() bool { return t.SkillMentions == nil || *t.SkillMentions }
 
 // TitleOn reports whether the TUI sets the terminal's title and progress:
 // on unless set false.

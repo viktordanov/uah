@@ -62,6 +62,7 @@ tui.mouse                                         true                          
 tui.title                                         true                          default
 tui.sync_in_multiplexer                           false                         default
 tui.keep_blanks                                   false                         default
+tui.skill_mentions                                true                          default
 tui.file_links                                    peek                          default
 history.persistence                               save-all                      default
 history.max_bytes                                 8388608                       default

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/tui/state"
@@ -153,6 +154,17 @@ func (m Model) run(e state.Effect) term.Cmd { //nolint:gocyclo // a dispatch swi
 		dir := m.deps.Cwd
 
 		return func() term.Msg { return state.FilesLoaded{Paths: workspaceFiles(m.ctx, dir)} }
+	case state.EffLoadSkills:
+		sess := m.sess
+
+		return func() term.Msg {
+			skills := []engine.Skill{}
+			if sess != nil {
+				skills = append(skills, sess.Skills()...)
+			}
+
+			return state.SkillsLoaded{Skills: skills}
+		}
 	case state.EffLoadConfig:
 		if m.deps.Config == nil {
 			return func() term.Msg { return state.ConfigLoaded{Err: errNoConfig} }

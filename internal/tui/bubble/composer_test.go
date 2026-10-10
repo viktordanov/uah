@@ -96,3 +96,17 @@ func TestTUI_NewLinesAfterALongPaste(t *testing.T) {
 	want := strings.Join(append(pasted, "after shift", "after ctrl"), "\n")
 	assert.Contains(t, reqs[1].UserTexts, want, "the model gets all 52 lines")
 }
+
+// TestTUI_SkillMenu: "$" completes a skill's name from the engine's
+// skills, here uah's system skill, with tab or enter, as Codex does.
+func TestTUI_SkillMenu(t *testing.T) {
+	llm := fakellm.New(t, fakellm.Reply{Text: "ok"})
+	d := start(t, liveDeps(t, llm))
+	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
+
+	d.typeText("use $uah-cus")
+	d.waitFor("$uah-customization")
+	d.key(term.KeyTab, 0)
+	assert.Equal(t, "use $uah-customization ", d.draft())
+	assert.Empty(t, llm.Requests(), "completing sends nothing")
+}

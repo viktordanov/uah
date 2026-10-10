@@ -53,6 +53,7 @@ Optional interfaces are the seams the session probes with a type assertion. The 
 | `MCPLister` | `/mcp`: each MCP server's state and tools | embedded |
 | `MCPClient` | The user's own use of the MCP servers: the TUI's MCP prompts as slash commands and resources after "@" (`MCP` returns the manager) | embedded |
 | `MCPStarter` | An interactive session connects the MCP servers as it opens, before any message: `StartMCP` waits until each has started or failed and reports them. A subagent's session gets the parent's engine without it | embedded |
+| `SkillLister` | The TUI's `$` menu: the skills a run in a workspace may load, with their descriptions; none with skills off or a tool policy that refuses `SkillUse` (`Session.Skills`) | embedded |
 | `ContextReporter` | `/context`: the breakdown of the session's last model request | embedded |
 | `Forgetter` | The session calls `Forget` when it closes, so per-session state (the auto-review transcript, the last request for `/context`, a cache key) does not outlive it | embedded |
 | `io.Closer` | The session closes the engine with itself, stopping MCP servers and subagents | embedded |

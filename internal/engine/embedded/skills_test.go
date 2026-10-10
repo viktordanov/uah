@@ -9,7 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/config"
+	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/systemskills"
+	"github.com/viktordanov/uah/internal/toolpolicy"
 	"github.com/viktordanov/uah/testing/fakellm"
 )
 
@@ -69,4 +71,28 @@ func TestEmbedded_SystemSkills(t *testing.T) {
 	req = e2.llm.Requests()[0]
 	assert.Contains(t, req.System+req.Tools["SkillUse"], "Notes on uah from the user")
 	assert.NotContains(t, req.System+req.Tools["SkillUse"], "How uah itself works", "the user's skill replaces the system skill")
+}
+
+// TestEmbedded_SkillsListsTheMenu: Skills lists what a run in the
+// workspace may load, for the "$" menu, a name in a more specific root
+// first; none with skills off or a policy that refuses SkillUse.
+func TestEmbedded_SkillsListsTheMenu(t *testing.T) {
+	e := newEnv(t)
+	writeSkill(t, filepath.Join(e.Workspace, ".agents", "skills"), "release", "Cut a release from the project")
+	writeSkill(t, filepath.Join(e.CodexHome, "skills"), "release", "The user's release steps")
+	writeSkill(t, filepath.Join(e.CodexHome, "skills"), "triage", "Triage an issue")
+
+	got := e.embedded().Skills(e.Workspace)
+	byName := map[string]string{}
+	for _, s := range got {
+		byName[s.Name] = s.Description
+	}
+	assert.Equal(t, "Cut a release from the project", byName["release"])
+	assert.Equal(t, "Triage an issue", byName["triage"])
+	assert.Contains(t, byName, "uah-customization", "the system skills too")
+
+	off := embedded.New(embedded.Config{StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, NoSkills: true})
+	assert.Empty(t, off.Skills(e.Workspace))
+	denied := embedded.New(embedded.Config{StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, Tools: toolpolicy.Policy{Deny: []string{"SkillUse"}}})
+	assert.Empty(t, denied.Skills(e.Workspace))
 }

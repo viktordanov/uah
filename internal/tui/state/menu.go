@@ -5,6 +5,7 @@ import (
 
 	"github.com/sahilm/fuzzy"
 
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
@@ -38,6 +39,10 @@ type Menu struct {
 	// time an "@" word starts.
 	Resources        []mcp.ResourceRef
 	resourcesLoading bool
+	// Skills are the skills for "$" (skills.go), loaded again each time a
+	// "$" word starts, as a skill can be added meanwhile.
+	Skills        []engine.Skill
+	skillsLoading bool
 }
 
 // Suggestion is one menu entry. Accepting it replaces the draft with Draft.
@@ -75,6 +80,9 @@ type (
 func (s State) Suggestions(draft string) []Suggestion {
 	if draft == "" || draft == s.Menu.Closed || s.Shell || s.showsRecalled(draft) {
 		return nil
+	}
+	if at, ok := s.skillAt(draft); ok {
+		return s.skillSuggestions(draft, at)
 	}
 	if at, ok := mentionAt(draft); ok {
 		out := append(s.resourceSuggestions(draft, at), s.fileSuggestions(draft, at)...)
@@ -187,6 +195,7 @@ func (s *State) loadMenu(draft string) []Effect {
 			effects = append(effects, EffLoadMCPResources{})
 		}
 	}
+	effects = append(effects, s.loadSkills(draft)...)
 	naming := strings.HasPrefix(draft, "/") && !strings.ContainsAny(draft, " \n")
 	if naming && (s.Menu.Prompts == nil || draft == "/") && !s.Menu.promptsLoading {
 		s.Menu.promptsLoading = true
@@ -210,6 +219,8 @@ func (s *State) onMenu(ev any) (effects []Effect, ok bool) {
 		}
 
 		return s.loadMenu(e.Draft), true
+	case SkillsLoaded:
+		s.Menu.Skills, s.Menu.skillsLoading = e.Skills, false
 	case MCPPromptsLoaded:
 		s.Menu.Prompts, s.Menu.promptsLoading = e.Prompts, false
 	case MCPResourcesLoaded:

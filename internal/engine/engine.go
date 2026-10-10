@@ -56,6 +56,17 @@ type MCPStarter interface {
 	StartMCP(ctx context.Context) []mcp.ServerStatus
 }
 
+// SkillLister is an engine that can list the skills a run in a workspace
+// may load, for the TUI's "$" menu.
+type SkillLister interface {
+	// Skills lists them, a name found in a more specific root first; none
+	// with skills off or a tool policy that refuses SkillUse.
+	Skills(workspace string) []Skill
+}
+
+// Skill is a skill's name and what it is for, from its SKILL.md.
+type Skill struct{ Name, Description string }
+
 // ContextReporter is an engine that can break down the context of its last
 // model request, for /context.
 type ContextReporter interface {

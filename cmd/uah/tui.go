@@ -79,15 +79,16 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 	ctx = tuiContext(ctx)
 
 	deps := bubble.Deps{
-		SessionID:   first,
-		Prompt:      launch.prompt,
-		Cwd:         cwd,
-		Picker:      launch.picker,
-		AllSessions: launch.all,
-		Details:     st.Config.TUI.Details,
-		Mouse:       st.Config.TUI.MouseOn(),
-		Title:       st.Config.TUI.TitleOn(),
-		FileLinks:   st.Config.TUI.FileLinksMode(),
+		SessionID:       first,
+		Prompt:          launch.prompt,
+		Cwd:             cwd,
+		Picker:          launch.picker,
+		AllSessions:     launch.all,
+		Details:         st.Config.TUI.Details,
+		Mouse:           st.Config.TUI.MouseOn(),
+		Title:           st.Config.TUI.TitleOn(),
+		FileLinks:       st.Config.TUI.FileLinksMode(),
+		NoSkillMentions: !st.Config.TUI.SkillMentionsOn(),
 		Terminal: term.Options{
 			SyncInMultiplexer: st.Config.TUI.SyncInMultiplexer,
 			KeepBlanks:        st.Config.TUI.KeepBlanks,

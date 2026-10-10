@@ -325,6 +325,17 @@ func (s *Session) MCPServers() (servers []mcp.ServerStatus, ok bool) {
 	return l.MCPServers(), true
 }
 
+// Skills lists the skills a run in the session's workspace may load, for
+// the TUI's "$" menu; none when the engine cannot list them.
+func (s *Session) Skills() []engine.Skill {
+	l, ok := s.eng.(engine.SkillLister)
+	if !ok {
+		return nil
+	}
+
+	return l.Skills(s.current.Load().Workspace)
+}
+
 // MCP is the engine's MCP servers, for their prompts and resources; nil
 // when the engine runs none.
 func (s *Session) MCP() *mcp.Manager {

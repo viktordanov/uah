@@ -20,16 +20,7 @@ func merge(base, over Config) Config {
 	set(&base.WebSearch, over.WebSearch)
 	set(&base.ModelVerbosity, over.ModelVerbosity)
 	base.Fast = base.Fast || over.Fast
-	base.TUI.Details = base.TUI.Details || over.TUI.Details
-	base.TUI.SyncInMultiplexer = base.TUI.SyncInMultiplexer || over.TUI.SyncInMultiplexer
-	base.TUI.KeepBlanks = base.TUI.KeepBlanks || over.TUI.KeepBlanks
-	if over.TUI.Mouse != nil {
-		base.TUI.Mouse = over.TUI.Mouse
-	}
-	if over.TUI.Title != nil {
-		base.TUI.Title = over.TUI.Title
-	}
-	set(&base.TUI.FileLinks, over.TUI.FileLinks)
+	base.TUI = mergeTUI(base.TUI, over.TUI)
 	set(&base.History.Persistence, over.History.Persistence)
 	if over.History.MaxBytes != nil {
 		base.History.MaxBytes = over.History.MaxBytes
@@ -111,6 +102,21 @@ func set(dst *string, v string) {
 	if v != "" {
 		*dst = v
 	}
+}
+
+// mergeTUI merges the [tui] keys.
+func mergeTUI(base, over TUI) TUI {
+	base.Details = base.Details || over.Details
+	base.SyncInMultiplexer = base.SyncInMultiplexer || over.SyncInMultiplexer
+	base.KeepBlanks = base.KeepBlanks || over.KeepBlanks
+	for _, b := range []struct{ dst, v **bool }{{&base.Mouse, &over.Mouse}, {&base.Title, &over.Title}, {&base.SkillMentions, &over.SkillMentions}} {
+		if *b.v != nil {
+			*b.dst = *b.v
+		}
+	}
+	set(&base.FileLinks, over.FileLinks)
+
+	return base
 }
 
 // mergeSandbox merges the sandbox, approval, and review keys.

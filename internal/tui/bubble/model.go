@@ -103,6 +103,9 @@ type Deps struct {
 	// FileLinks is what a click on a file path does, [tui] file_links:
 	// "peek", "editor", "open", or "off" ("" too: no links).
 	FileLinks string
+	// NoSkillMentions turns the "$" menu of skill names off ([tui]
+	// skill_mentions = false).
+	NoSkillMentions bool
 	// Terminal are the terminal's options from [tui]: synchronized output
 	// inside tmux or screen, and blanks written as spaces.
 	Terminal term.Options
@@ -173,7 +176,7 @@ func New(ctx context.Context, deps Deps) Model {
 	st.Details, st.Mouse, st.Title, st.Windows = deps.Details, deps.Mouse, deps.Title, deps.Windows
 	st.Home, _ = os.UserHomeDir()
 	st.Host, _ = os.Hostname()
-	st.FileLinks = deps.FileLinks
+	st.FileLinks, st.NoSkillMentions = deps.FileLinks, deps.NoSkillMentions
 
 	m := Model{
 		ctx: ctx, deps: deps, st: st,
@@ -297,7 +300,7 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 		m.sess = nil
 
 		return m, term.Quit
-	case state.Failed, state.SessionsLoaded, state.ActivityLoaded, state.FilesLoaded, state.MCPListed, state.ContextShown,
+	case state.Failed, state.SessionsLoaded, state.ActivityLoaded, state.FilesLoaded, state.SkillsLoaded, state.MCPListed, state.ContextShown,
 		state.ModelsLoaded, state.ConfigLoaded, state.ConfigSaved, state.ImageAttached, state.ImageFailed, state.DraftEdited:
 		return m.dispatch(msg)
 	case state.UsageLoaded, state.CacheLoaded, state.Copied, state.DiffShown, state.ReviewTargetsLoaded, state.PromptsLoaded, state.Found:

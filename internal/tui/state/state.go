@@ -178,6 +178,8 @@ type State struct {
 	// LinksEditor, LinksOpen, or LinksOff, which draws no links ("" too).
 	// The shell sets it from [tui] file_links (links.go).
 	FileLinks string
+	// NoSkillMentions turns the "$" menu of skill names off.
+	NoSkillMentions bool
 	// Host is this machine's name, for the links' file:// URLs. The shell
 	// sets it.
 	Host string

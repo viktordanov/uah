@@ -9,6 +9,7 @@ import (
 	"github.com/viktordanov/uah-core/harness/tool"
 
 	"github.com/viktordanov/uah/internal/config"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/instructions"
 	"github.com/viktordanov/uah/internal/systemskills"
 )
@@ -42,6 +43,21 @@ func skillRoots(workspace string, getenv func(string) string) []string {
 // systemSkillsRoot is where uah writes its system skills: ~/.uah/skills/.system.
 func systemSkillsRoot() string {
 	return filepath.Join(config.Dir(), "skills", systemskills.DirName)
+}
+
+// Skills lists the skills a run in workspace may load (engine.SkillLister):
+// none with skills off, or when the tool policy refuses SkillUse.
+func (e *Engine) Skills(workspace string) []engine.Skill {
+	if e.cfg.NoSkills || !e.cfg.Tools.Allows(tool.SkillUseName) {
+		return nil
+	}
+	found, _ := discoverSkills(workspace, e.cfg.Getenv)
+	out := make([]engine.Skill, 0, len(found))
+	for _, s := range found {
+		out = append(out, engine.Skill{Name: s.Name, Description: s.Description})
+	}
+
+	return out
 }
 
 // discoverSkills writes the system skills, then reads the skills under
