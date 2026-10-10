@@ -4,7 +4,7 @@
 `internal/goal` is Codex's `/goal` as data: a session's goal, its statuses and usage, the texts that tell the model about it, the goal tools' definitions and results, and the words the TUI and `uah exec` show. It does no I/O and imports no uah package. The session keeps the goal and continues it ([sessions](../session/README.md#goals)), the engine offers the tools ([engine](../engine/README.md#the-goal-tools)), and the TUI drives it ([TUI](../tui/README.md#goals)). The [design record](../../docs/design/goal.md) has Codex's behavior, checked at b741e48, and the decisions.
 
 <!-- memoria:export id="summary" -->
-`/goal <objective>` keeps the agent working, run after run, until the model marks the goal complete with Codex's `update_goal` after Codex's completion audit. Each automatic run starts with Codex's continuation message; the goal, kept in the session's sidecar, survives a resume and a compaction. A token budget, a cap of 50 automatic runs, a failed run, and three runs in a row without progress stop it; an interrupt pauses it, and `/goal clear` or `/clear` drops it. Subagents never inherit it.
+`/goal <objective>` keeps the agent working, run after run, until the model marks the goal complete with Codex's `update_goal` after Codex's completion audit. Each automatic continuation is Codex's continuation message; one run holds up to 16 goal turns, and the next continuation starts a new run; the goal, kept in the session's sidecar, survives a resume and a compaction. A token budget, a cap of 50 automatic continuations, a failed run, and three runs in a row without progress stop it; an interrupt pauses it, and `/goal clear` or `/clear` drops it. Subagents never inherit it.
 <!-- /memoria:export -->
 
 1. [The goal](#the-goal)
@@ -17,7 +17,7 @@
 <!-- memoria:section id="goal" files="goal.go" -->
 ## The goal
 
-`Goal` is what the session keeps in its sidecar's `goal` field: Codex's fields (an ID, the objective, the status, the token budget, the tokens and seconds used, the times) and uah's (`Continuations`, the runs uah started for it, `MaxContinuations`, their cap, and `Reason`, why a guard stopped it). The statuses are Codex's, but `usage_limited`: `active`, `paused`, `blocked` (shown as stalled), `budget_limited`, and `complete`; `Finished` is true for the last two, which a new goal replaces without a clear.
+`Goal` is what the session keeps in its sidecar's `goal` field: Codex's fields (an ID, the objective, the status, the token budget, the tokens and seconds used, the times) and uah's (`Continuations`, the continuations uah gave it, `MaxContinuations`, their cap, and `Reason`, why a guard stopped it). The statuses are Codex's, but `usage_limited`: `active`, `paused`, `blocked` (shown as stalled), `budget_limited`, and `complete`; `Finished` is true for the last two, which a new goal replaces without a clear.
 
 | Function | Does |
 | --- | --- |
@@ -26,7 +26,7 @@
 | `TokenDelta` | What one model response adds to the goal's tokens: input not read from the cache, plus output, Codex's `goal_token_delta_for_usage` |
 | `OverBudget`, `OutOfContinuations`, `RemainingTokens` | The budget and the cap |
 
-`Settings` are the `[goals]` keys: `Disabled` (`[features] goals = false`), `MaxTokenBudget`, and `MaxContinuations` (`DefaultMaxContinuations`, 50, when the key is unset; 0 is no limit).
+`Settings` are the `[goals]` keys: `Disabled` (`[features] goals = false`), `MaxTokenBudget`, `MaxContinuations` (`DefaultMaxContinuations`, 50, when the key is unset; 0 is no limit), and `TurnsPerRun` (`DefaultTurnsPerRun`, 16, when the key is unset; 0 or 1 starts a new run for each continuation).
 <!-- /memoria:section -->
 
 <!-- memoria:section id="texts" files="context.go prompts/continuation.md prompts/budget_limit.md prompts/objective_updated.md" -->

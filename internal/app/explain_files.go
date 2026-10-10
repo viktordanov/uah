@@ -74,6 +74,7 @@ func fileSettings(workspace string, l config.Layers, r Resolved, cfg config.Conf
 		overridden(l, "features.goals", !r.Goals.Disabled, func(c config.Config) any { return c.Features.Goals }),
 		overridden(l, "goals.max_goal_token_budget", r.Goals.MaxTokenBudget, func(c config.Config) any { return c.Goals.MaxGoalTokenBudget }),
 		overridden(l, "goals.max_continuations", r.Goals.MaxContinuations, func(c config.Config) any { return c.Goals.MaxContinuations }),
+		overridden(l, "goals.turns_per_run", r.Goals.TurnsPerRun, func(c config.Config) any { return c.Goals.TurnsPerRun }),
 	}...)
 	out = append(out, hookSettings(l, cfg)...)
 	out = append(out, mcpSettings(l, cfg)...)

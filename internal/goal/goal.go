@@ -75,6 +75,13 @@ const MaxObjectiveChars = 4000
 // budget cannot run forever.
 const DefaultMaxContinuations = 50
 
+// DefaultTurnsPerRun is how many goal turns one run holds, unless [goals]
+// turns_per_run says otherwise: the run's first turn, which a continuation
+// or the user started, and continuations that go into the run that is
+// about to end. The next continuation lets the run end, so its Stop hooks
+// run, and starts a new one. uah's: Codex starts a new turn for each.
+const DefaultTurnsPerRun = 16
+
 // Goal is a session's goal. The session keeps it in its sidecar, so it
 // survives a restart, a resume, and a compaction.
 type Goal struct {
@@ -108,6 +115,11 @@ type Settings struct {
 	// MaxContinuations is each goal's cap on automatic continuations (0: no
 	// limit). Config's unset value is DefaultMaxContinuations.
 	MaxContinuations int
+	// TurnsPerRun is how many goal turns one run holds: its first turn
+	// and the continuations that go into it instead of a new run (0 or 1:
+	// each continuation starts a new run). Config's unset value is
+	// DefaultTurnsPerRun.
+	TurnsPerRun int
 }
 
 // CheckObjective trims the objective and checks it as Codex does.

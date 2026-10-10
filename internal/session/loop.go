@@ -184,6 +184,8 @@ func (s *Session) handle(cmd any) (any, error) {
 		return s.onGoal(c)
 	case cmdGoalTool:
 		return s.onGoalTool(c)
+	case cmdGoalNext:
+		return s.continueInRun(), nil
 	}
 
 	return nil, fmt.Errorf("unknown session command %T", cmd)

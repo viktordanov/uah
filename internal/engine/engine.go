@@ -120,6 +120,10 @@ type Options struct {
 	// with the session's goal: the result for the model, or an error the
 	// model reads (nil: the session has no goals, as a subagent's).
 	Goal GoalTool
+	// Continue is asked, when the run is about to end, for a message that
+	// keeps it going instead, such as the goal's next continuation (nil, or
+	// a nil message: the run ends).
+	Continue func(ctx context.Context) *core.UserInput
 	// Settings are the session's settings now, with the changes made while
 	// the run is live, all from one change (nil: the run's, as it started).
 	// The subagents a run spawns start with them.

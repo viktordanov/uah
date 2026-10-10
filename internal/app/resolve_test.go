@@ -402,8 +402,8 @@ func TestResolve(t *testing.T) {
 			want: func(r *app.Resolved) {},
 		},
 		{
-			name: "goals: off, a token budget cap, and no continuation cap",
-			cfg:  config.Config{Features: config.Features{Goals: new(false)}, Goals: config.Goals{MaxGoalTokenBudget: 50_000, MaxContinuations: new(0)}},
+			name: "goals: off, a token budget cap, no continuation cap, and a run for each",
+			cfg:  config.Config{Features: config.Features{Goals: new(false)}, Goals: config.Goals{MaxGoalTokenBudget: 50_000, MaxContinuations: new(0), TurnsPerRun: new(0)}},
 			want: func(r *app.Resolved) { r.Goals = goal.Settings{Disabled: true, MaxTokenBudget: 50_000} },
 		},
 		{
@@ -430,7 +430,7 @@ func TestResolve(t *testing.T) {
 				Review:            review.Config{Model: review.CodexModel, Effort: llm.ReasoningEffortLow, Timeout: review.DefaultTimeout},
 				Agents:            app.Agents{Enabled: true, MaxThreads: 6, MaxDepth: 1, ReviewLimits: defaultReviewLimits},
 				WebSearch:         app.WebSearchLive,
-				Goals:             goal.Settings{MaxContinuations: goal.DefaultMaxContinuations},
+				Goals:             goal.Settings{MaxContinuations: goal.DefaultMaxContinuations, TurnsPerRun: goal.DefaultTurnsPerRun},
 			}
 			tt.want(&want)
 			// No test names a fallback model itself.

@@ -151,7 +151,7 @@ The transcript shows the call as `ASK`, and your answers under it. Only the TUI 
 
 ### Goals
 
-`/goal <objective>` sets a goal and starts work on it; uah then keeps the agent working, run after run, until the agent marks the goal complete, as Codex's `/goal` does. Each run uah starts on its own begins with Codex's continuation message, which tells the agent to keep the full objective, work from the current state, and mark the goal complete only after it checks every requirement against evidence. The transcript marks these runs `↻ continuing the goal automatically (3 of 50)`, and the footer shows `Pursuing goal (12m)`, or the tokens against the budget.
+`/goal <objective>` sets a goal and starts work on it; uah then keeps the agent working, run after run, until the agent marks the goal complete, as Codex's `/goal` does. Each continuation is Codex's continuation message, which tells the agent to keep the full objective, work from the current state, and mark the goal complete only after it checks every requirement against evidence. One run holds up to 16 goal turns, so its Stop hooks run once for them; the next continuation starts a new run (`[goals] turns_per_run`; 0 or 1 starts a run for each, as Codex does). The transcript marks each `↻ continuing the goal automatically (3 of 50)`, and the footer shows `Pursuing goal (12m)`, or the tokens against the budget.
 
 | Command | Does |
 | --- | --- |
@@ -165,8 +165,8 @@ The goal stops by itself when:
 
 - the agent calls `update_goal` with `complete` (the footer says `Goal achieved`), or with `blocked` after the same blocker for three runs;
 - the token budget is used: `[goals] max_goal_token_budget` sets it, and the agent is told to wrap up;
-- uah has started 50 runs for it (`[goals] max_continuations`; `/goal resume` gives it 50 more);
-- a run fails, three automatic runs in a row make no tool call, or three runs in a row have only failing commands;
+- uah has continued it 50 times (`[goals] max_continuations`; `/goal resume` gives it 50 more);
+- a run fails, three automatic turns in a row make no tool call, or three turns in a row have only failing commands;
 - you interrupt (esc esc or `/stop`), which pauses it.
 
 The goal is kept with the session, so `uah resume` brings it back: an active goal continues when the next run ends, and a paused one waits for `/goal resume`. Compaction keeps it. Subagents never get it, nor the goal tools. `uah sessions show` names the goal's messages (`(goal continuation, automatic)`) instead of printing them. The agent can also set a goal itself with Codex's `create_goal`, but only when you ask for one, so `uah exec "Set a goal to make the tests pass, then work on it"` runs a goal headless. See the [design](docs/design/goal.md).
@@ -643,7 +643,7 @@ Read more: [subagents](internal/agents/README.md), and the [design and validatio
 ### The goal loop
 
 <!-- memoria:import src="internal/goal/README.md#summary" -->
-`/goal <objective>` keeps the agent working, run after run, until the model marks the goal complete with Codex's `update_goal` after Codex's completion audit. Each automatic run starts with Codex's continuation message; the goal, kept in the session's sidecar, survives a resume and a compaction. A token budget, a cap of 50 automatic runs, a failed run, and three runs in a row without progress stop it; an interrupt pauses it, and `/goal clear` or `/clear` drops it. Subagents never inherit it.
+`/goal <objective>` keeps the agent working, run after run, until the model marks the goal complete with Codex's `update_goal` after Codex's completion audit. Each automatic continuation is Codex's continuation message; one run holds up to 16 goal turns, and the next continuation starts a new run; the goal, kept in the session's sidecar, survives a resume and a compaction. A token budget, a cap of 50 automatic continuations, a failed run, and three runs in a row without progress stop it; an interrupt pauses it, and `/goal clear` or `/clear` drops it. Subagents never inherit it.
 <!-- /memoria:import -->
 
 `app.Resolve` reads `[features] goals` and `[goals]` into `goal.Settings`, and `app.Setup` gives them to the session and turns the engine's goal tools on. `internal/app/goal_test.go` runs the loop end to end on the embedded engine with `testing/fakellm`. Read more: [goals](internal/goal/README.md), the [session's part](internal/session/README.md#goals), and the [design](docs/design/goal.md).

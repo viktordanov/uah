@@ -302,9 +302,12 @@ func pickTools(in Inputs, resumed session.Info, cfg config.Config) (toolSettings
 }
 
 // pickGoals is [features] goals and the [goals] table, with uah's default
-// cap on continuations.
+// cap on continuations and continuations per run.
 func pickGoals(cfg config.Config) (goal.Settings, error) {
-	g := goal.Settings{Disabled: !cfg.GoalsEnabled(), MaxTokenBudget: cfg.Goals.MaxGoalTokenBudget, MaxContinuations: goal.DefaultMaxContinuations}
+	g := goal.Settings{
+		Disabled: !cfg.GoalsEnabled(), MaxTokenBudget: cfg.Goals.MaxGoalTokenBudget,
+		MaxContinuations: goal.DefaultMaxContinuations, TurnsPerRun: goal.DefaultTurnsPerRun,
+	}
 	if g.MaxTokenBudget < 0 {
 		return goal.Settings{}, usage(fmt.Errorf("invalid [goals] max_goal_token_budget %d (want a positive number, or 0 for none)", g.MaxTokenBudget))
 	}
@@ -313,6 +316,12 @@ func pickGoals(cfg config.Config) (goal.Settings, error) {
 			return goal.Settings{}, usage(fmt.Errorf("invalid [goals] max_continuations %d (want a positive number, or 0 for no limit)", *m))
 		}
 		g.MaxContinuations = *m
+	}
+	if n := cfg.Goals.TurnsPerRun; n != nil {
+		if *n < 0 {
+			return goal.Settings{}, usage(fmt.Errorf("invalid [goals] turns_per_run %d (want a positive number; 0 or 1 starts a new run for each continuation)", *n))
+		}
+		g.TurnsPerRun = *n
 	}
 
 	return g, nil

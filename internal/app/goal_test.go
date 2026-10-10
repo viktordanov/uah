@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/goal"
+	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/testing/fakellm"
 )
@@ -94,9 +96,9 @@ func countOf[T any](events []core.Event) int {
 }
 
 // TestGoal_ContinuesUntilComplete: /goal starts a run at once with Codex's
-// user_goal record and continuation message; the session continues when a
-// run ends with the goal active, and stops when the model calls
-// update_goal complete. Every request extends the one before it, with the
+// user_goal record and continuation message; the session continues the
+// run when it would end with the goal active, and stops when the model
+// calls update_goal complete. Every request extends the one before it, with the
 // same system prompt and tools, so the prompt cache holds.
 func TestGoal_ContinuesUntilComplete(t *testing.T) {
 	g := openGoalRun(t, "",
@@ -115,9 +117,9 @@ func TestGoal_ContinuesUntilComplete(t *testing.T) {
 	assert.Equal(t, goal.StatusComplete, got.Status)
 	assert.Equal(t, 2, got.Continuations)
 	assert.Equal(t, 2, countOf[session.GoalContinued](events))
-	assert.Equal(t, 2, countOf[core.RunFinished](events))
+	assert.Equal(t, 1, countOf[core.RunFinished](events), "the second continuation goes into the same run")
 	reqs := g.llm.Requests()
-	require.Len(t, reqs, 4, "no run after the goal is complete")
+	require.Len(t, reqs, 4, "no request after the goal is complete")
 
 	first := reqs[0]
 	for _, name := range goal.ToolNames {
@@ -140,6 +142,60 @@ func TestGoal_ContinuesUntilComplete(t *testing.T) {
 			assert.JSONEq(t, string(item), string(reqs[i].Input[j]), "request %d extends request %d at item %d", i, i-1, j)
 		}
 	}
+}
+
+// TestGoal_TurnsPerRun: a run holds [goals] turns_per_run goal turns, its
+// first with the continuations that go into it; the next continuation
+// starts a new run, so Stop hooks run once per run, not per continuation. No continuation goes through
+// UserPromptSubmit hooks.
+func TestGoal_TurnsPerRun(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "hooks.log")
+	record := "cat >> " + log + "; echo >> " + log
+	config := "[goals]\nturns_per_run = 2\n"
+	for _, event := range []hooks.Event{hooks.UserPromptSubmit, hooks.Stop} {
+		config += "[[hooks." + string(event) + "]]\ncommand = \"" + record + "\"\n"
+	}
+	g := openGoalRun(t, config,
+		fakellm.Reply{Commands: []string{"echo a"}}, fakellm.Reply{Text: "more to do"},
+		fakellm.Reply{Commands: []string{"echo b"}}, fakellm.Reply{Text: "still more"},
+		fakellm.Reply{Calls: []fakellm.Call{{Name: goal.UpdateToolName, Args: `{"status":"complete"}`}}},
+		fakellm.Reply{Text: "The goal is complete."},
+	)
+
+	_, err := g.s.SetGoal("finish in three turns")
+	require.NoError(t, err)
+	events := g.idle()
+
+	got := g.goal()
+	assert.Equal(t, goal.StatusComplete, got.Status)
+	assert.Equal(t, 3, got.Continuations)
+	assert.Equal(t, 3, countOf[session.GoalContinued](events))
+	assert.Equal(t, 2, countOf[core.RunFinished](events), "two turns in the first run, then a new run")
+	assert.Len(t, g.llm.Requests(), 6)
+	var fired []hooks.Event
+	for _, in := range readPayloads(t, log) {
+		fired = append(fired, in.Event)
+	}
+	assert.Equal(t, []hooks.Event{hooks.Stop, hooks.Stop}, fired, "Stop once per run; no UserPromptSubmit for a continuation")
+}
+
+// TestGoal_TurnsPerRunOff: turns_per_run = 0 or 1 starts a new run for
+// every continuation, as Codex starts a new turn.
+func TestGoal_TurnsPerRunOff(t *testing.T) {
+	g := openGoalRun(t, "[goals]\nturns_per_run = 0\n",
+		fakellm.Reply{Commands: []string{"echo step one"}},
+		fakellm.Reply{Text: "Step one is done; step two remains."},
+		fakellm.Reply{Calls: []fakellm.Call{{Name: goal.UpdateToolName, Args: `{"status":"complete"}`}}},
+		fakellm.Reply{Text: "The goal is complete."},
+	)
+
+	_, err := g.s.SetGoal("make the build pass")
+	require.NoError(t, err)
+	events := g.idle()
+
+	assert.Equal(t, goal.StatusComplete, g.goal().Status)
+	assert.Equal(t, 2, countOf[session.GoalContinued](events))
+	assert.Equal(t, 2, countOf[core.RunFinished](events))
 }
 
 // TestGoal_StopsAtTokenBudget: the default budget ([goals]

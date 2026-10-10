@@ -234,10 +234,32 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 		Operations:            operations,
 		Wake:                  wakePolicy(w.e.cfg.WakeHold),
 		EffortUpdate:          sw.effortUpdate,
+		Continue:              continueWith(opts.Continue),
 	})
 	w.launch(runCtx, a, coord, obs, func() { s.store.RemoveObserver(prefetchID); s.store.RemoveObserver(observerID) })
 
 	return a, nil
+}
+
+// continueWith is the coordinator's Continue: the message the session
+// keeps the run going with, as an inbox input (nil without one).
+func continueWith(next func(context.Context) *core.UserInput) func(context.Context) []inbox.Input {
+	if next == nil {
+		return nil
+	}
+
+	return func(ctx context.Context) []inbox.Input {
+		in := next(ctx)
+		if in == nil {
+			return nil
+		}
+		input, err := messageInput(*in)
+		if err != nil {
+			return nil
+		}
+
+		return []inbox.Input{input}
+	}
 }
 
 // compactor wraps the switcher with the session's compactions and seeds the

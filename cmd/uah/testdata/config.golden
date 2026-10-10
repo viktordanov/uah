@@ -68,6 +68,7 @@ history.max_bytes                                 8388608                       
 features.goals                                    true                          default
 goals.max_goal_token_budget                       0                             default
 goals.max_continuations                           50                            default
+goals.turns_per_run                               16                            default
 hooks.Stop                                        [notify]                      user file
 mcp_servers.docs                                  https://docs.example.com/mcp  project file
 projects.<workspace>.trusted                      true                          user file

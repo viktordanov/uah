@@ -19,7 +19,10 @@ import (
 // of its own with Codex's continuation message, until the model marks the
 // goal complete (update_goal), the user pauses or clears it, an interrupt
 // pauses it, or a guard stops it: the token budget, the continuation cap,
-// a failed run, or automatic turns that make no progress.
+// a failed run, or automatic turns that make no progress. A run holds up
+// to TurnsPerRun goal turns: its first, and continuations that go into it
+// when it is about to end (continueInRun), so they skip its Stop hooks;
+// the next one starts a new run.
 
 // goalGuardTurns is how many goal turns in a row without progress stop
 // the goal, as Codex stops it after three empty or failing turns.
@@ -84,6 +87,8 @@ type goalState struct {
 	// failingTurns, goal turns in a row whose commands failed and no tool
 	// call succeeded.
 	idleTurns, failingTurns int
+	// inRun are the continuations that went into the live run.
+	inRun int
 }
 
 // goalRun is what the session notes about a run that works on the goal.
@@ -169,6 +174,8 @@ type (
 	cmdGoalTool struct {
 		name, arguments string
 	}
+	// cmdGoalNext asks for the continuation that keeps the live run going.
+	cmdGoalNext struct{}
 )
 
 // openGoal restores the goal the sidecar keeps.
@@ -395,6 +402,7 @@ func (s *Session) goIdle(userStopped bool) {
 // noteGoalRun marks a run that starts while the goal is active; a
 // continuation marks its own.
 func (s *Session) noteGoalRun() {
+	s.goal.inRun = 0
 	if g := s.goal.g; g != nil && g.Status == goal.StatusActive {
 		s.goal.run = &goalRun{id: g.ID, since: time.Now()}
 	} else {
@@ -479,6 +487,14 @@ func (s *Session) endGoalRun(result core.Result, err error, userStopped bool) {
 		return
 	}
 	failed := err != nil || result.Status == core.StatusFailed || result.Status == core.StatusDiskLimit || result.Status == core.StatusTimeout
+	s.endGoalTurn(r, failed)
+}
+
+// endGoalTurn applies the guards to a goal turn that ended, a run or a
+// continuation in it: they stop a goal whose turns fail or make no
+// progress.
+func (s *Session) endGoalTurn(r *goalRun, failed bool) {
+	g := s.goal.g
 	if r.automatic && r.tools == 0 {
 		s.goal.idleTurns++
 	} else {
@@ -510,6 +526,74 @@ func (s *Session) accountGoalTime() {
 	now := time.Now()
 	g.TimeUsedSeconds += int64(now.Sub(r.since).Seconds())
 	r.since = now
+}
+
+// continueFunc is what runs ask for a message that keeps them going; nil
+// without goals.
+func (s *Session) continueFunc() func(context.Context) *core.UserInput {
+	if !s.goal.enabled {
+		return nil
+	}
+
+	return func(ctx context.Context) *core.UserInput {
+		in, err := goalNext(ctx, s)
+		if err != nil {
+			return nil
+		}
+
+		return in
+	}
+}
+
+func goalNext(ctx context.Context, s *Session) (*core.UserInput, error) {
+	reply := make(chan reply, 1)
+	select {
+	case s.in <- request{cmd: cmdGoalNext{}, reply: reply}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-s.done:
+		return nil, ErrClosed
+	}
+	select {
+	case r := <-reply:
+		in, _ := r.value.(*core.UserInput)
+
+		return in, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-s.done:
+		return nil, ErrClosed
+	}
+}
+
+// continueInRun gives the run that is about to end the goal's next
+// continuation, as continueGoal starts a run with it, until the run holds
+// TurnsPerRun goal turns with its first; nil lets the run end. The turn that ended
+// goes through the guards first. Messages that wait for the run's end, a
+// stop, or a close end it instead.
+func (s *Session) continueInRun() *core.UserInput {
+	g, r := s.goal.g, s.goal.run
+	if !s.goal.enabled || g == nil || r == nil || r.id != g.ID || g.Status != goal.StatusActive ||
+		s.state != StateRunning || s.closeReply != nil || len(s.queue) > 0 || len(s.hooks.checking) > 0 ||
+		s.goal.inRun+1 >= s.goal.settings.TurnsPerRun {
+		return nil
+	}
+	s.accountGoalTime()
+	s.endGoalTurn(r, false)
+	if g.Status != goal.StatusActive || g.OutOfContinuations() {
+		s.goal.run = nil // the run ends, and continueGoal stops a goal out of continuations
+
+		return nil
+	}
+	s.goal.inRun++
+	g.Continuations++
+	s.changeGoal(g, GoalUsage, "")
+	s.emit(GoalContinued{At: time.Now(), Goal: *g})
+	in := core.UserInput{ID: uuid.NewString(), Text: goal.Continuation(*g)}
+	s.markSent([]core.UserInput{in})
+	s.goal.run = &goalRun{id: g.ID, automatic: true, since: time.Now()}
+
+	return &in
 }
 
 // pauseGoalForInterrupt pauses an active goal when the user interrupts,

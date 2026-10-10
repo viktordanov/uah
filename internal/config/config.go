@@ -209,6 +209,11 @@ type Goals struct {
 	// MaxContinuations caps the runs uah starts on its own for one goal
 	// (goal.DefaultMaxContinuations when unset; 0: no limit). uah's.
 	MaxContinuations *int `toml:"max_continuations"`
+	// TurnsPerRun is how many goal turns one run holds: its first turn,
+	// and continuations that go into it without its Stop hooks, before one
+	// starts a new run (goal.DefaultTurnsPerRun when unset; 0 or 1: each
+	// starts a new run). uah's.
+	TurnsPerRun *int `toml:"turns_per_run"`
 }
 
 // GoalsEnabled reports whether /goal and the goal tools are on (true by

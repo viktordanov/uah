@@ -53,6 +53,9 @@ func merge(base, over Config) Config {
 	if over.Goals.MaxContinuations != nil {
 		base.Goals.MaxContinuations = over.Goals.MaxContinuations
 	}
+	if over.Goals.TurnsPerRun != nil {
+		base.Goals.TurnsPerRun = over.Goals.TurnsPerRun
+	}
 	if over.Context.Modules != nil {
 		base.Context.Modules = over.Context.Modules
 	}
