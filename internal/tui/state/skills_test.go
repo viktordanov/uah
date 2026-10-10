@@ -19,7 +19,8 @@ var menuSkills = []engine.Skill{
 
 // TestMenu_Skills: a "$" word loads the skills and completes their names,
 // shown by their display names, matched on either name, the ones that
-// start with the text first, each with its description;
+// start with the text first, then the ones a few typos away, each with its
+// description;
 // enter puts "$name " in the composer and sends nothing; a word no name
 // holds ($HOME) or a complete name has no menu.
 func TestMenu_Skills(t *testing.T) {
@@ -37,6 +38,10 @@ func TestMenu_Skills(t *testing.T) {
 	require.Equal(t, []string{"Image Gen"}, labels(gen), "and the display name")
 	assert.Equal(t, "$imagegen ", gen[0].Draft, "the mention is the name")
 	assert.Empty(t, s.Suggestions("echo $HOME"))
+	assert.Equal(t, []string{"Image Gen"}, labels(s.Suggestions("$imgaegen")), "a typo or two still matches")
+	assert.Equal(t, []string{"Go Testing", "Testing Web"}, labels(s.Suggestions("$gotest")), "one edit, then two")
+	assert.Equal(t, []string{"Go Testing", "Testing Web"}, labels(s.Suggestions("$tezt")), "any word of the name")
+	assert.Empty(t, s.Suggestions("$rx"), "a short word must match as it is")
 	assert.Empty(t, s.Suggestions("use $release"), "a complete name has no menu")
 	assert.Empty(t, s.Suggestions("use $release now"), "only the last word")
 
