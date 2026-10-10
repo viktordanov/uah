@@ -2,12 +2,126 @@
 
 Task guides for uah, one section per task, grouped by area. Each section says what the feature does, how to use it, how it behaves, and which settings change it. The [README](../README.md) has the install, the keys, and the providers; the [configuration reference](configuration.md) has every key.
 
-1. [Models and requests](#models-and-requests): [model and effort](#model-and-effort), [adaptive effort](#adaptive-effort), [plan usage](#plan-usage), [retries](#retries)
-2. [Permissions](#permissions): [permission modes](#permission-modes), [command rules](#command-rules)
-3. [Working in a session](#working-in-a-session): [questions](#the-agents-questions), [goals](#goals), [subagents](#subagents-and-agent-files), [images](#images), [shell mode](#shell-mode), [web search](#web-search), [`/diff` and `/review`](#diff-and-review), [compaction and `/context`](#compaction-and-context)
-4. [Sessions and history](#sessions-and-history): [resume](#resume-a-session), [rewind](#rewind-to-an-earlier-message), [prompt history](#prompt-history), [list, search, and delete](#list-search-and-delete-sessions), [select and copy](#select-and-copy-text), [file links](#file-links-and-the-terminal-title)
-5. [Headless: `uah exec`](#headless-uah-exec): [running it](#running-it), [JSON events](#json-events), [exit codes](#exit-codes), [tool policy](#tool-policy)
-6. [Setup](#setup): [AGENTS.md and skills](#agentsmd-and-skills), [MCP servers](#mcp-servers), [hooks](#hooks), [prompts and context modules](#prompts-and-context-modules), [`/config` and `uah config`](#config-and-uah-config), [the shell commands run in](#the-shell-commands-run-in)
+1. [Setup](#setup)
+   - [AGENTS.md and skills](#agentsmd-and-skills)
+   - [MCP servers](#mcp-servers)
+   - [Hooks](#hooks)
+   - [Prompts and context modules](#prompts-and-context-modules)
+   - [`/config` and `uah config`](#config-and-uah-config)
+   - [The shell commands run in](#the-shell-commands-run-in)
+2. [Models and requests](#models-and-requests)
+   - [Model and effort](#model-and-effort)
+   - [Adaptive effort](#adaptive-effort)
+   - [Plan usage](#plan-usage)
+   - [Retries](#retries)
+3. [Working in a session](#working-in-a-session)
+   - [The agent's questions](#the-agents-questions)
+   - [Goals](#goals)
+   - [Subagents and agent files](#subagents-and-agent-files)
+   - [Images](#images)
+   - [Shell mode](#shell-mode)
+   - [Web search](#web-search)
+   - [`/diff` and `/review`](#diff-and-review)
+   - [Compaction and `/context`](#compaction-and-context)
+4. [Permissions](#permissions)
+   - [Permission modes](#permission-modes)
+   - [Command rules](#command-rules)
+5. [Sessions and history](#sessions-and-history)
+   - [Resume a session](#resume-a-session)
+   - [Rewind to an earlier message](#rewind-to-an-earlier-message)
+   - [Prompt history](#prompt-history)
+   - [List, search, and delete sessions](#list-search-and-delete-sessions)
+   - [Select and copy text](#select-and-copy-text)
+   - [File links and the terminal title](#file-links-and-the-terminal-title)
+6. [Headless: `uah exec`](#headless-uah-exec)
+   - [Running it](#running-it)
+   - [JSON events](#json-events)
+   - [Exit codes](#exit-codes)
+   - [Tool policy](#tool-policy)
+
+---
+
+## Setup
+
+The files and commands that extend uah: instructions, skills, MCP servers, hooks, prompts, and settings.
+
+### AGENTS.md and skills
+
+Instruction files are `AGENTS.md` at the repository root or in any directory below it; `project_doc_fallback_filenames = ["CLAUDE.md"]` reads `CLAUDE.md` too. Skills are `<name>/SKILL.md` folders in `.agents/skills/`, in `~/.uah/skills/` for every workspace, or in `$CODEX_HOME/skills`. `/context` shows how much of the context window they take.
+
+- **Naming a skill:** type `$` in the composer for a menu of the skills, each by its display name with its description; tab or enter fills in `$name `. Sending a message with `$name` loads the skill's `SKILL.md` before the message, so the model has it without a `SkillUse` call. `[tui] skill_mentions = false` turns off the menu and the loading.
+- **uah's own skill,** `uah-customization`, explains context preparation and uah's other customization points (prompts, hooks, skills, and the configuration layers), so you can ask the agent how uah works or how to extend it. uah writes it to `~/.uah/skills/.system/` and rewrites it on update; a skill of the same name in any skill folder replaces it.
+
+### MCP servers
+
+`uah mcp` adds, lists, logs in to, and approves MCP servers, in Codex's `[mcp_servers.<name>]` format in your user file, so a Codex configuration copies over.
+
+```sh
+uah mcp add docs -- npx -y @example/docs-mcp            # a stdio server (--env KEY=VALUE)
+uah mcp add linear --url https://mcp.linear.app/mcp     # an HTTP server
+uah mcp login linear                                     # OAuth in the browser, if the server asks for it
+uah mcp list                                             # every server, its status, and its auth
+```
+
+- **In the TUI,** `/mcp` shows each server and its tools. A server's prompts are commands (`/mcp__docs__review main.go`, quoted arguments kept together), and its resources come after `@` with your files: `@docs:docs://index` adds the resource to the message. The agent lists and reads resources itself, with `list_mcp_resources` and `read_mcp_resource`.
+- **Connecting:** servers connect when a TUI session opens, before any message (`uah exec` connects them on its first run), and stop with the session; `/clear` keeps them, and `/new` and `/resume` reconnect them once; `/new` also picks up a server added while the TUI runs. One that fails to start is shown then and left out; with `required = true`, every message fails until the server is fixed and `/new` connects it.
+- **Restarts and tool changes:** a server that stops restarts after 1, 2, 4, 8, and 16 s, at most 5 times in a row, and keeps its tools meanwhile, so the prompt cache holds; a call made while it restarts waits for it. A changed tool list applies from your next message, never in the middle of a turn.
+- **Calls** run in the background, so the agent keeps working, and each asks for approval by its tool's `approval_mode`.
+- **OAuth tokens** are kept in the OS keyring (or a 0600 file without one) and refreshed as they expire. A server that needs a login shows "needs login" in `/mcp` and `uah doctor`, and reconnects at the next message once `uah mcp login`, in any terminal, stored a new login.
+
+To stop a server's tools from asking for approval:
+
+```sh
+uah mcp add docs --approve -- npx -y @example/docs-mcp   # its tools never ask
+uah mcp approve docs search --mode approve              # one tool never asks
+uah mcp approve docs --mode prompt                      # every other tool always asks
+uah mcp approve docs                                    # print the current modes
+```
+
+When the TUI asks about an MCP call, `a` ("Yes, and don't ask again for this tool") saves `approval_mode = "approve"` for the tool, and the session stops asking at once.
+
+The [MCP README](../internal/mcp/README.md) has the rest, and the [MCP design](design/mcp.md) the decisions.
+
+### Hooks
+
+A hook runs a command at a session event, such as a notification when the agent is idle:
+
+```toml
+[[hooks.Stop]]
+command = "osascript -e 'display notification \"uah is idle\"'"
+```
+
+Hooks in a project's `.uah/config.toml` run only after `uah hooks trust`; hooks in the user file and the layers (`~/.uah/config.d/*.toml`, `UAH_EXTRA_CONFIG`) run as written. `uah hooks` lists them all and whether each runs. The [hooks README](../internal/hooks/README.md) has every event and its payload.
+
+### Prompts and context modules
+
+The system prompt, the compaction prompt, the auto-review policy, and the context modules are files you can replace.
+
+```sh
+uah prompts init           # writes compact.md, system.md, system-codex.md, system-runner.md, and review.md to ~/.uah/prompts
+uah prompts show system    # prints a built-in prompt: compact, system, system-codex, system-runner, or review
+uah prompts show context/environment/fish   # prints a context module
+uah prompts status         # lists your prompt files, context overrides, and context modules
+uah context --show         # lists the context modules for this workspace and prints the context a new session gets
+```
+
+- **A prompt file takes effect only when its key names it.** `uah prompts init` prints the lines to add to your user file: `experimental_compact_prompt_file`, `model_instructions_file`, and `[review] policy_file`. Each new session reads the files. It overwrites existing files only with `--force`; to undo, delete the files and the lines.
+- **The system prompts:** the default (`system.md`) is Codex's prompt for gpt-6.1-sol with uah's tool names ([the changes](configuration.md#codexs-prompt)). `system-codex.md` is Codex's unmodified prompt and `system-runner.md` the runner's short host prompt; their `model_instructions_file` lines are printed commented out, so each is used only when you choose it. AGENTS.md files and the [environment context](configuration.md#the-environment-context) still follow the system prompt.
+- **Context modules:** `uah prompts init` writes the built-in modules of the [prepared context](../README.md#context-preparation) to `~/.uah/prompts/context.defaults/`, a reference that uah never reads. To change one, copy it to the same path under `~/.uah/prompts/context/` and edit the copy. A file there replaces the built-in for as long as it exists, so uah updates to that module stop reaching you: copy only what you change. `uah prompts status` flags copies identical to the built-in, and `uah prompts prune` deletes those. Modules of your own go in `~/.uah/prompts/context.d/`; see the [context preparation guide](context-preparation.md).
+
+### `/config` and `uah config`
+
+`/config` in the TUI changes the basic settings: compaction, the model and effort, fast mode, adaptive effort, the permission mode, the number of open subagents, web search, the details view, the mouse, and file links, each with its value and its source. ↑↓ choose, enter or space changes, esc closes.
+
+- **Saving:** each change is saved to your user file, keeping its comments, and applies to the running session where it can; compaction settings apply from the next session.
+- **Precedence:** a flag, a configuration layer, or a trusted project file that sets the same key still wins, and `/config` says so.
+- **`uah config`** shows each setting's value and where it came from, and `uah doctor` checks that everything works.
+
+### The shell commands run in
+
+Commands run in `$SHELL` when it names an executable file (a bare name such as `fish` is looked up on `PATH`), else in the user's login shell from the user database (as Codex reads it, `internal/shellenv`) unless that is a service account's `nologin` or `false`, else in `/bin/sh`.
+
+A service that starts uah without the user's environment can leave out `SHELL`, the locale, and the user's tool directories on `PATH`. The environment block of the prepared context then says which shell uah picked, that the locale is not UTF-8, and which tool directories exist but are not on `PATH`, and a session opens with a warning, in the TUI and in `uah exec`, when `SHELL` was unset or unusable. uah changes neither `PATH` nor the locale.
 
 ---
 
@@ -60,45 +174,6 @@ A model request that fails because the connection dropped, it timed out, or the 
 ```
 
 When every attempt loses the connection, the run fails with "gave up after 10 attempts because the connection to the model was lost". Change the limit with `request_max_attempts` in the [configuration](../README.md#configuration), `--max-attempts`, or `UAH_LLM_MAX_ATTEMPTS`.
-
----
-
-## Permissions
-
-What the agent's commands can do without asking, and who answers when one asks.
-
-### Permission modes
-
-The permission mode picks the sandbox and who answers an escalation; shift+tab cycles it, and the footer shows it:
-
-| Mode | Commands can | What needs approval |
-| --- | --- | --- |
-| read only | Read files; write only the session's private `$TMPDIR` | You |
-| workspace (default) | Write the workspace | You |
-| auto | Write the workspace | The auto-reviewer decides; you are not asked |
-| yolo (only with `--yolo`) | Anything your user can: no sandbox | Nothing: every command, patch, and MCP tool runs unasked; only `forbid` rules refuse |
-
-- **A change applies** from the next command, even mid-run. Subagents run in their parent's mode.
-- **Session grants:** in workspace and auto mode, a patch or an escalated command that writes into another git worktree of the workspace's repository makes that worktree writable for the rest of the session, without asking, and the transcript says `writable for this session: <path>`. In workspace mode, the prompt for a patch outside the workspace can also allow writes to its directory for the session (`w`). See [session grants](configuration.md#session-grants).
-- **Resume:** a resumed session keeps its mode, with its model, effort, fast mode, and adaptive effort. Yolo mode is kept only when you give `--yolo` again; without it the session opens in the configured mode.
-- **Start in a mode** with `permission_mode` in the [configuration](../README.md#configuration), or for one session with `--sandbox read-only` or `--sandbox workspace-write`.
-- **`--yolo`** (or Codex's `--dangerously-bypass-approvals-and-sandbox`) starts the TUI or `uah exec` in yolo mode and adds yolo after auto in the shift+tab cycle. Without the flag, yolo is not offered, and no file can set it. It takes no `--sandbox` or `--ask`. Use it only where something outside uah sandboxes the machine. The footer shows `yolo mode` in the warning color, and the terminal title says `yolo`.
-
-### Command rules
-
-A command rule lets a command prefix run outside the sandbox without asking, or forbids it. Three ways to stop being asked for the same command:
-
-1. Answer `s` ("Yes, and don't ask again") when uah asks. It saves a rule for the command's prefix.
-2. Switch to auto mode (shift+tab until the footer says `auto mode`): the auto-reviewer then approves or declines each escalation.
-3. List prefixes in the configuration:
-
-   ```toml
-   [approvals]
-   allow = ["go test", "git status"]
-   forbid = ["git push --force"]
-   ```
-
-The [approvals README](../internal/approval/README.md) gives the order in which rules, the sandbox, the auto-reviewer, hooks, and you decide.
 
 ---
 
@@ -254,6 +329,45 @@ uah compacts automatically at 90% of the context window. It first replaces old t
 
 ---
 
+## Permissions
+
+What the agent's commands can do without asking, and who answers when one asks.
+
+### Permission modes
+
+The permission mode picks the sandbox and who answers an escalation; shift+tab cycles it, and the footer shows it:
+
+| Mode | Commands can | What needs approval |
+| --- | --- | --- |
+| read only | Read files; write only the session's private `$TMPDIR` | You |
+| workspace (default) | Write the workspace | You |
+| auto | Write the workspace | The auto-reviewer decides; you are not asked |
+| yolo (only with `--yolo`) | Anything your user can: no sandbox | Nothing: every command, patch, and MCP tool runs unasked; only `forbid` rules refuse |
+
+- **A change applies** from the next command, even mid-run. Subagents run in their parent's mode.
+- **Session grants:** in workspace and auto mode, a patch or an escalated command that writes into another git worktree of the workspace's repository makes that worktree writable for the rest of the session, without asking, and the transcript says `writable for this session: <path>`. In workspace mode, the prompt for a patch outside the workspace can also allow writes to its directory for the session (`w`). See [session grants](configuration.md#session-grants).
+- **Resume:** a resumed session keeps its mode, with its model, effort, fast mode, and adaptive effort. Yolo mode is kept only when you give `--yolo` again; without it the session opens in the configured mode.
+- **Start in a mode** with `permission_mode` in the [configuration](../README.md#configuration), or for one session with `--sandbox read-only` or `--sandbox workspace-write`.
+- **`--yolo`** (or Codex's `--dangerously-bypass-approvals-and-sandbox`) starts the TUI or `uah exec` in yolo mode and adds yolo after auto in the shift+tab cycle. Without the flag, yolo is not offered, and no file can set it. It takes no `--sandbox` or `--ask`. Use it only where something outside uah sandboxes the machine. The footer shows `yolo mode` in the warning color, and the terminal title says `yolo`.
+
+### Command rules
+
+A command rule lets a command prefix run outside the sandbox without asking, or forbids it. Three ways to stop being asked for the same command:
+
+1. Answer `s` ("Yes, and don't ask again") when uah asks. It saves a rule for the command's prefix.
+2. Switch to auto mode (shift+tab until the footer says `auto mode`): the auto-reviewer then approves or declines each escalation.
+3. List prefixes in the configuration:
+
+   ```toml
+   [approvals]
+   allow = ["go test", "git status"]
+   forbid = ["git push --force"]
+   ```
+
+The [approvals README](../internal/approval/README.md) gives the order in which rules, the sandbox, the auto-reviewer, hooks, and you decide.
+
+---
+
 ## Sessions and history
 
 Sessions are kept on disk under `~/.uah/sessions`, so you can resume, rewind, search, and delete them.
@@ -397,87 +511,3 @@ CRM_TOKEN=… CRM_CALLER=alice uah exec --ephemeral --json --sandbox read-only \
 
 - **Hooks:** under a tool policy, a PreToolUse or PermissionRequest hook that fails blocks its call instead of being ignored ([hooks](../internal/hooks/README.md#output-and-decisions)).
 - **Skills and instructions:** `--no-skills` (or `[skills] enabled = false`) leaves skills out of the prompt and the tools; AGENTS.md files still apply unless `--no-instructions` is given too.
-
----
-
-## Setup
-
-The files and commands that extend uah: instructions, skills, MCP servers, hooks, prompts, and settings.
-
-### AGENTS.md and skills
-
-Instruction files are `AGENTS.md` at the repository root or in any directory below it; `project_doc_fallback_filenames = ["CLAUDE.md"]` reads `CLAUDE.md` too. Skills are `<name>/SKILL.md` folders in `.agents/skills/`, in `~/.uah/skills/` for every workspace, or in `$CODEX_HOME/skills`. `/context` shows how much of the context window they take.
-
-- **Naming a skill:** type `$` in the composer for a menu of the skills, each by its display name with its description; tab or enter fills in `$name `. Sending a message with `$name` loads the skill's `SKILL.md` before the message, so the model has it without a `SkillUse` call. `[tui] skill_mentions = false` turns off the menu and the loading.
-- **uah's own skill,** `uah-customization`, explains context preparation and uah's other customization points (prompts, hooks, skills, and the configuration layers), so you can ask the agent how uah works or how to extend it. uah writes it to `~/.uah/skills/.system/` and rewrites it on update; a skill of the same name in any skill folder replaces it.
-
-### MCP servers
-
-`uah mcp` adds, lists, logs in to, and approves MCP servers, in Codex's `[mcp_servers.<name>]` format in your user file, so a Codex configuration copies over.
-
-```sh
-uah mcp add docs -- npx -y @example/docs-mcp            # a stdio server (--env KEY=VALUE)
-uah mcp add linear --url https://mcp.linear.app/mcp     # an HTTP server
-uah mcp login linear                                     # OAuth in the browser, if the server asks for it
-uah mcp list                                             # every server, its status, and its auth
-```
-
-- **In the TUI,** `/mcp` shows each server and its tools. A server's prompts are commands (`/mcp__docs__review main.go`, quoted arguments kept together), and its resources come after `@` with your files: `@docs:docs://index` adds the resource to the message. The agent lists and reads resources itself, with `list_mcp_resources` and `read_mcp_resource`.
-- **Connecting:** servers connect when a TUI session opens, before any message (`uah exec` connects them on its first run), and stop with the session; `/clear` keeps them, and `/new` and `/resume` reconnect them once; `/new` also picks up a server added while the TUI runs. One that fails to start is shown then and left out; with `required = true`, every message fails until the server is fixed and `/new` connects it.
-- **Restarts and tool changes:** a server that stops restarts after 1, 2, 4, 8, and 16 s, at most 5 times in a row, and keeps its tools meanwhile, so the prompt cache holds; a call made while it restarts waits for it. A changed tool list applies from your next message, never in the middle of a turn.
-- **Calls** run in the background, so the agent keeps working, and each asks for approval by its tool's `approval_mode`.
-- **OAuth tokens** are kept in the OS keyring (or a 0600 file without one) and refreshed as they expire. A server that needs a login shows "needs login" in `/mcp` and `uah doctor`, and reconnects at the next message once `uah mcp login`, in any terminal, stored a new login.
-
-To stop a server's tools from asking for approval:
-
-```sh
-uah mcp add docs --approve -- npx -y @example/docs-mcp   # its tools never ask
-uah mcp approve docs search --mode approve              # one tool never asks
-uah mcp approve docs --mode prompt                      # every other tool always asks
-uah mcp approve docs                                    # print the current modes
-```
-
-When the TUI asks about an MCP call, `a` ("Yes, and don't ask again for this tool") saves `approval_mode = "approve"` for the tool, and the session stops asking at once.
-
-The [MCP README](../internal/mcp/README.md) has the rest, and the [MCP design](design/mcp.md) the decisions.
-
-### Hooks
-
-A hook runs a command at a session event, such as a notification when the agent is idle:
-
-```toml
-[[hooks.Stop]]
-command = "osascript -e 'display notification \"uah is idle\"'"
-```
-
-Hooks in a project's `.uah/config.toml` run only after `uah hooks trust`; hooks in the user file and the layers (`~/.uah/config.d/*.toml`, `UAH_EXTRA_CONFIG`) run as written. `uah hooks` lists them all and whether each runs. The [hooks README](../internal/hooks/README.md) has every event and its payload.
-
-### Prompts and context modules
-
-The system prompt, the compaction prompt, the auto-review policy, and the context modules are files you can replace.
-
-```sh
-uah prompts init           # writes compact.md, system.md, system-codex.md, system-runner.md, and review.md to ~/.uah/prompts
-uah prompts show system    # prints a built-in prompt: compact, system, system-codex, system-runner, or review
-uah prompts show context/environment/fish   # prints a context module
-uah prompts status         # lists your prompt files, context overrides, and context modules
-uah context --show         # lists the context modules for this workspace and prints the context a new session gets
-```
-
-- **A prompt file takes effect only when its key names it.** `uah prompts init` prints the lines to add to your user file: `experimental_compact_prompt_file`, `model_instructions_file`, and `[review] policy_file`. Each new session reads the files. It overwrites existing files only with `--force`; to undo, delete the files and the lines.
-- **The system prompts:** the default (`system.md`) is Codex's prompt for gpt-6.1-sol with uah's tool names ([the changes](configuration.md#codexs-prompt)). `system-codex.md` is Codex's unmodified prompt and `system-runner.md` the runner's short host prompt; their `model_instructions_file` lines are printed commented out, so each is used only when you choose it. AGENTS.md files and the [environment context](configuration.md#the-environment-context) still follow the system prompt.
-- **Context modules:** `uah prompts init` writes the built-in modules of the [prepared context](../README.md#context-preparation) to `~/.uah/prompts/context.defaults/`, a reference that uah never reads. To change one, copy it to the same path under `~/.uah/prompts/context/` and edit the copy. A file there replaces the built-in for as long as it exists, so uah updates to that module stop reaching you: copy only what you change. `uah prompts status` flags copies identical to the built-in, and `uah prompts prune` deletes those. Modules of your own go in `~/.uah/prompts/context.d/`; see the [context preparation guide](context-preparation.md).
-
-### `/config` and `uah config`
-
-`/config` in the TUI changes the basic settings: compaction, the model and effort, fast mode, adaptive effort, the permission mode, the number of open subagents, web search, the details view, the mouse, and file links, each with its value and its source. ↑↓ choose, enter or space changes, esc closes.
-
-- **Saving:** each change is saved to your user file, keeping its comments, and applies to the running session where it can; compaction settings apply from the next session.
-- **Precedence:** a flag, a configuration layer, or a trusted project file that sets the same key still wins, and `/config` says so.
-- **`uah config`** shows each setting's value and where it came from, and `uah doctor` checks that everything works.
-
-### The shell commands run in
-
-Commands run in `$SHELL` when it names an executable file (a bare name such as `fish` is looked up on `PATH`), else in the user's login shell from the user database (as Codex reads it, `internal/shellenv`) unless that is a service account's `nologin` or `false`, else in `/bin/sh`.
-
-A service that starts uah without the user's environment can leave out `SHELL`, the locale, and the user's tool directories on `PATH`. The environment block of the prepared context then says which shell uah picked, that the locale is not UTF-8, and which tool directories exist but are not on `PATH`, and a session opens with a warning, in the TUI and in `uah exec`, when `SHELL` was unset or unusable. uah changes neither `PATH` nor the locale.
