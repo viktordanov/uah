@@ -47,7 +47,7 @@ An `Options.Interactive` session connects the engine's MCP servers as it opens, 
 
 Every message gets an ID and is reported as `InputQueued`, then `InputSent` when it goes to the runner, and `InputDelivered` when the runner echoes it as a `UserMessage`. Messages that never reached the runner are reported as `InputFailed`.
 
-What `dispatch` does with a message depends on the state and on whether it is a steer (`SteerNow`, or `Send` with `SendNow`: ctrl+enter or alt+enter in the TUI) or a plain submit (`Submit`: tab in the TUI). Enter while the agent works is `SendAfterTool`, below:
+What `dispatch` does with a message depends on the state and on whether it is a steer (`SteerNow`, or `Send` with `SendNow`: ctrl+enter in the TUI) or a plain submit (`Submit`: tab in the TUI). Enter while the agent works is `SendAfterTool`, below:
 
 | State | Submit (`Submit`) | Steer (`SteerNow`) |
 | --- | --- | --- |

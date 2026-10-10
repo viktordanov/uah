@@ -140,9 +140,8 @@ func TestTUI_SessionCallsKeepTheKeyOrder(t *testing.T) {
 // TestTUI_EnterWaitsForTheToolCallCtrlEnterCutsIn: while the model
 // streams a response, enter holds the message, shown as queued, until the
 // response and its tool call are done, so it rides the request after the
-// tool's output; ctrl+enter (alt+enter where the terminal cannot tell it
-// from enter) drops the response under way, and the next request has the
-// message at once.
+// tool's output; ctrl+enter drops the response under way, and the next
+// request has the message at once. alt+enter adds a line, as in Codex.
 func TestTUI_EnterWaitsForTheToolCallCtrlEnterCutsIn(t *testing.T) {
 	patch := fakellm.Call{Name: "apply_patch", Args: "*** Begin Patch\n*** Add File: a.go\n+package a\n*** End Patch\n", Custom: true}
 	for _, tc := range []struct {
@@ -151,7 +150,6 @@ func TestTUI_EnterWaitsForTheToolCallCtrlEnterCutsIn(t *testing.T) {
 	}{
 		{"enter", 0},
 		{"ctrl+enter", term.ModCtrl},
-		{"alt+enter", term.ModAlt},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			hold := make(chan struct{})
@@ -164,7 +162,7 @@ func TestTUI_EnterWaitsForTheToolCallCtrlEnterCutsIn(t *testing.T) {
 			d.typeText("start")
 			d.key(term.KeyEnter, 0)
 			d.waitFor("Reading the code first")
-			d.waitFor("enter after tool · alt+enter now · tab later")
+			d.waitFor("enter after tool · tab later")
 			d.typeText("look here")
 			d.key(term.KeyEnter, tc.mod)
 			if tc.mod != 0 {
@@ -193,6 +191,33 @@ func TestTUI_EnterWaitsForTheToolCallCtrlEnterCutsIn(t *testing.T) {
 	}
 }
 
+// TestTUI_AltEnterAddsALine: alt+enter adds a line, as in Codex, also while
+// the agent works: it sends nothing.
+func TestTUI_AltEnterAddsALine(t *testing.T) {
+	gate := make(chan struct{})
+	llm := fakellm.New(t, fakellm.Reply{Text: "never shown", Gate: gate})
+	t.Cleanup(func() { close(gate) })
+	d := start(t, liveDeps(t, llm))
+	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
+
+	d.typeText("one")
+	d.key(term.KeyEnter, term.ModAlt)
+	d.typeText("two")
+	assert.Contains(t, d.cursorLine(), "two")
+	assert.Empty(t, llm.Requests(), "idle: nothing sent")
+	d.key(term.KeyEnter, 0)
+	d.until("the model thinking", func() bool { return len(llm.Requests()) == 1 })
+	assert.Contains(t, llm.Requests()[0].UserTexts, "one\ntwo")
+
+	d.typeText("three")
+	d.key(term.KeyEnter, term.ModAlt)
+	d.typeText("four")
+	assert.Contains(t, d.cursorLine(), "four")
+	d.pump(200 * time.Millisecond)
+	assert.Len(t, llm.Requests(), 1, "working: nothing sent, nothing cut off")
+	assert.NotContains(t, d.view(), "↳", "nothing queued")
+}
+
 // TestTUI_TabWaitsForTheRunsEnd: a tab-queued message waits for the run's
 // end while a ctrl+enter one reaches the next request, as in Codex. The
 // terminal's keyboard answer names the send-now key and the new-line key.
@@ -203,7 +228,7 @@ func TestTUI_TabWaitsForTheRunsEnd(t *testing.T) {
 		newline string
 		hint    string
 	}{
-		{"no answer, as tmux", nil, "ctrl+j new line", "enter after tool · alt+enter now · tab later"},
+		{"no answer, as tmux", nil, "ctrl+j new line", "enter after tool · tab later"},
 		{"enhanced", enhanced, "shift+enter new line", "enter after tool · ^enter now · tab later"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

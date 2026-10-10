@@ -80,7 +80,7 @@ func DefaultKeyMap() KeyMap {
 	bind(OpDeleteWordForward, "alt+delete", "alt+d", "ctrl+delete")
 	bind(OpDeleteAfterCursor, "ctrl+k")
 	bind(OpDeleteBeforeCursor, "ctrl+u")
-	bind(OpInsertNewline, "shift+enter", "ctrl+j")
+	bind(OpInsertNewline, "shift+enter", "ctrl+j", "alt+enter")
 	bind(OpDeleteCharacterBackward, "backspace", "ctrl+h")
 	bind(OpDeleteCharacterForward, "delete", "ctrl+d")
 	bind(OpLineStart, "home", "ctrl+a")

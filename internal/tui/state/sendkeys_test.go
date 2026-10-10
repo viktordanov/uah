@@ -39,11 +39,10 @@ func working(t *testing.T) state.State {
 	return s
 }
 
-var sendKeys = []string{state.KeyEnter, state.KeyCtrlEnter, state.KeyAltEnter}
+var sendKeys = []string{state.KeyEnter, state.KeyCtrlEnter}
 
 // TestSendKeys_WhileWorking: the three ways to send while the agent works.
-// ctrl+enter (alt+enter where the terminal cannot tell it from enter) gives
-// the agent the message now, enter once no model response or tool call is
+// ctrl+enter gives the agent the message now, enter once no model response or tool call is
 // under way, and tab at the end of the run.
 func TestSendKeys_WhileWorking(t *testing.T) {
 	busy := working(t)
@@ -52,7 +51,6 @@ func TestSendKeys_WhileWorking(t *testing.T) {
 		want state.Effect
 	}{
 		{state.KeyCtrlEnter, state.EffSteer{Text: "msg", When: session.SendNow}},
-		{state.KeyAltEnter, state.EffSteer{Text: "msg", When: session.SendNow}},
 		{state.KeyEnter, state.EffSteer{Text: "msg", When: session.SendAfterTool}},
 		{state.KeyTab, state.EffSubmit{Text: "msg"}},
 	} {
@@ -104,7 +102,7 @@ func TestSendKeys_TheTerminalPicksTheNewlineHint(t *testing.T) {
 	assert.Equal(t, "shift+enter", s.Keys.NewlineKey())
 
 	assert.Equal(t, "enter after tool · ^enter now · tab later", s.Keys.SendHint(true))
-	assert.Equal(t, "enter after tool · alt+enter now · tab later", state.Keys{}.SendHint(true), "ctrl+enter may arrive as enter")
+	assert.Equal(t, "enter after tool · tab later", state.Keys{}.SendHint(true), "ctrl+enter may arrive as enter")
 	assert.Equal(t, "enter send · shift+enter new line", s.Keys.SendHint(false))
 	assert.Equal(t, "enter send · ctrl+j new line", state.Keys{}.SendHint(false))
 
@@ -112,7 +110,7 @@ func TestSendKeys_TheTerminalPicksTheNewlineHint(t *testing.T) {
 	assert.Contains(t, plain.Items[len(plain.Items)-1].Text, "tab after the run")
 	assert.Contains(t, plain.Items[len(plain.Items)-1].Text, "shift+enter arrives as enter in this terminal")
 	enhanced, _ := apply(opened(), state.KeyboardReported{Disambiguates: true}, state.Submit{Text: "/help"})
-	assert.Contains(t, enhanced.Items[len(enhanced.Items)-1].Text, "shift+enter or ctrl+j new line")
+	assert.Contains(t, enhanced.Items[len(enhanced.Items)-1].Text, "shift+enter, alt+enter, or ctrl+j new line")
 }
 
 // TestSendKeys_AgentView: the view's composer talks to the viewed agent, so

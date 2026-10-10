@@ -30,13 +30,11 @@ type KeyboardReported struct{ Disambiguates bool }
 const (
 	KeyEnter     = "enter"
 	KeyCtrlEnter = "ctrl+enter"
-	KeyAltEnter  = "alt+enter"
 	KeyTab       = "tab"
 )
 
 // SendIntent maps a send key to its intent. While the agent works,
-// ctrl+enter (alt+enter where the terminal cannot tell it from enter) gives
-// it the message now (session.SendNow), enter once no model response or tool
+// ctrl+enter gives it the message now (session.SendNow), enter once no model response or tool
 // call is under way (session.SendAfterTool), and tab at the end of the run
 // (Submit); while idle all send. Enter on an empty composer sends the queued
 // messages now. nil means the key sends nothing: tab on an empty composer or
@@ -44,7 +42,7 @@ const (
 func (s State) SendIntent(key, draft string) any {
 	empty := strings.TrimSpace(draft) == ""
 	switch key {
-	case KeyEnter, KeyCtrlEnter, KeyAltEnter:
+	case KeyEnter, KeyCtrlEnter:
 		if s.Working() || empty {
 			return Steer{Text: draft, When: steerWhen[key]} // empty: sends the queue now, if any
 		}
@@ -70,15 +68,15 @@ func (s State) Working() bool {
 }
 
 // SendHint is the footer's hint for the send keys: while the agent works,
-// the three ways to send; while idle, how to send and add a line.
+// the ways to send, ctrl+enter only where the terminal tells it from enter;
+// while idle, how to send and add a line.
 func (k Keys) SendHint(working bool) string {
 	if working {
-		now := KeyAltEnter // the terminal may not tell ctrl+enter from enter
 		if k.Disambiguated {
-			now = "^enter"
+			return "enter after tool · ^enter now · tab later"
 		}
 
-		return "enter after tool · " + now + " now · tab later"
+		return "enter after tool · tab later"
 	}
 
 	return "enter send · " + k.NewlineKey() + " new line"
@@ -86,12 +84,14 @@ func (k Keys) SendHint(working bool) string {
 
 // sendHelp is /help's line for the send and newline keys.
 func (k Keys) sendHelp() string {
-	newline := "ctrl+j new line (shift+enter arrives as enter in this terminal, and sends)"
+	newline := "ctrl+j or alt+enter new line (shift+enter arrives as enter in this terminal, and sends)"
+	now := "ctrl+enter now, dropping the response under way, where the terminal tells it from enter (in tmux: set -s extended-keys on)"
 	if k.Disambiguated {
-		newline = "shift+enter or ctrl+j new line"
+		newline = "shift+enter, alt+enter, or ctrl+j new line"
+		now = "ctrl+enter now, dropping the response under way"
 	}
 
-	return "enter send; while the agent works, enter sends after the model's response and its tool calls (on an empty prompt: the queued messages now) · ctrl+enter or alt+enter now, dropping the response under way · tab after the run (idle: send) · " + newline
+	return "enter send; while the agent works, enter sends after the model's response and its tool calls (on an empty prompt: the queued messages now) · " + now + " · tab after the run (idle: send) · " + newline
 }
 
 // onKeys keeps the terminal's answer, also for an open agent view.

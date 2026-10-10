@@ -20,9 +20,9 @@ const (
 )
 
 // onKey maps keys to intents. The send keys (state.SendIntent): while the
-// agent works, ctrl+enter and alt+enter give it the message now, enter after
-// its next tool call, and tab at the end of the run. Shift+Enter and ctrl+j
-// add a line.
+// agent works, ctrl+enter gives it the message now, enter after its next
+// tool call, and tab at the end of the run. Shift+enter, alt+enter, and
+// ctrl+j add a line.
 func (m Model) onKey(msg term.KeyPressMsg) (term.Model, term.Cmd) { //nolint:gocyclo // a dispatch switch over a closed set; see docs/documentation/architecture.md
 	if m.st.Peek != nil && m.st.Mode == state.ModeChat {
 		return m.onPeekKey(msg)
@@ -72,7 +72,7 @@ func (m Model) onKey(msg term.KeyPressMsg) (term.Model, term.Cmd) { //nolint:goc
 		return m.dispatch(intent)
 	}
 	switch msg.String() {
-	case keyEnter, state.KeyCtrlEnter, state.KeyAltEnter, state.KeyTab:
+	case keyEnter, state.KeyCtrlEnter, state.KeyTab:
 		intent := m.st.SendIntent(msg.String(), draft)
 		if intent == nil && msg.String() != state.KeyTab {
 			return m, nil
@@ -203,7 +203,7 @@ func questionIntent(key, draft string, typing bool) any {
 		return state.QuestionMove{Delta: -1, Draft: draft}
 	case keyDown, keyCtrlN:
 		return state.QuestionMove{Delta: 1, Draft: draft}
-	case keyEnter, state.KeyCtrlEnter, state.KeyAltEnter:
+	case keyEnter, state.KeyCtrlEnter:
 		return state.QuestionAnswer{Draft: draft}
 	case state.KeyTab:
 		return state.QuestionSwitch{Delta: 1, Draft: draft}

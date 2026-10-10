@@ -106,6 +106,7 @@ func TestKeys(t *testing.T) {
 		{"ctrl+y with nothing killed does nothing", "a|b", []string{"ctrl+y"}, "a|b"},
 		{"shift+enter splits the line", "ab|cd", []string{"shift+enter"}, "ab\n|cd"},
 		{"ctrl+j splits the line", "ab|", []string{"ctrl+j"}, "ab\n|"},
+		{"alt+enter splits the line, as in Codex", "ab|cd", []string{"alt+enter"}, "ab\n|cd"},
 		{"enter does not edit", "ab|", []string{"enter"}, "ab|"},
 		{"alt+u uppercases the next word", "|foo bar", []string{"alt+u"}, "FOO| bar"},
 		{"alt+l lowercases the next word", "FOO| BAR", []string{"alt+l"}, "FOO bar|"},

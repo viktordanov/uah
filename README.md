@@ -100,9 +100,9 @@ Keys worth knowing:
 | Key | Does |
 | --- | --- |
 | enter | Send. While the agent works, it reads the message after its running tool calls, before its next model request, as in Codex rust-v0.159.1. On an empty prompt, it sends the queued messages now, in order |
-| ctrl+enter, alt+enter | While the agent works, send now: the model's response under way is dropped and asked for again with the message; running tool calls go on. Where the terminal cannot tell ctrl+enter from enter (tmux without extended keys), use alt+enter. While idle, as enter |
+| ctrl+enter | While the agent works, send now: the model's response under way is dropped and asked for again with the message; running tool calls go on. Only where the terminal tells ctrl+enter from enter (kitty, Ghostty; in tmux, `set -s extended-keys on`); elsewhere it arrives as enter. While idle, as enter |
 | tab | While the agent works, queue the message: it goes out when the run ends. While idle, send |
-| ctrl+j, shift+enter | New line; ctrl+j works in every terminal. In tmux without extended keys, shift+enter arrives as enter and sends; see the [keys design](docs/design/keys.md) |
+| ctrl+j, alt+enter, shift+enter | New line, as in Codex; ctrl+j and alt+enter work in every terminal, alt+enter on macOS where Option sends Meta. In tmux without extended keys, shift+enter arrives as enter and sends; see the [keys design](docs/design/keys.md) |
 | esc esc | Interrupt; queued messages stay. While the agent is idle, on an empty prompt: go back to an earlier message and edit it |
 | ↑ / ↓ on an empty prompt | Your earlier prompts in this folder, from this session and earlier ones; ↓ past the newest empties the prompt again. With messages queued, ↑ takes the last one back first |
 | ctrl+r | Search your earlier prompts; see [Reuse an earlier prompt](#reuse-an-earlier-prompt) |

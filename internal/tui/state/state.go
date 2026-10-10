@@ -211,8 +211,8 @@ func New(now time.Time) State {
 }
 
 // steerWhen is when a Steer's message reaches the working agent, by key:
-// enter after its tool call, ctrl+enter and alt+enter now.
-var steerWhen = map[string]session.When{KeyEnter: session.SendAfterTool, KeyCtrlEnter: session.SendNow, KeyAltEnter: session.SendNow}
+// enter after its tool call, ctrl+enter now.
+var steerWhen = map[string]session.When{KeyEnter: session.SendAfterTool, KeyCtrlEnter: session.SendNow}
 
 // Intents are what the user asks for, translated from keys by the shell.
 type (
