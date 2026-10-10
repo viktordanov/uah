@@ -338,7 +338,7 @@ A hook that fails (it exits with a code other than 0 or 2, crashes, times out, o
 
 ### MCP servers
 
-Each `[mcp_servers.<name>]` table is one server, in Codex's format, so a Codex section copies over ([MCP setup](guide.md#mcp-setup)). Merge: replace by name. A server has `command` (stdio) or `url` (streamable HTTP), not both.
+Each `[mcp_servers.<name>]` table is one server, in Codex's format, so a Codex section copies over ([MCP setup](guide.md#mcp-servers)). Merge: replace by name. A server has `command` (stdio) or `url` (streamable HTTP), not both.
 
 | Key | Type | Default | Transport | Meaning |
 | --- | --- | --- | --- | --- |
