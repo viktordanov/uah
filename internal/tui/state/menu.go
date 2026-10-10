@@ -121,6 +121,8 @@ func (s State) argSuggestions(name, arg string) []Suggestion {
 		values = session.Efforts
 	case "adaptive":
 		return s.adaptiveSuggestions(arg)
+	case "goal":
+		return s.goalSuggestions(arg)
 	case cmdAgentsName:
 		values = s.agentNames()
 	case "resume":

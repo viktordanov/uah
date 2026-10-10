@@ -99,3 +99,33 @@ func TestReduce_GoalEvents(t *testing.T) {
 	resumed, _ := apply(opened(), session.GoalUpdated{At: t0, Goal: blocked, Change: session.GoalRestored})
 	assert.True(t, strings.HasSuffix(resumed.Items[len(resumed.Items)-1].Text, "/goal resume continues it."))
 }
+
+// TestMenu_Goal: /goal lists the words that apply to the goal now, status
+// first; text that starts no word is an objective and has no menu; enter
+// on a word runs it, and on edit puts the objective in the composer.
+func TestMenu_Goal(t *testing.T) {
+	assert.Equal(t, []string{"status"}, labels(opened().Suggestions("/goal ")), "no goal: only status")
+
+	withGoal := func(status goal.Status) state.State {
+		g := activeGoal()
+		g.Status = status
+		s, _ := apply(opened(), session.GoalUpdated{At: t0, Goal: g, Change: session.GoalSet, By: "user"})
+		return s
+	}
+	active := withGoal(goal.StatusActive)
+	assert.Equal(t, []string{"status", "pause", "edit", "clear"}, labels(active.Suggestions("/goal ")))
+	assert.Equal(t, []string{"resume", "edit", "clear"}, labels(withGoal(goal.StatusPaused).Suggestions("/goal "))[1:])
+	assert.Equal(t, []string{"resume", "edit", "clear"}, labels(withGoal(goal.StatusBlocked).Suggestions("/goal "))[1:])
+	assert.Equal(t, []string{"edit", "clear"}, labels(withGoal(goal.StatusComplete).Suggestions("/goal "))[1:])
+	assert.Equal(t, []string{"clear"}, labels(active.Suggestions("/goal cl")))
+	assert.Equal(t, []string{"pause"}, labels(active.Suggestions("/goal P")))
+	assert.Empty(t, active.Suggestions("/goal clear"), "a complete word has no menu")
+	assert.Empty(t, active.Suggestions("/goal port the parser"), "an objective has no menu")
+
+	_, effects := apply(active, state.MenuEnter{Draft: "/goal "})
+	assert.Equal(t, []state.Effect{state.EffSetDraft{Text: ""}}, effects, "enter on /goal shows the status")
+	_, effects = apply(active, state.MenuEnter{Draft: "/goal cl"})
+	assert.Equal(t, []state.Effect{state.EffSetDraft{Text: ""}, state.EffGoal{Op: state.GoalOpClear}}, effects)
+	_, effects = apply(active, state.MenuEnter{Draft: "/goal e"})
+	assert.Equal(t, []state.Effect{state.EffSetDraft{Text: ""}, state.EffSetDraft{Text: "/goal edit make the build pass"}}, effects)
+}

@@ -50,6 +50,37 @@ const (
 
 var goalWords = map[string]GoalOp{goalWordClear: GoalOpClear, goalWordPause: GoalOpPause, goalWordResume: GoalOpResume}
 
+// goalSuggestions lists /goal's words that apply to the goal now, each
+// with what it does: status first, so enter on "/goal " still shows the
+// goal; edit puts the objective in the composer. Text that is no word's
+// start is an objective and has no menu.
+func (s State) goalSuggestions(arg string) []Suggestion {
+	type word struct{ name, help string }
+	words := []word{{goalWordStatus, "show the goal: status, objective, time, tokens, and continuations"}}
+	if g := s.Goal; g != nil {
+		switch g.Goal.Status {
+		case goal.StatusActive:
+			words = append(words, word{goalWordPause, "stop continuing; /goal resume goes on"})
+		case goal.StatusPaused, goal.StatusBlocked, goal.StatusBudgetLimited:
+			words = append(words, word{goalWordResume, "continue the goal"})
+		case goal.StatusComplete:
+		}
+		words = append(words,
+			word{goalWordEdit, "change the objective and keep the usage"},
+			word{goalWordClear, "drop the goal"},
+		)
+	}
+	arg = strings.ToLower(arg)
+	var out []Suggestion
+	for _, w := range words {
+		if strings.HasPrefix(w.name, arg) && w.name != arg {
+			out = append(out, Suggestion{Label: w.name, Help: w.help, Draft: "/goal " + w.name})
+		}
+	}
+
+	return out
+}
+
 // cmdGoal runs /goal: alone or with status, the goal's summary; clear,
 // pause, resume; edit with an objective, or alone to put the objective in
 // the composer; anything else sets a new goal.

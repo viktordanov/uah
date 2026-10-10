@@ -347,7 +347,7 @@ prompt cache 86% · missed 119k: effort switches 72k, cold start 9k, other 38k �
 The share of input served from the cache comes first, then the input that the session could have found cached and did not, by cause, and what that input cost as a share of the session's usage at API prices. A session without misses shows `prompt cache 93% · no misses`. Both commands return `EffLoadCache{SessionID}` (`state/cache.go`, none before the session has an ID). `bubble/usage.go` calls `Deps.Cache` off the update loop, which `cmd/uah` sets to `session.CacheStats`, and the answer comes back as `CacheLoaded`, which `onCache` shows. A failed read is a debug notice. Without `Deps.Cache`, the TUI shows no cache line.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="goals" files="state/goal.go state/commands.go state/runevents.go state/reduce.go state/state.go bubble/effects.go render/screen.go" -->
+<!-- memoria:section id="goals" files="state/goal.go state/menu.go state/commands.go state/runevents.go state/reduce.go state/state.go bubble/effects.go render/screen.go" -->
 ## Goals
 
 `/goal` is Codex's command (`state/goal.go`); the session keeps the goal and continues it ([sessions](../session/README.md#goals), the [design record](../../docs/design/goal.md)). It works while the agent works, as in Codex.
@@ -359,7 +359,7 @@ The share of input served from the cache comes first, then the input that the se
 | `/goal edit <objective>` | `Session.EditGoal`; `/goal edit` alone puts `/goal edit <objective>` in the composer to change |
 | `/goal pause`, `/goal resume`, `/goal clear` | `PauseGoal`, `ResumeGoal`, `ClearGoal` |
 
-A word followed by more text is an objective: `/goal clear the cache folder` sets a goal. `bubble/effects.go` (`runGoal`) calls the session; an error is an error notice. The session's events keep `State.Goal` (`GoalView`: the goal and when the session reported it):
+The menu after `/goal ` completes the words that apply to the goal now (`goalSuggestions`), each with what it does: `status` first, so enter on `/goal ` still shows the summary, then `pause` for an active goal, `resume` for a paused, stalled, or budget-limited one, and `edit` and `clear` for any goal. Enter runs the word; on `edit` it puts the objective in the composer. Text that starts no word has no menu. A word followed by more text is an objective: `/goal clear the cache folder` sets a goal. `bubble/effects.go` (`runGoal`) calls the session; an error is an error notice. The session's events keep `State.Goal` (`GoalView`: the goal and when the session reported it):
 
 - **The footer** shows `State.GoalIndicator()`, Codex's words (`Pursuing goal (12.5K / 50K)`, `Goal paused (/goal resume)`), on the right in the compact view and after the usage in the detailed view. An active goal's time adds the live run's since the later of the report and the run's start.
 - **Notices.** A new or edited goal and each status change show `goal.Line` (a guard's as a warning); a restored goal says how it goes on (`/goal resume continues it.`); `GoalCleared` shows `Goal cleared`. Usage changes only move the footer.
