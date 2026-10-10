@@ -66,7 +66,7 @@ Skills are Codex's `<name>/SKILL.md` folders. The embedded engine (`internal/eng
 2. The runner's `<workspace>/.harness/skills`.
 3. `~/.uah/skills`.
 4. `$CODEX_HOME/skills` (`~/.codex/skills` by default).
-5. uah's system skills in `~/.uah/skills/.system` ([`internal/systemskills`](../systemskills/systemskills.go)), embedded in the binary and written there when a session starts, because `SkillUse` reads a skill from a file, as Codex writes its own under `$CODEX_HOME/skills/.system`. Being last, any skill of the same name replaces one. `uah-customization` explains context preparation and the other customization points.
+5. uah's system skills in `~/.uah/skills/.system` ([`internal/systemskills`](../systemskills/systemskills.go)), embedded in the binary and written there when a session starts, each with its `SKILL.md` and Codex's `agents/openai.yaml` (the name the `$` menu shows), because `SkillUse` reads a skill from a file, as Codex writes its own under `$CODEX_HOME/skills/.system`. Being last, any skill of the same name replaces one. `uah-customization` explains context preparation and the other customization points.
 
 A name found in a more specific folder wins.
 <!-- /memoria:section -->

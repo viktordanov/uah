@@ -64,8 +64,9 @@ type SkillLister interface {
 	Skills(workspace string) []Skill
 }
 
-// Skill is a skill's name and what it is for, from its SKILL.md.
-type Skill struct{ Name, Description string }
+// Skill is a skill for the "$" menu: its name, which a mention uses, the
+// name to show, and what it is for.
+type Skill struct{ Name, DisplayName, Description string }
 
 // ContextReporter is an engine that can break down the context of its last
 // model request, for /context.

@@ -1,10 +1,15 @@
 package embedded
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/viktordanov/uah-core/harness/tool"
 
@@ -54,10 +59,49 @@ func (e *Engine) Skills(workspace string) []engine.Skill {
 	found, _ := discoverSkills(workspace, e.cfg.Getenv)
 	out := make([]engine.Skill, 0, len(found))
 	for _, s := range found {
-		out = append(out, engine.Skill{Name: s.Name, Description: s.Description})
+		face := skillInterface(s.Path)
+		out = append(out, engine.Skill{
+			Name: s.Name, DisplayName: cmp.Or(face.DisplayName, titled(s.Name)), Description: cmp.Or(face.ShortDescription, s.Description),
+		})
 	}
 
 	return out
+}
+
+// skillFace is the interface part of Codex's agents/openai.yaml beside a
+// skill's SKILL.md: the name and the short description its menus show.
+type skillFace struct {
+	DisplayName      string `yaml:"display_name"`
+	ShortDescription string `yaml:"short_description"`
+}
+
+// skillInterface reads the skill's agents/openai.yaml; nothing when it has
+// none or it does not parse.
+func skillInterface(skillFile string) skillFace {
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(skillFile), "agents", "openai.yaml"))
+	if err != nil {
+		return skillFace{}
+	}
+	var file struct {
+		Interface skillFace `yaml:"interface"`
+	}
+	if yaml.Unmarshal(data, &file) != nil {
+		return skillFace{}
+	}
+
+	return skillFace{DisplayName: strings.Join(strings.Fields(file.Interface.DisplayName), " "), ShortDescription: strings.Join(strings.Fields(file.Interface.ShortDescription), " ")}
+}
+
+// titled is a skill name as words: "go-testing-patterns" is "Go Testing
+// Patterns", for a skill without a display name.
+func titled(name string) string {
+	words := strings.FieldsFunc(name, func(r rune) bool { return r == '-' || r == '_' || r == ' ' || r == ':' })
+	for i, w := range words {
+		r, size := utf8.DecodeRuneInString(w)
+		words[i] = string(unicode.ToUpper(r)) + w[size:]
+	}
+
+	return strings.Join(words, " ")
 }
 
 // discoverSkills writes the system skills, then reads the skills under

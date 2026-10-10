@@ -1,6 +1,7 @@
 package state
 
 import (
+	"cmp"
 	"slices"
 	"strings"
 
@@ -30,23 +31,24 @@ func (s State) skillAt(draft string) (int, bool) {
 	return 0, false
 }
 
-// skillSuggestions lists the skills whose name holds the text after "$",
-// the ones that start with it first, each with its description. Accepting
-// one puts "$name " in its place. A word no name holds, such as $HOME, has
-// no menu.
+// skillSuggestions lists the skills whose name or display name holds the
+// text after "$", the ones that start with it first, each shown by its
+// display name with its description, as Codex's skill popup. Accepting one
+// puts "$name " in its place. A word no name holds, such as $HOME, has no
+// menu.
 func (s State) skillSuggestions(draft string, at int) []Suggestion {
 	query := strings.ToLower(draft[at+1:])
 	var starts, holds []Suggestion
 	for _, sk := range s.Menu.Skills {
-		name := strings.ToLower(sk.Name)
+		name, shown := strings.ToLower(sk.Name), strings.ToLower(sk.DisplayName)
 		if name == query {
 			return nil // a complete name has no menu
 		}
-		item := Suggestion{Label: "$" + sk.Name, Help: sk.Description, Draft: draft[:at] + "$" + sk.Name + " "}
+		item := Suggestion{Label: cmp.Or(sk.DisplayName, sk.Name), Help: sk.Description, Draft: draft[:at] + "$" + sk.Name + " "}
 		switch {
-		case strings.HasPrefix(name, query):
+		case strings.HasPrefix(name, query) || strings.HasPrefix(shown, query):
 			starts = append(starts, item)
-		case strings.Contains(name, query):
+		case strings.Contains(name, query) || strings.Contains(shown, query):
 			holds = append(holds, item)
 		}
 	}

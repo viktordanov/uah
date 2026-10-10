@@ -1,6 +1,7 @@
 package systemskills_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -48,9 +49,16 @@ func TestInstall(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, string(want), string(got), "uah rewrites its own copy")
 	assert.NoDirExists(t, filepath.Join(root, "retired"))
-	entries, err := os.ReadDir(filepath.Join(root, names[0]))
-	require.NoError(t, err)
-	assert.Len(t, entries, 1, "no temporary file is left")
+	var files []string
+	require.NoError(t, filepath.WalkDir(filepath.Join(root, names[0]), func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			rel, _ := filepath.Rel(filepath.Join(root, names[0]), p)
+			files = append(files, filepath.ToSlash(rel))
+		}
+
+		return err
+	}))
+	assert.ElementsMatch(t, []string{"SKILL.md", "agents/openai.yaml"}, files, "the skill's files, and no temporary file left")
 }
 
 // TestSkillFrontMatter: each skill names itself as its folder does and

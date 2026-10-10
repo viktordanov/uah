@@ -105,7 +105,7 @@ func TestTUI_SkillMenu(t *testing.T) {
 	d.until("the session is open", func() bool { return d.m.(bubble.Model).Exit().SessionID != "" })
 
 	d.typeText("use $uah-cus")
-	d.waitFor("$uah-customization")
+	d.waitFor("Customize uah") // its display name, from agents/openai.yaml
 	d.key(term.KeyTab, 0)
 	assert.Equal(t, "use $uah-customization ", d.draft())
 	assert.Empty(t, llm.Requests(), "completing sends nothing")

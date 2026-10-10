@@ -1,0 +1,3 @@
+interface:
+  display_name: "Customize uah"
+  short_description: "How uah works, and how to change its context, prompts, hooks, skills, and settings"

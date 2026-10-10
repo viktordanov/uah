@@ -11,13 +11,15 @@ import (
 )
 
 var menuSkills = []engine.Skill{
-	{Name: "release", Description: "Cut a release"},
-	{Name: "go-testing", Description: "Write Go tests"},
-	{Name: "testing-web", Description: "Test a web page"},
+	{Name: "release", DisplayName: "Release", Description: "Cut a release"},
+	{Name: "go-testing", DisplayName: "Go Testing", Description: "Write Go tests"},
+	{Name: "testing-web", DisplayName: "Testing Web", Description: "Test a web page"},
+	{Name: "imagegen", DisplayName: "Image Gen", Description: "Make images"},
 }
 
 // TestMenu_Skills: a "$" word loads the skills and completes their names,
-// the ones that start with the text first, each with its description;
+// shown by their display names, matched on either name, the ones that
+// start with the text first, each with its description;
 // enter puts "$name " in the composer and sends nothing; a word no name
 // holds ($HOME) or a complete name has no menu.
 func TestMenu_Skills(t *testing.T) {
@@ -26,10 +28,14 @@ func TestMenu_Skills(t *testing.T) {
 	s, _ = apply(s, state.SkillsLoaded{Skills: menuSkills})
 
 	items := s.Suggestions("fix it with $")
-	require.Equal(t, []string{"$release", "$go-testing", "$testing-web"}, labels(items))
+	require.Equal(t, []string{"Release", "Go Testing", "Testing Web", "Image Gen"}, labels(items))
 	assert.Equal(t, "Cut a release", items[0].Help)
-	assert.Equal(t, []string{"$testing-web", "$go-testing"}, labels(s.Suggestions("fix it with $test")), "a name that starts with it first")
-	assert.Equal(t, []string{"$release"}, labels(s.Suggestions("$REL")), "case does not matter")
+	assert.Equal(t, []string{"Testing Web", "Go Testing"}, labels(s.Suggestions("fix it with $test")), "a name that starts with it first")
+	assert.Equal(t, []string{"Release"}, labels(s.Suggestions("$REL")), "case does not matter")
+	assert.Equal(t, []string{"Image Gen"}, labels(s.Suggestions("$imageg")), "the name matches")
+	gen := s.Suggestions("$gen")
+	require.Equal(t, []string{"Image Gen"}, labels(gen), "and the display name")
+	assert.Equal(t, "$imagegen ", gen[0].Draft, "the mention is the name")
 	assert.Empty(t, s.Suggestions("echo $HOME"))
 	assert.Empty(t, s.Suggestions("use $release"), "a complete name has no menu")
 	assert.Empty(t, s.Suggestions("use $release now"), "only the last word")

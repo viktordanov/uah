@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // skillsFS holds the skills, each skills/<name>/SKILL.md.
@@ -49,21 +50,27 @@ func File(name string) ([]byte, error) {
 	return data, nil
 }
 
-// Install writes each system skill to <root>/<name>/SKILL.md, only where
-// the file differs, through a temporary file and a rename, so sessions that
-// start at once never read half a file. It removes the folders under root
-// of skills uah no longer ships. root is uah's own: uah rewrites it.
+// Install writes each system skill's files to <root>/<name>/, its SKILL.md
+// and its agents/openai.yaml (the name and description menus show), only
+// where a file differs, through a temporary file and a rename, so sessions
+// that start at once never read half a file. It removes the folders under
+// root of skills uah no longer ships. root is uah's own: uah rewrites it.
 func Install(root string) error {
 	names := Names()
 	var errs []error
 	for _, name := range names {
-		data, err := File(name)
-		if err != nil {
-			errs = append(errs, err)
+		err := fs.WalkDir(skillsFS, path.Join("skills", name), func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			data, err := skillsFS.ReadFile(p)
+			if err != nil {
+				return err
+			}
 
-			continue
-		}
-		if err := writeIfChanged(filepath.Join(root, name, "SKILL.md"), data); err != nil {
+			return writeIfChanged(filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(p, "skills/"))), data)
+		})
+		if err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -88,7 +95,7 @@ func writeIfChanged(file string, data []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("failed to create %s: %w", dir, err)
 	}
-	tmp, err := os.CreateTemp(dir, ".SKILL-*.md")
+	tmp, err := os.CreateTemp(dir, ".write-*")
 	if err != nil {
 		return fmt.Errorf("failed to write %s: %w", file, err)
 	}

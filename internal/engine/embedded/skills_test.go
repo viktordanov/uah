@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/viktordanov/uah/internal/config"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/systemskills"
 	"github.com/viktordanov/uah/internal/toolpolicy"
@@ -82,14 +83,18 @@ func TestEmbedded_SkillsListsTheMenu(t *testing.T) {
 	writeSkill(t, filepath.Join(e.CodexHome, "skills"), "release", "The user's release steps")
 	writeSkill(t, filepath.Join(e.CodexHome, "skills"), "triage", "Triage an issue")
 
+	face := filepath.Join(e.CodexHome, "skills", "triage", "agents")
+	require.NoError(t, os.MkdirAll(face, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(face, "openai.yaml"), []byte("interface:\n  display_name: \"Bug  Triage\"\n  short_description: \"Sort a bug report\"\n"), 0o600))
+
 	got := e.embedded().Skills(e.Workspace)
-	byName := map[string]string{}
+	byName := map[string]engine.Skill{}
 	for _, s := range got {
-		byName[s.Name] = s.Description
+		byName[s.Name] = s
 	}
-	assert.Equal(t, "Cut a release from the project", byName["release"])
-	assert.Equal(t, "Triage an issue", byName["triage"])
-	assert.Contains(t, byName, "uah-customization", "the system skills too")
+	assert.Equal(t, engine.Skill{Name: "release", DisplayName: "Release", Description: "Cut a release from the project"}, byName["release"], "without agents/openai.yaml: the name as words")
+	assert.Equal(t, engine.Skill{Name: "triage", DisplayName: "Bug Triage", Description: "Sort a bug report"}, byName["triage"], "Codex's interface names it")
+	assert.Equal(t, "Customize uah", byName["uah-customization"].DisplayName, "the system skills too, with their own")
 
 	off := embedded.New(embedded.Config{StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, NoSkills: true})
 	assert.Empty(t, off.Skills(e.Workspace))
