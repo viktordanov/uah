@@ -11,54 +11,41 @@
 
 <p align="center"><img src="docs/assets/uah.png" alt="The uah TUI: a flaky test found and fixed with a diff, then two subagents reviewing in parallel" width="900"></p>
 
-uah is a fully featured coding agent for the terminal. It reads your code, runs commands in a sandbox, edits files, and keeps working through long tasks, with sessions you can resume, subagents, goals, MCP servers, and hooks. It runs on your ChatGPT plan through the Codex login, or on an API key.
+uah is a fully featured coding agent harness for the terminal, written in Go. It runs the agent loop in process on [uah-core](https://github.com/viktordanov/uah-core), executes the model's tool calls in the operating system's sandbox behind command rules and approvals, and keeps sessions on disk to resume, search, and rewind. It runs on a ChatGPT subscription through the Codex login, or on an API key ([providers and sign-in](#providers-and-sign-in)).
 
 ```sh
 brew install viktordanov/tap/uah
-codex login    # once: uah runs on your ChatGPT plan
+codex login    # once, for the ChatGPT subscription
 uah            # in a repository
 ```
 
-<p align="center"><img src="docs/assets/uah-at-a-glance.svg" alt="A uah session between you, the model, and your machine: you send messages from the TUI or uah exec and get answers; the session holds the prepared context, AGENTS.md and skills, goals and subagents, compaction, and resumable sessions; it sends requests to the model on your ChatGPT plan or an API key, and runs tool calls (shell commands, apply_patch, MCP tools) on your machine in the sandbox, with approvals" width="900"></p>
-
-A session sits between you, the model, and your machine: it gives the model the context it needs before the first message, and runs every tool call in the sandbox, asking first where a rule or the permission mode says so.
-
-**Work with the agent**
-
-- [Sessions](docs/guide.md#resume-a-session) you can resume, search, and [take back to an earlier message](docs/guide.md#go-back-to-an-earlier-message), with [prompt history](docs/guide.md#reuse-an-earlier-prompt) on ↑ and ctrl+r
-- [Subagents](docs/guide.md#subagents-and-agent-files) that run in parallel, defined in Markdown or TOML agent files
-- [Goals](docs/guide.md#goals): `/goal <objective>` keeps the agent working until the goal is met, with a budget and guards against a loop that makes no progress
-- [Questions with options](docs/guide.md#answer-the-agents-questions): the agent stops to ask, and you pick an answer or type your own
-- [`/diff` and `/review`](docs/guide.md#review-your-changes): your git changes, and a read-only reviewer's findings
-
-**Give it the right context**
-
-- [Context preparation](#context-preparation): each session starts knowing its shell, sandbox, git state, and instruction files, from Markdown modules you can extend
-- [AGENTS.md and skills](docs/guide.md#agentsmd-and-skills), with `$` to name a skill, and [MCP servers](docs/guide.md#mcp-setup) with OAuth
-- [Compaction](docs/guide.md#compaction-and-clear), `/context`, and `/clear`; [pasted images](docs/guide.md#images), and [web search](docs/guide.md#web-search)
-
-**Stay in control**
-
-- A [sandbox](docs/guide.md#permission-modes) (Seatbelt on macOS, bubblewrap on Linux), [command rules](docs/guide.md#command-rules), permission modes, and an auto-reviewer
-- [`!` shell commands](docs/guide.md#shell-mode), `apply_patch` diffs, and [hooks](docs/guide.md#hook-setup)
-- Your ChatGPT plan's [usage](docs/guide.md#usage-limits) in the footer
-
-**Script and configure it**
-
-- [`uah exec`](docs/guide.md#headless-mode) and `uah review` run headless, with JSON events for programs
-- [Configuration](#configuration) in TOML or `/config`, including the prompts
-
-uah runs on macOS and Linux, on arm64 and x86_64; there is no Windows build. It is a terminal program: the TUI to work in, and `uah exec` and `uah review` for scripts.
+uah runs on macOS and Linux, on arm64 and x86_64; there is no Windows build. It has a TUI, and `uah exec` and `uah review` for scripts and CI.
 
 Contents:
 
-1. [Start from your situation](#start-from-your-situation)
-2. [Get started](#get-started), with the [keys](#keys)
-3. [Coming from Codex or Claude Code](#coming-from-codex-or-claude-code)
-4. [Context preparation](#context-preparation)
-5. [Configuration](#configuration)
-6. [Development](#development), with the [code map](#code-map)
-7. [License and acknowledgements](#license-and-acknowledgements)
+1. [Features](#features)
+2. [Where to start](#where-to-start)
+3. [Get started](#get-started), with the [keys](#keys)
+4. [Providers and sign-in](#providers-and-sign-in)
+5. [Coming from Codex or Claude Code](#coming-from-codex-or-claude-code)
+6. [Context preparation](#context-preparation)
+7. [Configuration](#configuration)
+8. [Development](#development), with the [code map](#code-map)
+9. [License and acknowledgements](#license-and-acknowledgements)
+
+## Features
+
+- **[Context preparation](#context-preparation):** every new session starts with one developer message of facts about its shell, sandbox, git state, and loaded instruction files, built from Markdown modules you can extend.
+- **[Sessions](docs/guide.md#resume-a-session):** kept on disk with a SQLite index; resume them (`uah resume`), search them (`uah sessions --search`), [rewind](docs/guide.md#go-back-to-an-earlier-message) one to an earlier message, and recall earlier prompts per folder with ↑ and ctrl+r.
+- **[Subagents](docs/guide.md#subagents-and-agent-files):** Codex's multi-agent tools (`spawn_agent`, `send_input`, `wait_agent`), run in parallel in the background, with roles from Markdown or TOML agent files, per-subagent model and effort, and `fork_context`.
+- **[Goals](docs/guide.md#goals):** `/goal <objective>` continues the agent until it marks the goal complete with `update_goal`, up to 16 goal turns in one run, within a token budget, a cap on continuations, and no-progress guards.
+- **[Instructions and skills](docs/guide.md#agentsmd-and-skills):** AGENTS.md from the project root down, with `@path` imports; skills from `.agents/skills`, `~/.uah/skills`, and `$CODEX_HOME/skills`, loaded by the model or by naming one as `$name`.
+- **Tools:** Bash, `apply_patch` with diffs in the transcript, `view_image`, [questions with options](docs/guide.md#answer-the-agents-questions) (`request_user_input`), the provider's hosted [web search](docs/guide.md#web-search), and [MCP servers](docs/guide.md#mcp-setup) over stdio and streamable HTTP with OAuth, resources, and prompts.
+- **[Sandbox and approvals](docs/guide.md#permission-modes):** Seatbelt on macOS and bubblewrap on Linux; read-only, workspace, auto, and yolo modes on shift+tab; [command rules](docs/guide.md#command-rules) as Starlark `prefix_rule` entries; an auto-reviewer that decides escalations in auto mode.
+- **[Compaction](docs/guide.md#compaction-and-clear):** the provider's own on OpenAI providers, else a summary with a state ledger of changed files, failing commands, and loaded skills, after old tool outputs are elided first; `/context` shows what fills the window.
+- **[Hooks](docs/guide.md#hook-setup):** Claude Code's contract (JSON on stdin, exit 2 blocks) for ten events, from `SessionStart` to `PermissionRequest`; project hooks run only after `uah hooks trust`.
+- **[Headless](docs/guide.md#headless-mode):** `uah exec` with JSONL events, `-o` for the final answer, `--ephemeral`, and a tool policy (`--tools`, `--deny-tools`); [`uah review`](docs/guide.md#review-your-changes) runs `/review`'s read-only reviewer.
+- **[Usage](docs/guide.md#usage-limits):** the ChatGPT plan's rate limits in the footer and `uah usage`, and how much of each session's input the prompt cache served.
 
 > [!NOTE]
 > The docs are kept in sync with the code by [Memoria](https://github.com/viktordanov/rs-memoria): CI fails when code changes and its README hasn't been reviewed.
@@ -67,9 +54,10 @@ Contents:
 ---
 
 <!-- memoria:section id="usage" files="cmd/uah/main.go cmd/uah/models.go cmd/uah/run.go cmd/uah/review.go cmd/uah/reviewtext.go cmd/uah/resume.go cmd/uah/sessions.go cmd/uah/sessionsrm.go internal/app/sessionid.go cmd/uah/tui.go cmd/uah/tuiconfig.go cmd/uah/print.go cmd/uah/completion.go cmd/uah/doctor.go internal/app/doctor.go internal/app/doctorchecks.go cmd/uah/flags.go cmd/uah/prompts.go internal/images/images.go internal/images/store.go internal/images/paths.go internal/images/clipboard/clipboard.go internal/images/clipboard/macos.go internal/images/clipboard/linux.go internal/images/clipboard/write.go internal/app/usershell.go internal/usershell/usershell.go internal/usershell/record.go internal/usershell/capture.go cmd/uah/usage.go internal/app/planusage.go cmd/uah/exit.go cmd/uah/exit_internal_test.go internal/codereview/codereview.go internal/codereview/output.go internal/codereview/display.go internal/gitdiff/diff.go internal/gitdiff/refs.go internal/history/history.go internal/history/recorder.go" -->
-## Start from your situation
+## Where to start
 
 - **Trying uah for the first time:** [Get started](#get-started), then the [keys](#keys).
+- **Choosing a provider, or signing in:** [providers and sign-in](#providers-and-sign-in).
 - **Moving from Codex or Claude Code:** [what carries over](#coming-from-codex-or-claude-code).
 - **Doing one task**, such as resuming a session, setting a goal, or reviewing your changes: the [task guides](docs/guide.md).
 - **Running it from a script or CI:** [headless mode](docs/guide.md#headless-mode).
@@ -91,7 +79,7 @@ Contents:
 
    Or grab an archive from the [releases](https://github.com/viktordanov/uah/releases).
 
-2. Sign in with `codex login`; uah uses your ChatGPT account and refreshes the login as Codex does. For another provider, pass `--provider` (openai, openrouter, fireworks, or ollama) and set its API key variable.
+2. Sign in with `codex login`; uah uses your ChatGPT account and refreshes the login as Codex does. For an API key instead, see [providers and sign-in](#providers-and-sign-in).
 3. Run `uah doctor`. It checks the login, sandbox, config, and MCP servers, and says how to fix anything that fails. The TUI logs to `~/.uah/logs/uah-tui.log`.
 4. Start in a repository:
 
@@ -131,6 +119,24 @@ Contents:
 | wheel, pgup / pgdn, end | Scroll the transcript; end returns to the bottom. Scrolled up, the screen stays on what you read while output arrives, and `New activity · ↓ Back to bottom · end` shows over its last row (a click on it returns too) |
 
 The [TUI README](internal/tui/README.md) lists every key and command, and the [task guides](docs/guide.md) show them at work.
+
+---
+
+## Providers and sign-in
+
+`provider` in the configuration, or `--provider`, picks the backend; `openai-codex` is the default.
+
+| Provider | Sign-in | What only it has |
+| --- | --- | --- |
+| `openai-codex` | The ChatGPT subscription: `codex login` once; uah reads Codex's login and refreshes it as Codex does | The plan's usage in the footer and `uah usage` |
+| `openai` | `OPENAI_API_KEY` | |
+| `openrouter` | `OPENROUTER_API_KEY` | Every model OpenRouter serves, Claude's included |
+| `fireworks` | `FIREWORKS_API_KEY` | |
+| `ollama` | None: a local server at `http://localhost:11434/v1` | |
+
+The two OpenAI providers also have priority processing (`/fast`), the hosted web search, and the provider's own compaction. Other providers compact with uah's summary, and have no web search.
+
+uah has no Anthropic provider: Claude models work only with an API key, through OpenRouter. Signing in with a Claude subscription is not planned, because of Anthropic's policy on third-party tools; a provider for Anthropic's API, with an API key, may come later.
 
 ---
 
