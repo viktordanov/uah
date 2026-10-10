@@ -2,18 +2,64 @@
 
 uah reads its configuration from TOML files and combines it with flags, the environment, and a resumed session. This page lists every key: its type, default, meaning, which files may set it, and how a layer or a project file merges with the files before it. `uah config` shows the effective value of each key for a workspace and where it came from.
 
-1. [Files](#files)
-2. [Precedence](#precedence)
-3. [Keys](#keys): [model](#model), [sandbox and approvals](#sandbox-and-approvals), [review](#review), [compaction](#compaction), [instructions and skills](#instructions-and-skills), [tool policy](#tool-policy), [hooks](#hooks), [MCP servers](#mcp-servers), [subagents](#subagents), [goals](#goals), [TUI](#tui), [projects](#projects)
-4. [Environment variables](#environment-variables)
-5. [uah config](#uah-config)
-6. [Examples](#examples)
+1. [Files and precedence](#1-files-and-precedence)
+   - [1.1 Files](#11-files)
+   - [1.2 Precedence](#12-precedence)
+   - [1.3 Merge rules](#13-merge-rules)
+   - [1.4 Trusted projects: `[projects]`](#14-trusted-projects-projects)
+2. [Model and requests](#2-model-and-requests)
+   - [2.1 Provider, model, and effort](#21-provider-model-and-effort)
+   - [2.2 Request retries and the disk limit](#22-request-retries-and-the-disk-limit)
+   - [2.3 Hosted web search and the question tool](#23-hosted-web-search-and-the-question-tool)
+3. [Sandbox and approvals](#3-sandbox-and-approvals)
+   - [3.1 Permission modes](#31-permission-modes)
+   - [3.2 Session grants](#32-session-grants)
+   - [3.3 Writable roots and network: `[sandbox_workspace_write]`](#33-writable-roots-and-network-sandbox_workspace_write)
+   - [3.4 Command prefixes: `[approvals]`](#34-command-prefixes-approvals)
+   - [3.5 Command environment: `[shell_environment_policy]`](#35-command-environment-shell_environment_policy)
+   - [3.6 Auto-reviewer: `[review]`](#36-auto-reviewer-review)
+4. [Tool policy](#4-tool-policy)
+   - [4.1 `[tools]` allow and deny](#41-tools-allow-and-deny)
+   - [4.2 Tool names](#42-tool-names)
+   - [4.3 How sources narrow the policy](#43-how-sources-narrow-the-policy)
+   - [4.4 What the policy does](#44-what-the-policy-does)
+5. [Instructions, prompts, and context](#5-instructions-prompts-and-context)
+   - [5.1 Instruction files](#51-instruction-files)
+   - [5.2 Skills](#52-skills)
+   - [5.3 The system prompt from a file](#53-the-system-prompt-from-a-file)
+   - [5.4 Codex's prompt](#54-codexs-prompt)
+   - [5.5 The environment context](#55-the-environment-context)
+   - [5.6 Prompt files: `uah prompts`](#56-prompt-files-uah-prompts)
+   - [5.7 Context modules](#57-context-modules)
+6. [MCP servers](#6-mcp-servers)
+   - [6.1 Server keys](#61-server-keys)
+   - [6.2 Tool approval modes](#62-tool-approval-modes)
+   - [6.3 OAuth](#63-oauth)
+7. [Hooks](#7-hooks)
+8. [Subagents and `/review`](#8-subagents-and-review)
+   - [8.1 Subagent defaults: `[agents]`](#81-subagent-defaults-agents)
+   - [8.2 Agent role files](#82-agent-role-files)
+   - [8.3 Code review: `/review` and `uah review`](#83-code-review-review-and-uah-review)
+9. [Goals](#9-goals)
+10. [Compaction](#10-compaction)
+11. [TUI and prompt history](#11-tui-and-prompt-history)
+    - [11.1 `[tui]`](#111-tui)
+    - [11.2 Prompt history: `[history]`](#112-prompt-history-history)
+12. [Environment variables](#12-environment-variables)
+13. [`uah config` and `/config`](#13-uah-config-and-config)
+14. [Examples](#14-examples)
+    - [14.1 A user file](#141-a-user-file)
+    - [14.2 A project file](#142-a-project-file)
 
-## Files
+---
+
+## 1. Files and precedence
+
+Where uah reads its configuration, which source wins for each value, and how files merge.
+
+### 1.1 Files
 
 Everything uah reads and writes lives in its home, `~/.uah`, as Codex keeps `~/.codex`. `UAH_HOME` names another directory. The home holds the files below and the state: `sessions/`, `runs/`, the index `uah.db`, pasted `images/`, the model cache `models/`, `logs/`, and the sandbox's scratch files `sandbox/`. `--state-dir` (or `UAH_STATE_DIR`) moves the state elsewhere; `--config` (or `UAH_CONFIG`) names another user file.
-
-The first time uah starts without `~/.uah` and without `UAH_HOME`, it copies the folders it used before: the configuration directory (`$XDG_CONFIG_HOME/uagent` or `~/.config/uagent`) and its part of the state directory it shared with uagent (`$UAGENT_STATE_DIR`, `$XDG_STATE_HOME/unreal-agent`, or `~/.local/state/unreal-agent`): sessions, run records, images, the model cache, and the index. It prints "uah: moved your config and sessions to ~/.uah (the old folders are untouched)". The old folders are only read. Once `~/.uah` exists, uah never copies again, and `uah doctor` says where the home came from.
 
 | File | What it holds | Applies when |
 | --- | --- | --- |
@@ -23,7 +69,7 @@ The first time uah starts without `~/.uah` and without `UAH_HOME`, it copies the
 | `<workspace>/.uah/config.toml` | The project file: every key except `[projects]` | The user file or a layer has `[projects."<workspace>"]` with `trusted = true`. The path is the absolute workspace path, symlinks not resolved |
 | `~/.uah/rules/*.rules` | The user's command rules (Starlark `prefix_rule`); "don't ask again" appends to `default.rules` | Always |
 | `<workspace>/.uah/rules/*.rules` | The project's command rules | The workspace is trusted, with or without a project file |
-| `~/.uah/prompts/context/<path>.md` | A user's replacement for a built-in [context module](#context-modules), such as `environment/fish.md`. It pins the module: uah updates to it stop reaching you while the file exists | When context preparation is on, in place of the built-in of the same path |
+| `~/.uah/prompts/context/<path>.md` | A user's replacement for a built-in [context module](#57-context-modules), such as `environment/fish.md`. It pins the module: uah updates to it stop reaching you while the file exists | When context preparation is on, in place of the built-in of the same path |
 | `~/.uah/prompts/context.defaults/` | Reference copies of the built-in context modules, written by `uah prompts init` to copy from | Never read |
 | `~/.uah/prompts/context.d/*.md` | The user's extra context modules | When context preparation is on |
 | `<workspace>/.uah/context.d/*.md` | The project's context modules | When context preparation is on and `uah context trust` approved the file as it is now |
@@ -34,18 +80,19 @@ The first time uah starts without `~/.uah` and without `UAH_HOME`, it copies the
 | `~/.uah/skills/.system/` | uah's built-in skills, such as `uah-customization`, written by uah when a session starts | After every other skill folder, so a skill of the same name elsewhere wins; uah rewrites it, do not edit |
 | `$CODEX_HOME/auth.json` (`~/.codex/auth.json`, or `OPENAI_CODEX_AUTH_FILE`) | The ChatGPT login from `codex login`. uah refreshes its token as Codex does and writes it back (0600), with a lock file beside it, `.auth.json.uah-lock`; see [the design](design/codex-auth.md) | openai-codex, unless `OPENAI_CODEX_ACCESS_TOKEN` is set, which uah never refreshes |
 
-uah no longer reads a workspace's `.uagent` directory. When a workspace has `.uagent` and no `.uah`, uah and `uah doctor` show the command that moves it: `git mv .uagent .uah` in a repository, else `mv .uagent .uah`. uah never moves the files itself.
+- **Errors:** a missing file is not an error, except the file `UAH_EXTRA_CONFIG` names. An unknown key is, in any file, so a typo fails loudly. A project file with a `[projects]` table is an error.
+- **Layers:** the layers let another program add configuration without editing the user file: a terminal host writes its hooks into its own `config.d` file and starts a session with `UAH_EXTRA_CONFIG` pointing at that session's MCP servers and permissions. A layer's hooks run as written, like the user file's: a program that can write a layer can already write the user file, so there is no trust step.
+- **Moving from uagent:** the first time uah starts without `~/.uah` and without `UAH_HOME`, it copies the folders it used before: the configuration directory (`$XDG_CONFIG_HOME/uagent` or `~/.config/uagent`) and its part of the state directory it shared with uagent (`$UAGENT_STATE_DIR`, `$XDG_STATE_HOME/unreal-agent`, or `~/.local/state/unreal-agent`): sessions, run records, images, the model cache, and the index. It prints "uah: moved your config and sessions to ~/.uah (the old folders are untouched)". The old folders are only read. Once `~/.uah` exists, uah never copies again, and `uah doctor` says where the home came from.
+- **`.uagent` directories:** uah no longer reads a workspace's `.uagent` directory. When a workspace has `.uagent` and no `.uah`, uah and `uah doctor` show the command that moves it: `git mv .uagent .uah` in a repository, else `mv .uagent .uah`. uah never moves the files itself.
 
-A missing file is not an error, except the file `UAH_EXTRA_CONFIG` names. An unknown key is, in any file, so a typo fails loudly. A project file with a `[projects]` table is an error.
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-The layers let another program add configuration without editing the user file: a terminal host writes its hooks into its own `config.d` file and starts a session with `UAH_EXTRA_CONFIG` pointing at that session's MCP servers and permissions. A layer's hooks run as written, like the user file's: a program that can write a layer can already write the user file, so there is no trust step.
-
-## Precedence
+### 1.2 Precedence
 
 Each value comes from the first of these that sets it:
 
 1. A flag.
-2. The flag's environment variable (see [Environment variables](#environment-variables)).
+2. The flag's environment variable (see [Environment variables](#12-environment-variables)).
 3. The resumed session (`--session`, `uah resume`, `uah run --last`): the `provider`, `model`, `effort`, `fast`, `adaptive_effort`, and `permission_mode` it last used, which its sidecar (`sessions/<id>.uah.json`) keeps whenever they change, and its workspace. A session from before uah kept them gives the provider, model, and effort of its last run.
 4. The project file.
 5. The file `UAH_EXTRA_CONFIG` names.
@@ -55,19 +102,23 @@ Each value comes from the first of these that sets it:
 
 The exceptions, as the code applies them:
 
-- A `--provider` flag that changes the provider, compared with the resumed session's, else the configured one, else openai-codex, drops the resumed and configured models. The model is then `--model`, or the provider's default (see `model` below).
-- The workspace comes from `-C`, the resumed session, or the current directory; no file sets it.
-- `--max-disk` (5G) has a default, but the default counts only when the flag is not given: the files come first.
-- `--fast` given, even as `--fast=false`, wins. Otherwise the resumed session's fast mode wins, unless a `--provider` flag changes the provider. Otherwise `fast` is on when any file turns it on.
-- The permission mode is yolo with `--yolo`, else `--sandbox` (or `UAH_SANDBOX`) as a mode, else the resumed session's unless it was yolo, else `permission_mode`, else `sandbox_mode` as a mode, else `workspace`. `sandbox_mode` follows from the mode. A project file's `sandbox_mode` does not override a user file's `permission_mode`, because `permission_mode` from any file comes first.
-- `--no-instructions` turns instructions off whatever the files say; no flag turns them on over `enabled = false`.
-- `--no-context-preparation` turns context preparation off; `UAH_CONTEXT_PREPARATION=on` turns it on over `context_preparation = false`.
-- `project_doc_max_bytes`, from any file, wins over `[instructions] max_bytes` from any file.
-- The [tool policy](#tool-policy) (`[tools] allow` and `deny`, `--tools`, `--deny-tools`) has no winner: every source narrows it. The allowlists of every file, the resumed session's, and `--tools` intersect, and the denylists add up, so no source can allow a tool that another leaves out.
-- `--no-skills` turns skills off whatever the files say; no flag turns them on over `[skills] enabled = false`.
-- Keys without a flag come only from the files and the defaults.
+- **Provider change:** a `--provider` flag that changes the provider, compared with the resumed session's, else the configured one, else openai-codex, drops the resumed and configured models. The model is then `--model`, or the provider's default (see `model` in [Provider, model, and effort](#21-provider-model-and-effort)).
+- **Workspace:** the workspace comes from `-C`, the resumed session, or the current directory; no file sets it.
+- **`--max-disk`:** `--max-disk` (5G) has a default, but the default counts only when the flag is not given: the files come first.
+- **Fast mode:** `--fast` given, even as `--fast=false`, wins. Otherwise the resumed session's fast mode wins, unless a `--provider` flag changes the provider. Otherwise `fast` is on when any file turns it on.
+- **Permission mode:** the permission mode is yolo with `--yolo`, else `--sandbox` (or `UAH_SANDBOX`) as a mode, else the resumed session's unless it was yolo, else `permission_mode`, else `sandbox_mode` as a mode, else `workspace`. `sandbox_mode` follows from the mode. A project file's `sandbox_mode` does not override a user file's `permission_mode`, because `permission_mode` from any file comes first.
+- **Instructions:** `--no-instructions` turns instructions off whatever the files say; no flag turns them on over `enabled = false`.
+- **Context preparation:** `--no-context-preparation` turns context preparation off; `UAH_CONTEXT_PREPARATION=on` turns it on over `context_preparation = false`.
+- **Instruction size cap:** `project_doc_max_bytes`, from any file, wins over `[instructions] max_bytes` from any file.
+- **Tool policy:** the [tool policy](#4-tool-policy) (`[tools] allow` and `deny`, `--tools`, `--deny-tools`) has no winner: every source narrows it. The allowlists of every file, the resumed session's, and `--tools` intersect, and the denylists add up, so no source can allow a tool that another leaves out.
+- **Skills:** `--no-skills` turns skills off whatever the files say; no flag turns them on over `[skills] enabled = false`.
+- **Keys without a flag** come only from the files and the defaults.
 
-Each layer, then the project file, merges into the files before it key by key, in one of five ways. The key tables below name the way for each key, in terms of a project file over the user file; a layer merges the same way.
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 1.3 Merge rules
+
+Each layer, then the project file, merges into the files before it key by key, in one of five ways. Every key may be set in the user file, in a layer, and in a trusted project file, except `[projects]`, which the project file may not set. The key tables on this page name the way for each key, in terms of a project file over the user file; a layer merges the same way.
 
 | Merge | Rule |
 | --- | --- |
@@ -77,32 +128,72 @@ Each layer, then the project file, merges into the files before it key by key, i
 | replace by name | A project `[mcp_servers.<name>]` replaces the user's server of the same name whole; other servers stay |
 | narrow | The project list can only take tools away: allowlists intersect, so a tool stays allowed only when both files allow it, and denylists add up. A file that does not set the key changes nothing |
 
-## Keys
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-Every key may be set in the user file, in a layer, and in a trusted project file, except `[projects]`, which the project file may not set.
+### 1.4 Trusted projects: `[projects]`
 
-### Model
+`[projects."<absolute workspace path>"]`, in the user file or a layer, not in the project file, decides whether a workspace's own configuration applies. Merge: replace by name, so a later layer's entry for a workspace replaces an earlier one's:
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `trusted` | bool | false | Apply the workspace's `.uah/config.toml` and `.uah/rules/*.rules` |
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+---
+
+## 2. Model and requests
+
+The provider and model, how hard the model thinks, how requests are retried, and the hosted tools the provider offers.
+
+### 2.1 Provider, model, and effort
+
+These keys pick the provider, the model, and its thinking level, and tune how each request is sent.
 
 | Key | Type | Default | Flag, env | Merge | Meaning |
 | --- | --- | --- | --- | --- | --- |
 | `provider` | string | `openai-codex` | `--provider`, `UAH_LLM_PROVIDER` | override | The LLM provider: openai, openai-codex, openrouter, fireworks, or ollama |
 | `model` | string | `gpt-6.1-sol` on openai-codex and openai when the login's model list has it; else `gpt-6-sol` on openai-codex, `gpt-6-astra` on openai, and none for the others | `-m`, `--model`, `UAH_LLM_MODEL` | override | The model ID. Codex rust-v0.159.1 ranks gpt-6.1-sol first, but OpenAI rolls it out by account, so without a named model uah asks the provider for its list (cached for five minutes) when the session opens. A list uah could not get counts as without it. `uah models` marks the default, and `uah config` settles it from the cached list |
 | `effort` | string | `high` | `-e`, `--effort` | override | The thinking level: low, medium, high, xhigh, max, or ultra. Not every model takes every level (`uah models` lists each model's); a session warns when it opens with a level its model does not list, and `/effort` refuses one |
-| `request_max_attempts` | integer | 10 | `--max-attempts`, `UAH_LLM_MAX_ATTEMPTS` | override | How many times a model request is sent before the run fails. A lost connection, a timeout, a 429, or most 5xx statuses are retried after 2 s, then 4, 8, and 16 s, and then every 30 s (less up to a fifth of jitter, or the server's `Retry-After` up to 30 s): 10 attempts wait about 3 minutes in all. The runner's own default is 5 |
-| `max_disk` | size | `5G` | `--max-disk` | override | Stop a run when tool output exceeds this size (`500M`, `5G`, bytes without a suffix); `0` disables it |
 | `fast` | bool | false | `--fast` | OR | Priority processing (`service_tier = "priority"`); needs the openai or openai-codex provider, and any other provider refuses it before the session starts |
-| `web_search` | string | `live` | none | override | The provider's hosted web search tool, as Codex's key: `live` offers it on openai and openai-codex (other providers never get it), `disabled` does not. Codex's `cached` and `indexed` are errors: the runner sends the tool without Codex's access options, which the API treats as live search. The search runs on the provider's servers, so the sandbox's network rule does not apply; it is offered in every permission mode, as in Codex ([web search](design/web-search.md)) |
 | `model_verbosity` | string | the model's `default_verbosity` | `--model-verbosity`, `UAH_MODEL_VERBOSITY` | override | How much the model writes: `low`, `medium`, or `high`, sent as the Responses API's `text.verbosity`, as Codex's key. As in Codex, only a model whose catalog entry has `support_verbosity` gets it: unset, it gets the entry's `default_verbosity` (`low` for every model in Codex's catalog at rust-v0.159.1, gpt-6.1-sol included); set, it gets this value. Any other model, or one no catalog entry describes, gets no `text` field, and a session that opens with `model_verbosity` set on such a model shows Codex's warning. `uah config` shows the value the session's model gets ("" for none) |
 | `adaptive_effort` | string | `off` | `--adaptive-effort`, `UAH_ADAPTIVE_EFFORT` | override | Adaptive effort for new sessions: `off`, `1-step`, or `2-steps`. On, the model thinks less on follow-up turns: a request that only follows tool results goes one (`1-step`) or two (`2-steps`) effort levels below `effort`, never below low (at `high`, 2 steps is `low`). The first request and a request with a user message go at `effort`. A session keeps its own value, as it keeps its effort; `/adaptive`, alt+e, and `/config` change it for the current session from its next model request, and the footer marks the effort (`high↓`, `high⇊`; `high→low` while a lowered follow-up is out). Measured on the agent benchmark at high effort, at the same pass rate: 1 step cut wall time by about a quarter and cost by 16–21%; 2 steps cut wall time by about a third and cost by a quarter ([agent tuning](design/agent-tuning.md#lean-mode-rules)) |
-| `context_preparation` | bool | true | `--no-context-preparation`, `UAH_CONTEXT_PREPARATION` (`on` or `off`) | override | Start each new session, subagents' included, with one developer message of [prepared context](../internal/contextprep/README.md) before the first user message: git's state and tracked files, the instruction files (said to be all of them), how to size Bash output, the shell's and OS's traps, and the sandbox. Resumed and forked sessions get none. Off, nothing is added; the agent benchmark turns it off to compare |
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 2.2 Request retries and the disk limit
+
+These keys bound a run: how often a model request is retried, and how much tool output it may write.
+
+| Key | Type | Default | Flag, env | Merge | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| `request_max_attempts` | integer | 10 | `--max-attempts`, `UAH_LLM_MAX_ATTEMPTS` | override | How many times a model request is sent before the run fails. A lost connection, a timeout, a 429, or most 5xx statuses are retried after 2 s, then 4, 8, and 16 s, and then every 30 s (less up to a fifth of jitter, or the server's `Retry-After` up to 30 s): 10 attempts wait about 3 minutes in all. The runner's own default is 5 |
+| `max_disk` | size | `5G` | `--max-disk` | override | Stop a run when tool output exceeds this size (`500M`, `5G`, bytes without a suffix); `0` disables it |
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 2.3 Hosted web search and the question tool
+
+`web_search` controls the provider's hosted search tool, and `[tools.experimental_request_user_input]` the agent's question tool.
+
+| Key | Type | Default | Flag, env | Merge | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| `web_search` | string | `live` | none | override | The provider's hosted web search tool, as Codex's key: `live` offers it on openai and openai-codex (other providers never get it), `disabled` does not. Codex's `cached` and `indexed` are errors: the runner sends the tool without Codex's access options, which the API treats as live search. The search runs on the provider's servers, so the sandbox's network rule does not apply; it is offered in every permission mode, as in Codex ([web search](design/web-search.md)) |
 | `[tools.experimental_request_user_input]` `enabled` | bool | true | `UAH_REQUEST_USER_INPUT` (`on` or `off`) | override, can unset | The agent's question tool, `request_user_input`, as Codex's key (`experimental_request_user_input` in the `[tools]` table): in the TUI, the main agent stops to ask a few questions with options and waits for the answers ([questions](design/questions.md)). `false` stops offering it, and the default system prompt says to ask in the final message instead, as before the tool. `uah exec` never offers it. Set it in a `config.d` layer or the file `UAH_EXTRA_CONFIG` names to turn it off for one integration, such as a web terminal that cannot show the picker |
-| `[context]` `modules` | list of strings | `[]` | none | override | The ids of [context modules](#context-modules) to turn on that ship turned off: the library's `go`, `python-venv`, `node`, `rust`, `docker`, and `git-lfs`, or a user's or project's module with `enabled: false` |
 
-#### Context modules
+- **One integration only:** to turn the question tool off for one integration only, give it a layer of its own: `UAH_EXTRA_CONFIG=~/.uah/web-tty.toml uah` with that file holding `[tools.experimental_request_user_input]` and `enabled = false`, or `UAH_REQUEST_USER_INPUT=off` in its environment. A file in `config.d` turns it off everywhere.
 
-The prepared context's text is in Markdown modules, each with front matter that says when it applies; the [context preparation guide](context-preparation.md) explains the format, the library, and recipes, and the [implementation reference](../internal/contextprep/README.md#modules) the code. uah ships the built-in blocks' modules and a library of modules that are off until `[context] modules` names them. A file under `~/.uah/prompts/context/` with a built-in's path replaces it for as long as it exists, so uah updates to that module stop reaching you. `uah prompts init` writes the built-ins to `~/.uah/prompts/context.defaults/`, a reference uah never reads, to copy from; `uah prompts status` lists the replacements and flags copies identical to the built-in, and `uah prompts prune` deletes those. Files in `~/.uah/prompts/context.d/` and `<workspace>/.uah/context.d/` add modules, each as its own block. A project's module is used only once `uah context trust` approved its content in that workspace, like a project hook. `uah context` lists every module and whether it applies to a new session in the workspace and why, `--show` prints the context a new main session and a read-only subagent get, and `--json` prints both as JSON.
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-### Sandbox and approvals
+---
+
+## 3. Sandbox and approvals
+
+The permission mode sets the sandbox and who answers what needs approval; the tables below it tune the sandbox, the command lists, the command environment, and the auto-reviewer.
+
+### 3.1 Permission modes
+
+`permission_mode` picks the sandbox and who decides what needs approval, and it wins over `sandbox_mode`.
 
 | Key | Type | Default | Flag, env | Merge | Meaning |
 | --- | --- | --- | --- | --- | --- |
@@ -121,18 +212,28 @@ The permission modes:
 | `auto` | `workspace-write` | The auto-reviewer decides, also with `approvals_reviewer = "user"`. The user is not asked; a decline reaches the model with the reviewer's reason |
 | `yolo` | none | Nothing asks: escalations, `prompt` rules, patches, and MCP tools with an approval mode all run, without the auto-reviewer or PermissionRequest hooks; `forbid` rules still refuse, also a command with a redirect, a subshell, or a variable that runs or may run a forbidden command, and a patch that a rule on `apply_patch` or `apply_patch <path>` forbids (also in the other modes, where a patch inside the writable roots asks no one). Only `--yolo` (alias `--dangerously-bypass-approvals-and-sandbox`, Codex's name) starts it, with no `--sandbox` or `--ask`. It adds `yolo` after `auto` in the shift+tab cycle, and a resumed session stays in it only when `--yolo` is given again |
 
-`approval_policy = "never"` still denies whatever needs approval, in every mode but yolo, unless a PreToolUse hook allowed the call. A mode change reaches a live run from its next command and model request.
+- **`approval_policy = "never"`** still denies whatever needs approval, in every mode but yolo, unless a PreToolUse hook allowed the call.
+- **Mode changes:** a mode change reaches a live run from its next command and model request.
 
-#### Session grants
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 3.2 Session grants
 
 A session can make more directories writable for the rest of the session, besides `writable_roots`. Nothing writes a grant to a configuration file. Grants apply only in the `workspace-write` sandbox, so in the `workspace` and `auto` modes. Read only mode stays read only, and yolo mode needs none.
 
 - **A worktree of the same repository** is granted without asking anyone. When a patch, or a command the model asks to run outside the sandbox that no `forbid` rule refuses, writes into another git worktree of the workspace's repository, uah adds the root of that worktree to the writable roots. For example, a session starts in `~/code/foo` and edits `~/code/foo-worktrees/bar`. The patch then applies without a review. The escalated command runs in the sandbox, which now writes there; if the command needs more, such as the network, it fails with the usual hint, and the model asks again. "Same repository" means two things. The target's `git rev-parse --git-common-dir`, resolved, is the workspace's. And the repository lists the worktree: `<common>/worktrees/<name>/gitdir` points back at the target's `.git` file. A `.git` file that only names the repository, in any directory, is not enough. A submodule, a nested repository, and an unrelated repository are other repositories. A worktree whose directory holds the repository's common directory, other than as its own `.git`, is not granted, because the repository's hooks would then be writable.
 - **A directory you allow.** In `workspace` mode, the prompt for a patch outside the writable roots has one more choice: "Yes, and allow writes to `<dir>` for this session" (`w`). `<dir>` is the root of the git working tree that holds the patch's files, else their common directory. The auto-reviewer never grants a directory: its approval covers one patch, in `auto` mode and before you in `workspace` mode with `approvals_reviewer = "auto_review"`. PermissionRequest hooks and a role's `approve` list never grant one either.
 
-No grant is or holds the home directory, and no grant is the file system's root. No grant is a protected directory itself, such as `~/.uah` or `~/.codex`, or lies inside a `.git` or `.uah` directory, whose hooks and configuration run outside the sandbox. Protected paths (`.git`, `.uah`, and the others) stay read-only inside a granted directory, no grant lies inside a protected path of another writable root, and no grant is, holds, or lies inside the workspace or another writable root. So a session in a worktree nested inside the main checkout does not get the main checkout. A grant holds only for the directory it was made for: one that is removed, or replaced by another directory or a symlink, is dropped. A `forbid` rule on `apply_patch` or on a path refuses a patch there before any grant. A grant reaches a live run from its next command, and the next model request names it in the sandbox note. The transcript shows one line for each grant: `writable for this session: <path>`, with the reason (`a git worktree of this repository` or `your approval`). Subagents share their session's grants.
+Limits on every grant:
 
-A session keeps its worktree grants in its sidecar, as it keeps its permission mode, and a resume checks each one again: it stays only while the directory is still a worktree of the repository, at the same real path. A dropped grant gets a notice. Worktree grants survive a resume because a resumed session continues the same work, and the check proves each one again from the repository's own files. A directory you allowed does not survive a resume: nothing on disk proves your answer, and a sidecar that a command could change must not widen what the session may write. The first patch there after the resume asks again.
+- **Never granted:** no grant is or holds the home directory, and no grant is the file system's root. No grant is a protected directory itself, such as `~/.uah` or `~/.codex`, or lies inside a `.git` or `.uah` directory, whose hooks and configuration run outside the sandbox. Protected paths (`.git`, `.uah`, and the others) stay read-only inside a granted directory, no grant lies inside a protected path of another writable root, and no grant is, holds, or lies inside the workspace or another writable root. So a session in a worktree nested inside the main checkout does not get the main checkout.
+- **Lifetime:** a grant holds only for the directory it was made for: one that is removed, or replaced by another directory or a symlink, is dropped. A `forbid` rule on `apply_patch` or on a path refuses a patch there before any grant. A grant reaches a live run from its next command, and the next model request names it in the sandbox note.
+- **Visibility:** the transcript shows one line for each grant: `writable for this session: <path>`, with the reason (`a git worktree of this repository` or `your approval`). Subagents share their session's grants.
+- **Resume:** a session keeps its worktree grants in its sidecar, as it keeps its permission mode, and a resume checks each one again: it stays only while the directory is still a worktree of the repository, at the same real path. A dropped grant gets a notice. Worktree grants survive a resume because a resumed session continues the same work, and the check proves each one again from the repository's own files. A directory you allowed does not survive a resume: nothing on disk proves your answer, and a sidecar that a command could change must not widen what the session may write. The first patch there after the resume asks again.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 3.3 Writable roots and network: `[sandbox_workspace_write]`
 
 `[sandbox_workspace_write]` configures the `workspace-write` mode:
 
@@ -141,12 +242,20 @@ A session keeps its worktree grants in its sidecar, as it keeps its permission m
 | `network_access` | bool | false | OR | Sandboxed commands may use the network |
 | `writable_roots` | list of strings | `[]` | append | More writable directories. `~` is the home directory; relative paths are relative to the workspace |
 
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 3.4 Command prefixes: `[approvals]`
+
 `[approvals]` lists command prefixes, such as `"git status"`, besides the rules files:
 
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
 | `allow` | list of strings | `[]` | append | Commands that start with one of these run outside the sandbox without asking |
 | `forbid` | list of strings | `[]` | append | Commands that start with one of these never run, also in a pipeline, a subshell, a substitution, or with a redirect. A command that may run one, because a word it needs is a variable, a glob, or a substitution, is refused too |
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 3.5 Command environment: `[shell_environment_policy]`
 
 `[shell_environment_policy]` is Codex's filter for the environment commands get. Empty, commands get the whole environment:
 
@@ -158,7 +267,9 @@ A session keeps its worktree grants in its sidecar, as it keeps its permission m
 | `include_only` | list of patterns | `[]` | append | When set, only matching variables stay, applied last |
 | `set` | table of strings | `{}` | append | Variables to set, after `inherit`, the default excludes, and `exclude` |
 
-### Review
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 3.6 Auto-reviewer: `[review]`
 
 `[review]` configures the auto-reviewer's model call ([approvals](../internal/approval/README.md)):
 
@@ -170,43 +281,79 @@ A session keeps its worktree grants in its sidecar, as it keeps its permission m
 | `guardian_markers` | bool | `false` | OR | Opt-in Codex billing-classification markers for openai-codex (ChatGPT auth). The backend decides billing classification; markers do not guarantee credits or a billing outcome. |
 | `policy_file` | path | Codex's review policy | override | A file whose text replaces the review policy, as Codex's `[auto_review] policy` does inline. The fixed framing and the answer format stay. An absolute path or one under `~/`; a missing or empty file stops the session from starting |
 
-Auto-review requests always omit `service_tier` and send `x-openai-subagent: guardian` in both the headers and `client_metadata`. With `guardian_markers = true`, openai-codex review requests also send `x-codex-guardian: reviewer` and `client_metadata.parent_response_id` when the run has received a `response.created` ID. Normal requests send `client_metadata.guardian_credits_requested = "true"`. These opt-in markers apply only to openai-codex; `originator` remains `uah-core`.
+- **Request markers:** auto-review requests always omit `service_tier` and send `x-openai-subagent: guardian` in both the headers and `client_metadata`. With `guardian_markers = true`, openai-codex review requests also send `x-codex-guardian: reviewer` and `client_metadata.parent_response_id` when the run has received a `response.created` ID. Normal requests send `client_metadata.guardian_credits_requested = "true"`. These opt-in markers apply only to openai-codex; `originator` remains `uah-core`.
+- **Not `/review`:** the TUI's `/review` and `uah review` take their keys from [Code review](#83-code-review-review-and-uah-review).
 
-`review_model` is a top-level key, Codex's, for the TUI's `/review` and `uah review` (a code review by a read-only subagent), not for the auto-reviewer above:
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-| Key | Type | Default | Merge | Meaning |
-| --- | --- | --- | --- | --- |
-| `review_model` | string | the session's current model, as Codex | override | The model `/review` runs its reviewer on, on the session's provider, with the session's effort ([the review design](design/review.md)) |
-| `review_time_limit` | duration | none | override | How long one `/review` or `uah review` may run. When it runs out, the reviewer's commands stop and it gets one last turn, with no tools, to answer with what it has; the review says "stopped at the time limit". `0` is no limit |
-| `review_token_limit` | integer | none | override | The input and output tokens one review's model responses may use, cached input included; when they run out, the same as the time limit ("stopped at the token limit"). `0` is no limit |
-| `review_command_timeout` | duration | `10m` | override | How long one of the reviewer's commands may run before it is stopped, as an interrupt stops it; its result says so. `0` is no limit |
+---
 
-The time and token limits are off until the owner decides; about three times the longest normal review before would be `30m` and `3000000` (it took 10 minutes and 1.6M tokens). The command limit is longer than the longest command of those reviews, 7 minutes ([the review design](design/review.md#limits)).
+## 4. Tool policy
 
-`uah prompts init` writes the built-in prompts to `~/.uah/prompts` as a starting point: the review policy (`review.md`), the summary prompt (`compact.md`), uah's default system prompt (`system.md`), Codex's unmodified prompt (`system-codex.md`), and the runner's short host prompt (`system-runner.md`). It prints the `policy_file`, `experimental_compact_prompt_file`, and `model_instructions_file` lines that use them, with the lines for `system-codex.md` and `system-runner.md` commented out, and it overwrites only with `--force`. `uah prompts show <name>` prints one: `compact`, `system`, `system-codex`, `system-runner`, or `review`. `uah prompts init` also writes the [context modules](#context-modules) to `~/.uah/prompts/context.defaults/` as a reference that uah never reads, and overwrites those copies each time; it writes nothing under `~/.uah/prompts/context/`. `uah prompts show context/<path>` prints a module, such as `context/environment/fish`. `uah prompts status` lists the prompt files (absent, identical to the built-in, or edited), the context replacements, and the user's own modules; `uah prompts prune` deletes the replacements identical to the built-in (`--dry-run` lists them).
+The tool policy limits the tools the model may use, for example for a headless, read-only query that may use only one MCP read tool. It is off by default: without `allow` and `deny` in any file and without the flags, the model gets every tool, as before.
 
-### Compaction
+### 4.1 `[tools]` allow and deny
 
-| Key | Type | Default | Merge | Meaning |
-| --- | --- | --- | --- | --- |
-| `auto_compact_percent` | integer 0–100 | 90 | override, can unset | Compact before a model request once the context in use (the last response's tokens plus an estimate of what was added since) reaches this share of the context window; 0 turns automatic compaction off |
-| `model_context_window` | integer | the model catalog (the provider's list, else Codex's bundled one), else 272,000 | override | The context window in tokens, for compaction and the context meter |
-| `model_auto_compact_token_limit` | integer | none | override | Codex's key: compact once the context in use reaches this many tokens, when that comes before `auto_compact_percent` of the window. It only lowers the limit, as in Codex; `auto_compact_percent = 0` still turns automatic compaction off. `/context` shows the rest of the window as the buffer |
-| `compact_model` | string | the session's current model, as Codex | override | The model that writes the summary, on the session's provider. A model with a smaller window gets the history trimmed from the oldest item to fit |
-| `compact_effort` | string | the session's current effort | override | The summary call's effort: low, medium, high, xhigh, max, or ultra |
-| `compact_prompt` | string | uah's: Codex's summary prompt in fixed sections (Goal, Constraints, Decisions, State, Errors, TODOs, Next) | override | Codex's key: the prompt the summary call ends with. Surrounding whitespace is trimmed; empty means the default |
-| `experimental_compact_prompt_file` | path | none | override | Codex's key: a file whose text is the summary prompt, when `compact_prompt` is not set. An absolute path or one under `~/`; a missing or empty file stops the session from starting |
-| `compact_user_message_max_tokens` | integer | 20000, at most a quarter of the window | override | The cap on user messages a compaction keeps word for word, newest first; the one that crosses it is shortened in the middle. Codex fixes it at 20,000 (`COMPACT_USER_MESSAGE_MAX_TOKENS`); uah's default is at most a quarter of the window, so a small model's compacted context is not mostly old messages. A compaction saves the cap it used, so changing it affects later compactions only |
+`[tools]` names the tools the model may use and the tools it may never use:
 
-| `compact_elide_after_calls` | integer | 10 | override | Before an automatic summary, replace the tool outputs this many calls old, and outputs over 2,000 tokens three calls old, with a short stub (tool, command, exit code, size); when that frees enough, no summary runs. SkillUse outputs stay. 0 turns it off |
+| Key | Type | Default | Flag | Merge | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| `allow` | list of strings | unset: every tool | `--tools a,b` | narrow | The only tools the model may use. `[]` (or `--tools ""`) allows no tools at all |
+| `deny` | list of strings | `[]` | `--deny-tools a,b` | narrow (append) | Tools the model may never use, even when `allow` names them |
 
-| `compact_keep_recent_calls` | integer | 5 | override | A summary leaves the last this many tool calls, with their outputs and the model's output around them, word for word after it; when they take more than a quarter of the window, the summary covers them too. 0 summarizes everything, as Codex does |
+- **Inspecting it:** `uah config` shows `tools.allow` and `tools.deny` with every source that narrowed them.
 
-| `remote_compaction` | boolean | true | override | On openai and openai-codex, compact as Codex does: the provider turns the history into an encrypted item that later requests send in its place, after the kept user messages (up to 64,000 tokens) and before uah's ledger. A failed remote compaction, a `/compact` with focus instructions, and every other provider use the summary. Codex has no key for it (its `remote_compaction_v2` feature is removed and always on) |
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-`/compact <instructions>` adds focus instructions to the prompt for that one summary, as in Claude Code: `/compact keep the failing test names`.
+### 4.2 Tool names
 
-### Instructions and skills
+A name in `allow` or `deny` is one of these:
+
+1. A built-in tool: `Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `web_search`, `request_user_input`, the agent tools `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent`, the goal tools `get_goal`, `create_goal`, and `update_goal`, and the MCP resource tools `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource`.
+2. An MCP tool: `mcp__<server>__<tool>`, where `<server>` is the server's name as the model sees it (`/mcp` lists it) and `<tool>` is the tool's own name as the server lists it, `read-file` say, not the `read_file` of the model's name. uah allows a tool by that identity, never by the name the model sees, so the entry allows nothing while the server has no such tool, and it never passes to another tool when tool lists change.
+3. Every tool of one MCP server: `mcp__<server>__*`, or `mcp__<server>`. The pattern matches the tools of that server only, never of another server whose name starts the same way.
+
+- **Unknown names:** another name is an error, so a typo cannot deny nothing. Other tools' names are errors too, with a hint: `Edit` and `Write` are `apply_patch` in uah, and `Agent` is `spawn_agent`.
+- **Ambiguous MCP names:** under a policy, uah offers no MCP tool whose name the model sees is not unambiguously its own, and says so on stderr (`mcp> tool policy: left out …`) when the policy names it: a tool whose name another tool's would equal (`read-file` and `read.file`), whose name uah shortened with a hash suffix, or of a server whose name another configured server shares (`a-b` and `a.b` are both `a_b`) or has `__`. The MCP resource tools do not reach such a server either. Rename the server in the configuration to allow its tools.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 4.3 How sources narrow the policy
+
+Every source can only narrow the policy; none widens it:
+
+1. The `allow` lists of the user file, each layer (`config.d/*.toml`, then `UAH_EXTRA_CONFIG`), and the trusted project file intersect. A file without `allow` changes nothing. The `deny` lists of all files add up. uah also keeps each list and checks a tool against every one of them, so narrowing `mcp__a__*` with a tool name never allows that name from another server.
+2. A resumed session keeps the policy it ran under: its sidecar records the policy, and resuming narrows the current policy with it. Resuming without the flags does not widen a session's tools. A session whose sidecar cannot be read does not resume.
+3. `--tools` intersects with the result, and `--deny-tools` adds to the denylist.
+4. A subagent's role (`tools` in its definition) narrows the policy for that subagent. A subagent, a fork, and `/review`'s reviewer run on the same engine, so they get the policy too. With `spawn_agent` not allowed, the model cannot start subagents.
+5. A PreToolUse hook cannot widen it. The policy refuses a call before any hook runs, so a hook's `"allow"` only skips the approval of a call the policy allows, and `updatedInput` changes the arguments, never the tool.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 4.4 What the policy does
+
+The policy decides which tools the model sees and refuses every other call before anything else handles it:
+
+- The model's tool definitions hold only the allowed tools, hosted `web_search` included. A call to any other tool, forced or made up, is refused with "the tool policy does not allow it" before a hook, an approval, or a job sees it, and no PostToolUse hook runs for it either. The call and its refusal still show in the transcript and in `--json`.
+- The MCP resource tools reach only a server the policy allows as a whole (`mcp__<server>__*`), and must name it: `list_mcp_resources` without a server is refused.
+- A resumed session can hold calls submitted under an earlier policy, or none, that had not finished. uah checks each one against the current policy before it runs and cancels one the policy does not allow.
+- The auto-reviewer runs no commands unless the policy allows `Bash`.
+- Without `request_user_input`, the default prompt does not mention the question tool.
+- A session under a policy fails closed when a hook fails: a PreToolUse or PermissionRequest hook that exits with a code other than 0 or 2, crashes, times out, prints invalid JSON, or answers a `permissionDecision` uah does not know blocks the call ([hook failures](#7-hooks)).
+
+- **Not covered:** the policy does not cover what the user does: commands typed in the TUI's shell mode (`!`), MCP resources attached with `@`, and MCP prompts used as slash commands. MCP servers still start, all of them, so a server whose tools are all denied still runs.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+---
+
+## 5. Instructions, prompts, and context
+
+What uah puts before the conversation: the system prompt, the AGENTS.md files, skills, the environment context, and the prepared context.
+
+### 5.1 Instruction files
+
+These keys decide which instruction files uah reads, where discovery starts, and how much of them it keeps.
 
 | Key | Type | Default | Flag | Merge | Meaning |
 | --- | --- | --- | --- | --- | --- |
@@ -222,7 +369,11 @@ The time and token limits are off until the owner decides; about three times the
 | `enabled` | bool | true | `--no-instructions` turns it off | override, can unset | Load AGENTS.md files into the system prompt |
 | `max_bytes` | integer | 32768 | none | override | The size cap, when `project_doc_max_bytes` is unset |
 
-`[skills]`:
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 5.2 Skills
+
+`[skills]` turns skill discovery on or off:
 
 | Key | Type | Default | Flag | Merge | Meaning |
 | --- | --- | --- | --- | --- | --- |
@@ -230,59 +381,20 @@ The time and token limits are off until the owner decides; about three times the
 
 Discovery order and the skill folders are in the [instructions README](../internal/instructions/README.md#skills).
 
-### Tool policy
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-The tool policy limits the tools the model may use, for example for a headless, read-only query that may use only one MCP read tool. It is off by default: without `allow` and `deny` in any file and without the flags, the model gets every tool, as before.
-
-`[tools]`:
-
-| Key | Type | Default | Flag | Merge | Meaning |
-| --- | --- | --- | --- | --- | --- |
-| `allow` | list of strings | unset: every tool | `--tools a,b` | narrow | The only tools the model may use. `[]` (or `--tools ""`) allows no tools at all |
-| `deny` | list of strings | `[]` | `--deny-tools a,b` | narrow (append) | Tools the model may never use, even when `allow` names them |
-
-A name is one of these:
-
-1. A built-in tool: `Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `web_search`, `request_user_input`, the agent tools `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent`, the goal tools `get_goal`, `create_goal`, and `update_goal`, and the MCP resource tools `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource`.
-2. An MCP tool: `mcp__<server>__<tool>`, where `<server>` is the server's name as the model sees it (`/mcp` lists it) and `<tool>` is the tool's own name as the server lists it, `read-file` say, not the `read_file` of the model's name. uah allows a tool by that identity, never by the name the model sees, so the entry allows nothing while the server has no such tool, and it never passes to another tool when tool lists change.
-3. Every tool of one MCP server: `mcp__<server>__*`, or `mcp__<server>`. The pattern matches the tools of that server only, never of another server whose name starts the same way.
-
-Under a policy, uah offers no MCP tool whose name the model sees is not unambiguously its own, and says so on stderr (`mcp> tool policy: left out …`) when the policy names it: a tool whose name another tool's would equal (`read-file` and `read.file`), whose name uah shortened with a hash suffix, or of a server whose name another configured server shares (`a-b` and `a.b` are both `a_b`) or has `__`. The MCP resource tools do not reach such a server either. Rename the server in the configuration to allow its tools.
-
-Another name is an error, so a typo cannot deny nothing. Other tools' names are errors too, with a hint: `Edit` and `Write` are `apply_patch` in uah, and `Agent` is `spawn_agent`.
-
-Precedence. Every source can only narrow the policy; none widens it:
-
-1. The `allow` lists of the user file, each layer (`config.d/*.toml`, then `UAH_EXTRA_CONFIG`), and the trusted project file intersect. A file without `allow` changes nothing. The `deny` lists of all files add up. uah also keeps each list and checks a tool against every one of them, so narrowing `mcp__a__*` with a tool name never allows that name from another server.
-2. A resumed session keeps the policy it ran under: its sidecar records the policy, and resuming narrows the current policy with it. Resuming without the flags does not widen a session's tools. A session whose sidecar cannot be read does not resume.
-3. `--tools` intersects with the result, and `--deny-tools` adds to the denylist.
-4. A subagent's role (`tools` in its definition) narrows the policy for that subagent. A subagent, a fork, and `/review`'s reviewer run on the same engine, so they get the policy too. With `spawn_agent` not allowed, the model cannot start subagents.
-5. A PreToolUse hook cannot widen it. The policy refuses a call before any hook runs, so a hook's `"allow"` only skips the approval of a call the policy allows, and `updatedInput` changes the arguments, never the tool.
-
-What the policy does:
-
-- The model's tool definitions hold only the allowed tools, hosted `web_search` included. A call to any other tool, forced or made up, is refused with "the tool policy does not allow it" before a hook, an approval, or a job sees it, and no PostToolUse hook runs for it either. The call and its refusal still show in the transcript and in `--json`.
-- The MCP resource tools reach only a server the policy allows as a whole (`mcp__<server>__*`), and must name it: `list_mcp_resources` without a server is refused.
-- A resumed session can hold calls submitted under an earlier policy, or none, that had not finished. uah checks each one against the current policy before it runs and cancels one the policy does not allow.
-- The auto-reviewer runs no commands unless the policy allows `Bash`.
-- Without `request_user_input`, the default prompt does not mention the question tool.
-- A session under a policy fails closed when a hook fails: a PreToolUse or PermissionRequest hook that exits with a code other than 0 or 2, crashes, times out, prints invalid JSON, or answers a `permissionDecision` uah does not know blocks the call ([hook failures](#hooks)).
-
-The policy does not cover what the user does: commands typed in the TUI's shell mode (`!`), MCP resources attached with `@`, and MCP prompts used as slash commands. MCP servers still start, all of them, so a server whose tools are all denied still runs.
-
-`uah config` shows `tools.allow` and `tools.deny` with every source that narrowed them.
-
-#### The system prompt from a file
+### 5.3 The system prompt from a file
 
 `model_instructions_file` follows Codex rust-v0.156.1:
 
 - **Replaces the base instructions.** Codex reads the file into `base_instructions`. The file wins over the inline `instructions` key and loses only to a session's own override (`codex-rs/core/src/config/mod.rs` lines 3917–3929). The key's comment says that the text overrides the model's built-in instructions (`codex-rs/config/src/config_toml.rs` lines 257–261). In uah, the text replaces uah's default prompt, `system.md`. The context builder of uah-core (as of unreal-agent v0.1.1) still puts its own preamble (turns and asynchronous tool calls) and the skill list before it (`harness/contextbuilder/builder.go`). uah does not change the runner, so this preamble stays. The AGENTS.md instructions and the `<environment_context>` block follow the file, as they follow the default prompt without it. Subagents get the same text. `/context` counts the file as the system prompt.
 - **Resolves a path like the other paths in a config file.** The key is an `AbsolutePathBuf`. `~` and `~/` expand to the home directory. A relative path is resolved against the directory of the config file that sets it (`codex-rs/utils/absolute-path/src/lib.rs` lines 27–56 and 392–401, and the base directory in `codex-rs/config/src/loader/layer_io.rs` lines 197–203). A trusted project's `.uah/config.toml` resolves against `.uah`, and its value wins over the user file's.
 - **Fails on a missing or empty file.** Codex trims the text and stops with an error when the file cannot be read or is empty (`try_read_non_empty_file`, `codex-rs/core/src/config/mod.rs` lines 4461–4490). uah does the same when a session starts, and `uah doctor` reports the error as `system prompt`.
+- **No inline `instructions`.** Codex's inline `instructions` string is not supported, because uah's `[instructions]` table already uses that name. The other prompt keys (`policy_file`, `experimental_compact_prompt_file`) still need an absolute path or one under `~/`.
 
-Codex's inline `instructions` string is not supported, because uah's `[instructions]` table already uses that name. The other prompt keys (`policy_file`, `experimental_compact_prompt_file`) still need an absolute path or one under `~/`.
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-#### Codex's prompt
+### 5.4 Codex's prompt
 
 uah's default system prompt is Codex's base instructions for gpt-6.1-sol with nine small changes (`internal/instructions/default_prompt.md`). At rust-v0.159.1, Codex keeps a separate prompt for each model in the catalog (`model_messages.instructions_template` in `codex-rs/models-manager/models.json`) and sends it as literal text. The Markdown prompts in `codex-rs/core` (`gpt_5_codex_prompt.md`, `gpt_5_2_prompt.md`, `gpt-5.2-codex_prompt.md`, and others) are no longer read. A model that is not in the catalog gets `codex-rs/models-manager/prompt.md`. uah starts from the template of gpt-6.1-sol, because gpt-6.1-sol is uah's default model on openai-codex; a login that runs gpt-6-sol until gpt-6.1-sol reaches it gets the same prompt. The templates of the other GPT-6 and GPT-5.x models differ from it in places, such as the personality and writing style sections.
 
@@ -299,11 +411,13 @@ The changes fit the prompt to uah's tools; the [system prompt record](design/sys
 | Apps in the `codex_apps` MCP server, `tool_search`, plugins | Removed; MCP tools keep their `mcp__<server>__<tool>` names |
 | `$CODEX_HOME` | `$UAH_HOME` and `$CODEX_HOME` |
 
-The `commentary` and `final` channels stay, because the runner keeps each message's Responses `phase` (`final_answer` marks the answer) and sends it back with the history. The prompt does not mention `apply_patch`, `ViewImage`, or the subagent tools; the model sees them in the tool list.
+- **Channels:** the `commentary` and `final` channels stay, because the runner keeps each message's Responses `phase` (`final_answer` marks the answer) and sends it back with the history.
+- **Tools not named:** the prompt does not mention `apply_patch`, `ViewImage`, or the subagent tools; the model sees them in the tool list.
+- **The other prompts:** `uah prompts init` also writes `system-codex.md`, Codex's template word for word, and `system-runner.md`, unreal-agent-runner v0.1.1's short host prompt that uah used by default before. Nothing uses either file until `model_instructions_file` names it.
 
-`uah prompts init` also writes `system-codex.md`, Codex's template word for word, and `system-runner.md`, unreal-agent-runner v0.1.1's short host prompt that uah used by default before. Nothing uses either file until `model_instructions_file` names it.
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-#### The environment context
+### 5.5 The environment context
 
 uah ends the system prompt with Codex's `<environment_context>` block, in the format of `codex-rs/core/src/context/world_state/environment.rs` at rust-v0.156.1:
 
@@ -322,23 +436,45 @@ uah ends the system prompt with Codex's `<environment_context>` block, in the fo
 
 Codex sends the block as a user message after the AGENTS.md message and sends an update when a value changes, such as the date at midnight. uah has one system message, so the block goes at its end, after the AGENTS.md files: the order is the same as Codex's. The values are fixed when the session opens. Every request of the session then sends the same system message and hits the prompt cache; a session that runs past midnight keeps the date it opened with. A resume on a later day sends the new date, which costs one cache miss. Codex also sends the sandbox's file system and network profile in the block; uah leaves those out, because the `Bash` tool's description already names the sandbox mode.
 
-### Hooks
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-Each `[[hooks.<Event>]]` entry runs a command at an event. The events are `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, and `PermissionRequest`; the contract is in the [hooks README](../internal/hooks/README.md). A subagent fires the tool events and `PreCompact` only, with `agent_id` and `parent_session_id` in the payload; the session events fire for the main session alone.
+### 5.6 Prompt files: `uah prompts`
 
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `matcher` | string | every tool | A regular expression that must match the whole tool name, for the tool events (`PreToolUse`, `PostToolUse`, `PermissionRequest`) |
-| `command` | string | required | The command, run with `/bin/sh -c` in the workspace |
-| `timeout` | duration | `60s` | The limit for one run of the hook |
+`uah prompts init` writes the built-in prompts to `~/.uah/prompts` as a starting point: the review policy (`review.md`), the summary prompt (`compact.md`), uah's default system prompt (`system.md`), Codex's unmodified prompt (`system-codex.md`), and the runner's short host prompt (`system-runner.md`).
 
-Merge: append, per event, the user file's hooks first, then each layer's, then the project file's. User and layer hooks run as written. Project hooks run only after `uah hooks trust` records their exact commands, for that workspace. A PreToolUse hook's `permissionDecision` `"allow"` approves the call without asking, in every mode and headless; a `forbid` rule still refuses it, and so does the [tool policy](#tool-policy). `"deny"` and `"ask"` refuse the call.
+- **The lines to add:** it prints the `policy_file`, `experimental_compact_prompt_file`, and `model_instructions_file` lines that use them, with the lines for `system-codex.md` and `system-runner.md` commented out, and it overwrites only with `--force`.
+- **`uah prompts show <name>`** prints one: `compact`, `system`, `system-codex`, `system-runner`, or `review`.
+- **Context modules:** `uah prompts init` also writes the [context modules](#57-context-modules) to `~/.uah/prompts/context.defaults/` as a reference that uah never reads, and overwrites those copies each time; it writes nothing under `~/.uah/prompts/context/`. `uah prompts show context/<path>` prints a module, such as `context/environment/fish`.
+- **Status and pruning:** `uah prompts status` lists the prompt files (absent, identical to the built-in, or edited), the context replacements, and the user's own modules; `uah prompts prune` deletes the replacements identical to the built-in (`--dry-run` lists them).
 
-A hook that fails (it exits with a code other than 0 or 2, crashes, times out, or prints invalid JSON) is reported and ignored, as in Claude Code and Codex: the call goes on. A session under a [tool policy](#tool-policy) fails closed instead: a failed PreToolUse or PermissionRequest hook blocks its call, and so does a `permissionDecision` uah does not know. The other events never block on a failure. The [hooks reference](../internal/hooks/README.md#output-and-decisions) has the details.
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-### MCP servers
+### 5.7 Context modules
 
-Each `[mcp_servers.<name>]` table is one server, in Codex's format, so a Codex section copies over ([MCP setup](guide.md#12-mcp-servers)). Merge: replace by name. A server has `command` (stdio) or `url` (streamable HTTP), not both.
+Context preparation starts each new session with one developer message built from Markdown modules; these keys turn it on and pick the modules that ship turned off.
+
+| Key | Type | Default | Flag, env | Merge | Meaning |
+| --- | --- | --- | --- | --- | --- |
+| `context_preparation` | bool | true | `--no-context-preparation`, `UAH_CONTEXT_PREPARATION` (`on` or `off`) | override | Start each new session, subagents' included, with one developer message of [prepared context](../internal/contextprep/README.md) before the first user message: git's state and tracked files, the instruction files (said to be all of them), how to size Bash output, the shell's and OS's traps, and the sandbox. Resumed and forked sessions get none. Off, nothing is added; the agent benchmark turns it off to compare |
+| `[context]` `modules` | list of strings | `[]` | none | override | The ids of [context modules](#57-context-modules) to turn on that ship turned off: the library's `go`, `python-venv`, `node`, `rust`, `docker`, and `git-lfs`, or a user's or project's module with `enabled: false` |
+
+The prepared context's text is in Markdown modules, each with front matter that says when it applies; the [context preparation guide](context-preparation.md) explains the format, the library, and recipes, and the [implementation reference](../internal/contextprep/README.md#modules) the code. uah ships the built-in blocks' modules and a library of modules that are off until `[context] modules` names them.
+
+- **Replacing a built-in:** a file under `~/.uah/prompts/context/` with a built-in's path replaces it for as long as it exists, so uah updates to that module stop reaching you. `uah prompts init` writes the built-ins to `~/.uah/prompts/context.defaults/`, a reference uah never reads, to copy from; `uah prompts status` lists the replacements and flags copies identical to the built-in, and `uah prompts prune` deletes those.
+- **Adding modules:** files in `~/.uah/prompts/context.d/` and `<workspace>/.uah/context.d/` add modules, each as its own block. A project's module is used only once `uah context trust` approved its content in that workspace, like a project hook.
+- **Inspecting them:** `uah context` lists every module and whether it applies to a new session in the workspace and why, `--show` prints the context a new main session and a read-only subagent get, and `--json` prints both as JSON.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+---
+
+## 6. MCP servers
+
+Each `[mcp_servers.<name>]` table is one server, in Codex's format, so a Codex section copies over ([MCP setup](guide.md#12-mcp-servers)).
+
+### 6.1 Server keys
+
+A server has `command` (stdio) or `url` (streamable HTTP), not both. Merge: replace by name.
 
 | Key | Type | Default | Transport | Meaning |
 | --- | --- | --- | --- | --- |
@@ -360,7 +496,14 @@ Each `[mcp_servers.<name>]` table is one server, in Codex's format, so a Codex s
 | `disabled_tools` | list of strings | `[]` | both | Tools not offered |
 | `supports_parallel_tool_calls` | bool | false | both | Calls may overlap; otherwise they run one at a time |
 | `default_tools_approval_mode` | string | `auto` | both | The approval mode for tools without their own |
-| `tools` | tables | none | both | Per-tool settings, by tool name, below |
+| `tools` | tables | none | both | Per-tool settings, by tool name, in [Tool approval modes](#62-tool-approval-modes) |
+
+- **Restarts:** a server that stops on its own restarts after 1, 2, 4, 8, and 16 s, at most 5 times in a row (a server that ran for a minute starts the count again); `startup_timeout_sec` bounds each attempt, and a call made meanwhile waits within its `tool_timeout_sec`. There are no keys for this.
+- **Unsupported Codex keys:** Codex keys uah does not support are errors: `bearer_token`, `http_headers_helper`, `environment_id`, `omit_tools_from`, `oauth.authorization_server_issuer`, `tools.<tool>.output_token_limit`, `env_vars` entries written as tables, and the top-level `tool_output_token_limit`.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 6.2 Tool approval modes
 
 `[mcp_servers.<name>.tools.<tool>]` sets one tool's `approval_mode`: `auto` (ask unless the annotations say read-only, or non-destructive and closed-world), `prompt` (always ask), `writes` (ask unless read-only), or `approve` (never ask).
 
@@ -370,7 +513,9 @@ Three ways set these keys without editing by hand, each in the file that configu
 - `uah mcp approve <name> [tool] --mode approve|prompt|writes|auto` sets the server's default, or one tool's mode. Without `--mode`, it prints the current modes.
 - "Yes, and don't ask again for this tool" in the TUI's approval prompt writes `approval_mode = "approve"` for that tool, as Codex's "Allow and don't ask me again" does. The session stops asking at once.
 
-A server that stops on its own restarts after 1, 2, 4, 8, and 16 s, at most 5 times in a row (a server that ran for a minute starts the count again); `startup_timeout_sec` bounds each attempt, and a call made meanwhile waits within its `tool_timeout_sec`. There are no keys for this.
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 6.3 OAuth
 
 OAuth for streamable HTTP servers, with Codex's keys. A server that answers 401 and advertises OAuth, at startup, on a later call, or on its background stream, needs `uah mcp login <name>`; until then it shows "needs login" in `/mcp` and `uah doctor`, and its calls fail with that instruction. A running session reconnects it at the next message (or `/mcp`) once a new login is stored. A server with `bearer_token_env_var` or an `Authorization` header never uses OAuth.
 
@@ -391,11 +536,35 @@ Top-level OAuth keys, merged as override:
 | `mcp_oauth_callback_port` | integer | a port the OS picks | The port `uah mcp login` listens on for the browser's redirect |
 | `mcp_oauth_callback_url` | string | `http://127.0.0.1:<port>/callback` | The redirect URI sent to the authorization server, for a callback that reaches 127.0.0.1 some other way |
 
-Codex keys uah does not support are errors: `bearer_token`, `http_headers_helper`, `environment_id`, `omit_tools_from`, `oauth.authorization_server_issuer`, `tools.<tool>.output_token_limit`, `env_vars` entries written as tables, and the top-level `tool_output_token_limit`.
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-### Subagents
+---
 
-`[agents]` ([subagents](guide.md#33-subagents-and-agent-files)):
+## 7. Hooks
+
+Each `[[hooks.<Event>]]` entry runs a command at an event. The events are `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `SubagentStart`, `SubagentStop`, `PreCompact`, and `PermissionRequest`; the contract is in the [hooks README](../internal/hooks/README.md). A subagent fires the tool events and `PreCompact` only, with `agent_id` and `parent_session_id` in the payload; the session events fire for the main session alone.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `matcher` | string | every tool | A regular expression that must match the whole tool name, for the tool events (`PreToolUse`, `PostToolUse`, `PermissionRequest`) |
+| `command` | string | required | The command, run with `/bin/sh -c` in the workspace |
+| `timeout` | duration | `60s` | The limit for one run of the hook |
+
+- **Merge and trust:** append, per event, the user file's hooks first, then each layer's, then the project file's. User and layer hooks run as written. Project hooks run only after `uah hooks trust` records their exact commands, for that workspace.
+- **Decisions:** a PreToolUse hook's `permissionDecision` `"allow"` approves the call without asking, in every mode and headless; a `forbid` rule still refuses it, and so does the [tool policy](#4-tool-policy). `"deny"` and `"ask"` refuse the call.
+- **Failures:** a hook that fails (it exits with a code other than 0 or 2, crashes, times out, or prints invalid JSON) is reported and ignored, as in Claude Code and Codex: the call goes on. A session under a [tool policy](#4-tool-policy) fails closed instead: a failed PreToolUse or PermissionRequest hook blocks its call, and so does a `permissionDecision` uah does not know. The other events never block on a failure. The [hooks reference](../internal/hooks/README.md#output-and-decisions) has the details.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+---
+
+## 8. Subagents and `/review`
+
+Subagent limits and defaults, the role files that define kinds of subagents, and the read-only reviewer subagent of `/review`.
+
+### 8.1 Subagent defaults: `[agents]`
+
+`[agents]` ([subagents](guide.md#33-subagents-and-agent-files)) caps open subagents and sets the model and effort of those a role or call does not set:
 
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
@@ -406,9 +575,13 @@ Codex keys uah does not support are errors: `bearer_token`, `http_headers_helper
 | `default_subagent_model` | string | the parent's model | override | Model for subagents a role or call does not set; on openai-codex it must be in Codex's model catalog, as `spawn_agent`'s `model` must. A fork (`fork_context`) does not take it: it keeps the parent's model unless its call sets one, so it shares the parent's prompt cache, where Codex v0.156.1 applies the default to forks too |
 | `default_subagent_reasoning_effort` | string | the parent's effort | override | Effort for subagents a role or call does not set; a fork keeps the parent's effort, as above |
 
-There is no `default_subagent_service_tier`: Codex has no such key. Fast mode for subagents comes from a role's `service_tier`, or from the parent's `/fast`, which its children inherit.
+- **Fast mode:** there is no `default_subagent_service_tier`: Codex has no such key. Fast mode for subagents comes from a role's `service_tier`, or from the parent's `/fast`, which its children inherit.
+- **Inherited settings:** a subagent starts with its parent's settings as they are when it spawns: a `/model`, `/effort`, `/fast`, `/adaptive`, or permission mode change made while the parent's run is live reaches the children it spawns after the change.
+- **Resumed subagents:** a resumed subagent (`resume_agent`) gets back the model, effort, fast mode, and adaptive effort its sidecar saved, as a resumed session does, and its parent's permission mode now.
 
-A subagent starts with its parent's settings as they are when it spawns: a `/model`, `/effort`, `/fast`, `/adaptive`, or permission mode change made while the parent's run is live reaches the children it spawns after the change. A resumed subagent (`resume_agent`) gets back the model, effort, fast mode, and adaptive effort its sidecar saved, as a resumed session does, and its parent's permission mode now.
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 8.2 Agent role files
 
 Kinds of subagents (roles) are files in `~/.uah/agents/` and, for a trusted workspace, `<workspace>/.uah/agents/`, searched recursively: Markdown files with YAML front matter (`*.md`, as Claude Code's `.claude/agents/*.md`) and Codex role files (`*.toml`). A project file replaces a user file of the same name; in one directory, a Markdown file replaces a TOML file of the same name, with a notice. uah reads these keys and warns about the others:
 
@@ -424,11 +597,11 @@ Kinds of subagents (roles) are files in `~/.uah/agents/` and, for a trusted work
 | `tools` | `tools` | comma-separated string or list | The tools its agents are offered; absent offers every tool |
 | `approve` | `approve` | list of strings | Commands and MCP tools its agents run without asking, within the permission mode |
 
-`tools` takes uah's names (`Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `mcp__<server>__<tool>`) and Claude Code's: `Edit`, `Write`, `MultiEdit`, and `NotebookEdit` are `apply_patch`, `Skill` is `SkillUse`, and `mcp__<server>` or `mcp__<server>__*` is every tool of a server. `Read`, `Grep`, `Glob`, and `LS` have no tool of their own in uah, whose agents read files with `Bash`; they are dropped with a notice. A list whose names all drop offers no tools. The spawn tools are never offered to a subagent.
+- **`tools`** takes uah's names (`Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `mcp__<server>__<tool>`) and Claude Code's: `Edit`, `Write`, `MultiEdit`, and `NotebookEdit` are `apply_patch`, `Skill` is `SkillUse`, and `mcp__<server>` or `mcp__<server>__*` is every tool of a server. `Read`, `Grep`, `Glob`, and `LS` have no tool of their own in uah, whose agents read files with `Bash`; they are dropped with a notice. A list whose names all drop offers no tools. The spawn tools are never offered to a subagent.
+- **`approve`** takes command prefixes (`git diff`, or Claude Code's `Bash(git diff *)` and `Bash(git diff:*)`), `apply_patch` (or `Edit`, `Write`) for patches, and MCP tool names or `mcp__<server>` patterns. A pre-approved action answers the approval prompt for the agent: a command runs where an approved command would run (in the sandbox, or outside it for an escalation), and an MCP tool as with `approval_mode = "approve"`. It never widens the permission mode: an escalation in read only mode is still asked, a `forbid` rule still denies, and `approval_policy = "never"` still declines commands and patches (a pre-approved MCP tool runs, as a tool with `approval_mode = "approve"` does). Each simple command of a compound command must match.
+- **Precedence:** a spawn call's `model` and `reasoning_effort` come before the role's, and the role's before `[agents]` defaults and the parent's.
 
-`approve` takes command prefixes (`git diff`, or Claude Code's `Bash(git diff *)` and `Bash(git diff:*)`), `apply_patch` (or `Edit`, `Write`) for patches, and MCP tool names or `mcp__<server>` patterns. A pre-approved action answers the approval prompt for the agent: a command runs where an approved command would run (in the sandbox, or outside it for an escalation), and an MCP tool as with `approval_mode = "approve"`. It never widens the permission mode: an escalation in read only mode is still asked, a `forbid` rule still denies, and `approval_policy = "never"` still declines commands and patches (a pre-approved MCP tool runs, as a tool with `approval_mode = "approve"` does). Each simple command of a compound command must match.
-
-A spawn call's `model` and `reasoning_effort` come before the role's, and the role's before `[agents]` defaults and the parent's. A role for fast reviews, in either format:
+A role for fast reviews, in either format:
 
 ```markdown
 ---
@@ -456,7 +629,26 @@ approve = ["git diff", "git log"]
 developer_instructions = "Review the diff you are given. List only real bugs, each with its file and line."
 ```
 
-### Goals
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 8.3 Code review: `/review` and `uah review`
+
+`review_model` is a top-level key, Codex's, for the TUI's `/review` and `uah review` (a code review by a read-only subagent), not for the [auto-reviewer](#36-auto-reviewer-review):
+
+| Key | Type | Default | Merge | Meaning |
+| --- | --- | --- | --- | --- |
+| `review_model` | string | the session's current model, as Codex | override | The model `/review` runs its reviewer on, on the session's provider, with the session's effort ([the review design](design/review.md)) |
+| `review_time_limit` | duration | none | override | How long one `/review` or `uah review` may run. When it runs out, the reviewer's commands stop and it gets one last turn, with no tools, to answer with what it has; the review says "stopped at the time limit". `0` is no limit |
+| `review_token_limit` | integer | none | override | The input and output tokens one review's model responses may use, cached input included; when they run out, the same as the time limit ("stopped at the token limit"). `0` is no limit |
+| `review_command_timeout` | duration | `10m` | override | How long one of the reviewer's commands may run before it is stopped, as an interrupt stops it; its result says so. `0` is no limit |
+
+- **Limits:** the time and token limits are off until the owner decides; about three times the longest normal review before would be `30m` and `3000000` (it took 10 minutes and 1.6M tokens). The command limit is longer than the longest command of those reviews, 7 minutes ([the review design](design/review.md#limits)).
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+---
+
+## 9. Goals
 
 `/goal` keeps the agent working, run after run, until it marks the goal complete or a budget stops it ([guide](guide.md#32-goals), [design](design/goal.md)). The keys are Codex's, with uah's cap on continuations:
 
@@ -467,9 +659,41 @@ developer_instructions = "Review the diff you are given. List only real bugs, ea
 | `[goals]` `max_continuations` | integer | 50 | override, can unset | uah's: the most automatic continuations of one goal; then the goal stops as budget-limited, and `/goal resume` gives it as many again. 0 means no limit, as in Codex |
 | `[goals]` `turns_per_run` | integer | 16 | override, can unset | uah's: how many goal turns one run holds, whoever started it: a run uah started holds continuations 1–16, then 17–32; a run you started holds your turn and 15 continuations. The continuations that go into a run skip its end, so its Stop hooks; then the run ends, its Stop hooks run, and a new run starts. The guards and the cap count each continuation. 0 or 1 starts a new run for each, as Codex starts a new turn |
 
-### TUI
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-`[tui]`:
+---
+
+## 10. Compaction
+
+These keys decide when uah compacts the context, which model writes the summary and with which prompt, and how much of the recent history it keeps word for word.
+
+| Key | Type | Default | Merge | Meaning |
+| --- | --- | --- | --- | --- |
+| `auto_compact_percent` | integer 0–100 | 90 | override, can unset | Compact before a model request once the context in use (the last response's tokens plus an estimate of what was added since) reaches this share of the context window; 0 turns automatic compaction off |
+| `model_context_window` | integer | the model catalog (the provider's list, else Codex's bundled one), else 272,000 | override | The context window in tokens, for compaction and the context meter |
+| `model_auto_compact_token_limit` | integer | none | override | Codex's key: compact once the context in use reaches this many tokens, when that comes before `auto_compact_percent` of the window. It only lowers the limit, as in Codex; `auto_compact_percent = 0` still turns automatic compaction off. `/context` shows the rest of the window as the buffer |
+| `compact_model` | string | the session's current model, as Codex | override | The model that writes the summary, on the session's provider. A model with a smaller window gets the history trimmed from the oldest item to fit |
+| `compact_effort` | string | the session's current effort | override | The summary call's effort: low, medium, high, xhigh, max, or ultra |
+| `compact_prompt` | string | uah's: Codex's summary prompt in fixed sections (Goal, Constraints, Decisions, State, Errors, TODOs, Next) | override | Codex's key: the prompt the summary call ends with. Surrounding whitespace is trimmed; empty means the default |
+| `experimental_compact_prompt_file` | path | none | override | Codex's key: a file whose text is the summary prompt, when `compact_prompt` is not set. An absolute path or one under `~/`; a missing or empty file stops the session from starting |
+| `compact_user_message_max_tokens` | integer | 20000, at most a quarter of the window | override | The cap on user messages a compaction keeps word for word, newest first; the one that crosses it is shortened in the middle. Codex fixes it at 20,000 (`COMPACT_USER_MESSAGE_MAX_TOKENS`); uah's default is at most a quarter of the window, so a small model's compacted context is not mostly old messages. A compaction saves the cap it used, so changing it affects later compactions only |
+| `compact_elide_after_calls` | integer | 10 | override | Before an automatic summary, replace the tool outputs this many calls old, and outputs over 2,000 tokens three calls old, with a short stub (tool, command, exit code, size); when that frees enough, no summary runs. SkillUse outputs stay. 0 turns it off |
+| `compact_keep_recent_calls` | integer | 5 | override | A summary leaves the last this many tool calls, with their outputs and the model's output around them, word for word after it; when they take more than a quarter of the window, the summary covers them too. 0 summarizes everything, as Codex does |
+| `remote_compaction` | boolean | true | override | On openai and openai-codex, compact as Codex does: the provider turns the history into an encrypted item that later requests send in its place, after the kept user messages (up to 64,000 tokens) and before uah's ledger. A failed remote compaction, a `/compact` with focus instructions, and every other provider use the summary. Codex has no key for it (its `remote_compaction_v2` feature is removed and always on) |
+
+- **Focus instructions:** `/compact <instructions>` adds focus instructions to the prompt for that one summary, as in Claude Code: `/compact keep the failing test names`.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+---
+
+## 11. TUI and prompt history
+
+How the TUI draws and handles the mouse, and the prompt history it recalls.
+
+### 11.1 `[tui]`
+
+`[tui]` sets the TUI's view, mouse, title, file links, skill menu, and drawing:
 
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
@@ -481,24 +705,28 @@ developer_instructions = "Review the diff you are given. List only real bugs, ea
 | `skill_mentions` | bool | true | override, can unset | Complete a skill's name after `$` in the composer, as Codex does: a menu of the skills whose name holds the text, or is a few typos from it (a Levenshtein distance of one per three letters typed, at most three), each by its display name (a skill's `agents/openai.yaml`, `interface.display_name`, as in Codex; else its name as words) with its description; tab or enter fills in `$name `. A word no name is near, such as `$HOME`, opens nothing. A message sent with `$name` loads that skill: the run gets its `SKILL.md` before the message, as Codex injects a mentioned skill, so the model need not call `SkillUse`. `false` turns off the menu and the loading, for a prompt full of `$` |
 | `keep_blanks` | bool | false | OR | Write the blanks at the end of a row as spaces. Off by default: blanks without a style are dropped, since each row is erased before it is written, and blanks on a background that reach the row's end are written as an erase to the end of the line, which fills them with the background. Turn it on for a terminal that erases without the background in force, if rows such as the composer's band end early |
 
-### History
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-`[history]`, with Codex's keys, for `<home>/history.jsonl`: the prompts ↑ and ctrl+r recall in the TUI. The file holds every workspace's prompts; the TUI shows the session's workspace's only. Each prompt is one line, `{"session_id":…,"ts":…,"text":…,"workspace":…}`: Codex's `~/.codex/history.jsonl` format plus the session's workspace, an absolute path. A line without `workspace` shows in no workspace. The file is private (0600). Messages and `!` commands go in, as typed, with images as their `[Image #N]` placeholders; slash commands do not. See the [prompt history design](design/prompt-history.md).
+### 11.2 Prompt history: `[history]`
+
+`[history]`, with Codex's keys, for `<home>/history.jsonl`: the prompts ↑ and ctrl+r recall in the TUI.
 
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
 | `persistence` | string | `save-all` | override | `save-all` writes every prompt; `none` writes nothing, and ↑ still recalls what the file has, as in Codex. Any other value stops the TUI with an error |
 | `max_bytes` | int | 8388608 (8 MiB) | override | The file's cap. Past it, the oldest prompts go until the file is at most 80% of the cap, as Codex trims; the newest prompt always stays. 0 means no cap, Codex's default |
 
-### Projects
+- **Workspaces:** the file holds every workspace's prompts; the TUI shows the session's workspace's only.
+- **Format:** each prompt is one line, `{"session_id":…,"ts":…,"text":…,"workspace":…}`: Codex's `~/.codex/history.jsonl` format plus the session's workspace, an absolute path. A line without `workspace` shows in no workspace. The file is private (0600).
+- **What goes in:** messages and `!` commands go in, as typed, with images as their `[Image #N]` placeholders; slash commands do not. See the [prompt history design](design/prompt-history.md).
 
-`[projects."<absolute workspace path>"]`, in the user file or a layer, not in the project file. Merge: replace by name, so a later layer's entry for a workspace replaces an earlier one's:
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `trusted` | bool | false | Apply the workspace's `.uah/config.toml` and `.uah/rules/*.rules` |
+---
 
-## Environment variables
+## 12. Environment variables
+
+The variables uah reads, with the flag and key each one matches; a variable with a flag comes right after that flag in [precedence](#12-precedence).
 
 | Variable | Flag | Config key | Meaning |
 | --- | --- | --- | --- |
@@ -519,13 +747,15 @@ developer_instructions = "Review the diff you are given. List only real bugs, ea
 | `CODEX_HOME` | none | none | Codex's directory (`~/.codex`) for `AGENTS.md` and skills |
 | `BROWSER` | none | none | The program `uah mcp login` opens the authorization URL with, instead of the system's opener |
 
-To turn the question tool off for one integration only, give it a layer of its own: `UAH_EXTRA_CONFIG=~/.uah/web-tty.toml uah` with that file holding `[tools.experimental_request_user_input]` and `enabled = false`, or `UAH_REQUEST_USER_INPUT=off` in its environment. A file in `config.d` turns it off everywhere.
+- **Removed variables:** `UAGENT_CONFIG` and `UAGENT_STATE_DIR` are no longer read. When either is set, uah prints a line naming its replacement, and `uah doctor` warns.
 
-`UAGENT_CONFIG` and `UAGENT_STATE_DIR` are no longer read. When either is set, uah prints a line naming its replacement, and `uah doctor` warns.
+<sub>[↑ Back to top](#configuration-reference)</sub>
 
-## uah config
+---
 
-`uah config` takes the session flags and shows what a session started with them would use: the home, the workspace, the files read (a `layer:` line for each layer), and one line per key with its value and source (`flag`, `env`, `session`, `project file`, `UAH_EXTRA_CONFIG`, `config.d/<file>`, `user file`, or `default`). Keys that append or OR list every file that set them in merge order, such as `user file + config.d/host.toml + project file`. `--json` prints the same as JSON. A flag equal to its environment variable's value is reported as `env`.
+## 13. `uah config` and `/config`
+
+`uah config` takes the session flags and shows what a session started with them would use: the home, the workspace, the files read (a `layer:` line for each layer), and one line per key with its value and source (`flag`, `env`, `session`, `project file`, `UAH_EXTRA_CONFIG`, `config.d/<file>`, `user file`, or `default`).
 
 ```sh
 uah config                     # the current directory
@@ -534,9 +764,20 @@ uah config --session 3f2a      # as resuming a session would
 uah config --json | jq '.settings[] | select(.sources != ["default"])'
 ```
 
-`/config` in the TUI shows the same values and sources for the basic settings (auto-compact and its token limit, `compact_model`, `model`, `effort`, `fast`, `adaptive_effort`, `permission_mode`, `[agents] max_concurrent_threads_per_session`, `[tui] details`, `mouse`, and `file_links`) and changes them in the user file (`--config` or the default path). It edits one key in place and keeps the file's comments and formatting, with the editor `uah mcp add` uses; a change that would stop a session from starting is undone. The layers and the project file are never written, and a value one of them sets still wins over the change.
+- **Merged sources:** keys that append or OR list every file that set them in merge order, such as `user file + config.d/host.toml + project file`.
+- **JSON:** `--json` prints the same as JSON.
+- **Flags and the environment:** a flag equal to its environment variable's value is reported as `env`.
+- **`/config` in the TUI** shows the same values and sources for the basic settings (auto-compact and its token limit, `compact_model`, `model`, `effort`, `fast`, `adaptive_effort`, `permission_mode`, `[agents] max_concurrent_threads_per_session`, `[tui] details`, `mouse`, and `file_links`) and changes them in the user file (`--config` or the default path). It edits one key in place and keeps the file's comments and formatting, with the editor `uah mcp add` uses; a change that would stop a session from starting is undone. The layers and the project file are never written, and a value one of them sets still wins over the change.
 
-## Examples
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+---
+
+## 14. Examples
+
+A complete user file and a trusted project file, with the merge way of each project value in its comment.
+
+### 14.1 A user file
 
 A complete user file, `~/.uah/config.toml`:
 
@@ -654,6 +895,10 @@ scopes = ["read"]
 trusted = true                     # apply proj/.uah/config.toml and its rules
 ```
 
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 14.2 A project file
+
 A project file, `/Users/me/code/proj/.uah/config.toml`, applied because the user file trusts the workspace:
 
 ```toml
@@ -678,3 +923,5 @@ url = "https://docs.internal.example.com/mcp"
 ```
 
 This repository's own [.uah/config.toml](../.uah/config.toml) is a working project file.
+
+<sub>[↑ Back to top](#configuration-reference)</sub>

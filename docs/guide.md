@@ -112,7 +112,7 @@ uah context --show         # lists the context modules for this workspace and pr
 ```
 
 - **A prompt file takes effect only when its key names it.** `uah prompts init` prints the lines to add to your user file: `experimental_compact_prompt_file`, `model_instructions_file`, and `[review] policy_file`. Each new session reads the files. It overwrites existing files only with `--force`; to undo, delete the files and the lines.
-- **The system prompts:** the default (`system.md`) is Codex's prompt for gpt-6.1-sol with uah's tool names ([the changes](configuration.md#codexs-prompt)). `system-codex.md` is Codex's unmodified prompt and `system-runner.md` the runner's short host prompt; their `model_instructions_file` lines are printed commented out, so each is used only when you choose it. AGENTS.md files and the [environment context](configuration.md#the-environment-context) still follow the system prompt.
+- **The system prompts:** the default (`system.md`) is Codex's prompt for gpt-6.1-sol with uah's tool names ([the changes](configuration.md#54-codexs-prompt)). `system-codex.md` is Codex's unmodified prompt and `system-runner.md` the runner's short host prompt; their `model_instructions_file` lines are printed commented out, so each is used only when you choose it. AGENTS.md files and the [environment context](configuration.md#55-the-environment-context) still follow the system prompt.
 - **Context modules:** `uah prompts init` writes the built-in modules of the [prepared context](../README.md#context-preparation) to `~/.uah/prompts/context.defaults/`, a reference that uah never reads. To change one, copy it to the same path under `~/.uah/prompts/context/` and edit the copy. A file there replaces the built-in for as long as it exists, so uah updates to that module stop reaching you: copy only what you change. `uah prompts status` flags copies identical to the built-in, and `uah prompts prune` deletes those. Modules of your own go in `~/.uah/prompts/context.d/`; see the [context preparation guide](context-preparation.md).
 
 <sub>[↑ Back to top](#using-uah)</sub>
@@ -265,7 +265,7 @@ Review only; do not edit files. List each finding with its file and line.
 ```
 
 - **The body** is the subagent's instructions. `tools` limits the tools it is offered (Claude Code's `Edit` and `Write` are `apply_patch`; omit `tools` for all of them). `approve` lists commands and MCP tools it runs without asking, within the session's permission mode: read only stays read only, and a `forbid` rule still wins.
-- **Model and effort:** a subagent runs on the parent's provider. Ask for another model or effort ("use a subagent on gpt-6-luna with low effort"), set `model`, `effort`, and `fast: true` in its agent file, or set defaults in `[agents]`. See [agent files](configuration.md#subagents).
+- **Model and effort:** a subagent runs on the parent's provider. Ask for another model or effort ("use a subagent on gpt-6-luna with low effort"), set `model`, `effort`, and `fast: true` in its agent file, or set defaults in `[agents]`. See [agent files](configuration.md#82-agent-role-files).
 - **Forking:** ask for a forked subagent ("fork a subagent to write the tests for what we just discussed") to hand it the conversation so far through `fork_context`.
 - **Watching:** `/agents <name>`, or alt+← and alt+→, shows a subagent's transcript, and what you type goes to it. `uah sessions show subagent-1a2b3c4d` prints a finished one's transcript.
 - **Results:** when a subagent finishes or is interrupted, the main agent gets its final answer: at its next model request while it works, else with your next message. The main agent is told to leave a running subagent alone and wait for it, and to message it only with something new from you, an answer to its question, or to stop a clear failure.
@@ -359,7 +359,7 @@ uah compacts automatically at 90% of the context window. It first replaces old t
 
 `/context` shows the last request sent as a 10×10 grid, one cell per percent, with each category's tokens (system prompt, instruction files, skills, tools, MCP tools, your messages, agent messages, and tool calls with their results), the free space, and the auto-compact buffer, then a line per file, skill, and tool. The counts are estimated at 4 bytes a token and scaled to the input tokens the provider reported (`internal/contextusage`).
 
-`uah sessions show` prints what each compaction freed. The summary model, its prompt, and when compaction starts are [configurable](configuration.md#compaction).
+`uah sessions show` prints what each compaction freed. The summary model, its prompt, and when compaction starts are [configurable](configuration.md#10-compaction).
 
 <sub>[↑ Back to top](#using-uah)</sub>
 
@@ -381,7 +381,7 @@ The permission mode picks the sandbox and who answers an escalation; shift+tab c
 | yolo (only with `--yolo`) | Anything your user can: no sandbox | Nothing: every command, patch, and MCP tool runs unasked; only `forbid` rules refuse |
 
 - **A change applies** from the next command, even mid-run. Subagents run in their parent's mode.
-- **Session grants:** in workspace and auto mode, a patch or an escalated command that writes into another git worktree of the workspace's repository makes that worktree writable for the rest of the session, without asking, and the transcript says `writable for this session: <path>`. In workspace mode, the prompt for a patch outside the workspace can also allow writes to its directory for the session (`w`). See [session grants](configuration.md#session-grants).
+- **Session grants:** in workspace and auto mode, a patch or an escalated command that writes into another git worktree of the workspace's repository makes that worktree writable for the rest of the session, without asking, and the transcript says `writable for this session: <path>`. In workspace mode, the prompt for a patch outside the workspace can also allow writes to its directory for the session (`w`). See [session grants](configuration.md#32-session-grants).
 - **Resume:** a resumed session keeps its mode, with its model, effort, fast mode, and adaptive effort. Yolo mode is kept only when you give `--yolo` again; without it the session opens in the configured mode.
 - **Start in a mode** with `permission_mode` in the [configuration](../README.md#configuration), or for one session with `--sandbox read-only` or `--sandbox workspace-write`.
 - **`--yolo`** (or Codex's `--dangerously-bypass-approvals-and-sandbox`) starts the TUI or `uah exec` in yolo mode and adds yolo after auto in the shift+tab cycle. Without the flag, yolo is not offered, and no file can set it. It takes no `--sandbox` or `--ask`. Use it only where something outside uah sandboxes the machine. The footer shows `yolo mode` in the warning color, and the terminal title says `yolo`.
@@ -553,7 +553,7 @@ After a failure, the error is on stderr (an `error` notice with `--json`), and t
 
 ### 6.4 Tool policy
 
-`--tools` limits the tools the model may use, and `--deny-tools` takes tools away; both narrow `[tools] allow` and `deny` and can never widen them ([tool policy](configuration.md#tool-policy)). The model is offered only those tools, and a call to any other is refused before a hook, an approval, or a job sees it. Subagents get the same limit, and `--tools ""` allows no tools at all.
+`--tools` limits the tools the model may use, and `--deny-tools` takes tools away; both narrow `[tools] allow` and `deny` and can never widen them ([tool policy](configuration.md#4-tool-policy)). The model is offered only those tools, and a call to any other is refused before a hook, an approval, or a job sees it. Subagents get the same limit, and `--tools ""` allows no tools at all.
 
 A read-only query that may use one MCP read tool, with the caller's identity sent to the MCP server from the environment:
 

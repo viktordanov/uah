@@ -7,7 +7,7 @@ Hooks run a user's command at a session event, with Claude Code's contract, so e
 Hooks run a command at a session event with Claude Code's contract: the event arrives as JSON on stdin, exit 0 continues, exit 2 blocks with stderr as the reason, and any other exit is reported and ignored. In a session under a tool policy, a PreToolUse or PermissionRequest hook that fails blocks its call instead. Project hooks run only after `uah hooks trust` records their exact commands and the content of any local script they run.
 <!-- /memoria:export -->
 
-Hooks are `[[hooks.<Event>]]` entries in the configuration; the keys are in the [configuration reference](../../docs/configuration.md#hooks). `uah hooks` lists the hooks for a workspace and whether each runs.
+Hooks are `[[hooks.<Event>]]` entries in the configuration; the keys are in the [configuration reference](../../docs/configuration.md#7-hooks). `uah hooks` lists the hooks for a workspace and whether each runs.
 
 1. [Events](#events)
 2. [Running a hook](#running-a-hook)
