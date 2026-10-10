@@ -29,8 +29,8 @@ The first time uah starts without `~/.uah` and without `UAH_HOME`, it copies the
 | `<workspace>/.uah/context.d/*.md` | The project's context modules | When context preparation is on and `uah context trust` approved the file as it is now |
 | `~/.uah/trusted-hooks.json` | The project hook commands `uah hooks trust` approved, by SHA-256, and the project context modules `uah context trust` approved | Written by uah; do not edit |
 | `~/.uah/mcp-credentials.json` | MCP OAuth logins from `uah mcp login`, readable only by you (0600) | Written by uah when `mcp_oauth_credentials_store` is `file`, or `auto` without a usable OS keyring; do not edit |
-| `~/.uah/AGENTS.md`, `$CODEX_HOME/AGENTS.md` | User instructions; see [AGENTS.md and skills](guide.md#agentsmd-and-skills) | Unless `--no-instructions` or `[instructions] enabled = false` |
-| `~/.uah/skills`, `$CODEX_HOME/skills`, `.agents/skills` | Skills; see [AGENTS.md and skills](guide.md#agentsmd-and-skills) | Always |
+| `~/.uah/AGENTS.md`, `$CODEX_HOME/AGENTS.md` | User instructions; see [AGENTS.md and skills](guide.md#11-agentsmd-and-skills) | Unless `--no-instructions` or `[instructions] enabled = false` |
+| `~/.uah/skills`, `$CODEX_HOME/skills`, `.agents/skills` | Skills; see [AGENTS.md and skills](guide.md#11-agentsmd-and-skills) | Always |
 | `~/.uah/skills/.system/` | uah's built-in skills, such as `uah-customization`, written by uah when a session starts | After every other skill folder, so a skill of the same name elsewhere wins; uah rewrites it, do not edit |
 | `$CODEX_HOME/auth.json` (`~/.codex/auth.json`, or `OPENAI_CODEX_AUTH_FILE`) | The ChatGPT login from `codex login`. uah refreshes its token as Codex does and writes it back (0600), with a lock file beside it, `.auth.json.uah-lock`; see [the design](design/codex-auth.md) | openai-codex, unless `OPENAI_CODEX_ACCESS_TOKEN` is set, which uah never refreshes |
 
@@ -338,7 +338,7 @@ A hook that fails (it exits with a code other than 0 or 2, crashes, times out, o
 
 ### MCP servers
 
-Each `[mcp_servers.<name>]` table is one server, in Codex's format, so a Codex section copies over ([MCP setup](guide.md#mcp-servers)). Merge: replace by name. A server has `command` (stdio) or `url` (streamable HTTP), not both.
+Each `[mcp_servers.<name>]` table is one server, in Codex's format, so a Codex section copies over ([MCP setup](guide.md#12-mcp-servers)). Merge: replace by name. A server has `command` (stdio) or `url` (streamable HTTP), not both.
 
 | Key | Type | Default | Transport | Meaning |
 | --- | --- | --- | --- | --- |
@@ -395,7 +395,7 @@ Codex keys uah does not support are errors: `bearer_token`, `http_headers_helper
 
 ### Subagents
 
-`[agents]` ([subagents](guide.md#subagents-and-agent-files)):
+`[agents]` ([subagents](guide.md#33-subagents-and-agent-files)):
 
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
@@ -458,7 +458,7 @@ developer_instructions = "Review the diff you are given. List only real bugs, ea
 
 ### Goals
 
-`/goal` keeps the agent working, run after run, until it marks the goal complete or a budget stops it ([guide](guide.md#goals), [design](design/goal.md)). The keys are Codex's, with uah's cap on continuations:
+`/goal` keeps the agent working, run after run, until it marks the goal complete or a budget stops it ([guide](guide.md#32-goals), [design](design/goal.md)). The keys are Codex's, with uah's cap on continuations:
 
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |

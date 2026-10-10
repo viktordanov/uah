@@ -2,57 +2,59 @@
 
 Task guides for uah, one section per task, grouped by area. Each section says what the feature does, how to use it, how it behaves, and which settings change it. The [README](../README.md) has the install, the keys, and the providers; the [configuration reference](configuration.md) has every key.
 
-1. [Setup](#setup)
-   - [AGENTS.md and skills](#agentsmd-and-skills)
-   - [MCP servers](#mcp-servers)
-   - [Hooks](#hooks)
-   - [Prompts and context modules](#prompts-and-context-modules)
-   - [`/config` and `uah config`](#config-and-uah-config)
-   - [The shell commands run in](#the-shell-commands-run-in)
-2. [Models and requests](#models-and-requests)
-   - [Model and effort](#model-and-effort)
-   - [Adaptive effort](#adaptive-effort)
-   - [Plan usage](#plan-usage)
-   - [Retries](#retries)
-3. [Working in a session](#working-in-a-session)
-   - [The agent's questions](#the-agents-questions)
-   - [Goals](#goals)
-   - [Subagents and agent files](#subagents-and-agent-files)
-   - [Images](#images)
-   - [Shell mode](#shell-mode)
-   - [Web search](#web-search)
-   - [`/diff` and `/review`](#diff-and-review)
-   - [Compaction and `/context`](#compaction-and-context)
-4. [Permissions](#permissions)
-   - [Permission modes](#permission-modes)
-   - [Command rules](#command-rules)
-5. [Sessions and history](#sessions-and-history)
-   - [Resume a session](#resume-a-session)
-   - [Rewind to an earlier message](#rewind-to-an-earlier-message)
-   - [Prompt history](#prompt-history)
-   - [List, search, and delete sessions](#list-search-and-delete-sessions)
-   - [Select and copy text](#select-and-copy-text)
-   - [File links and the terminal title](#file-links-and-the-terminal-title)
-6. [Headless: `uah exec`](#headless-uah-exec)
-   - [Running it](#running-it)
-   - [JSON events](#json-events)
-   - [Exit codes](#exit-codes)
-   - [Tool policy](#tool-policy)
+1. [Setup](#1-setup)
+   - [1.1 AGENTS.md and skills](#11-agentsmd-and-skills)
+   - [1.2 MCP servers](#12-mcp-servers)
+   - [1.3 Hooks](#13-hooks)
+   - [1.4 Prompts and context modules](#14-prompts-and-context-modules)
+   - [1.5 `/config` and `uah config`](#15-config-and-uah-config)
+   - [1.6 The shell commands run in](#16-the-shell-commands-run-in)
+2. [Models and requests](#2-models-and-requests)
+   - [2.1 Model and effort](#21-model-and-effort)
+   - [2.2 Adaptive effort](#22-adaptive-effort)
+   - [2.3 Plan usage](#23-plan-usage)
+   - [2.4 Retries](#24-retries)
+3. [Working in a session](#3-working-in-a-session)
+   - [3.1 The agent's questions](#31-the-agents-questions)
+   - [3.2 Goals](#32-goals)
+   - [3.3 Subagents and agent files](#33-subagents-and-agent-files)
+   - [3.4 Images](#34-images)
+   - [3.5 Shell mode](#35-shell-mode)
+   - [3.6 Web search](#36-web-search)
+   - [3.7 `/diff` and `/review`](#37-diff-and-review)
+   - [3.8 Compaction and `/context`](#38-compaction-and-context)
+4. [Permissions](#4-permissions)
+   - [4.1 Permission modes](#41-permission-modes)
+   - [4.2 Command rules](#42-command-rules)
+5. [Sessions and history](#5-sessions-and-history)
+   - [5.1 Resume a session](#51-resume-a-session)
+   - [5.2 Rewind to an earlier message](#52-rewind-to-an-earlier-message)
+   - [5.3 Prompt history](#53-prompt-history)
+   - [5.4 List, search, and delete sessions](#54-list-search-and-delete-sessions)
+   - [5.5 Select and copy text](#55-select-and-copy-text)
+   - [5.6 File links and the terminal title](#56-file-links-and-the-terminal-title)
+6. [Headless: `uah exec`](#6-headless-uah-exec)
+   - [6.1 Running it](#61-running-it)
+   - [6.2 JSON events](#62-json-events)
+   - [6.3 Exit codes](#63-exit-codes)
+   - [6.4 Tool policy](#64-tool-policy)
 
 ---
 
-## Setup
+## 1. Setup
 
 The files and commands that extend uah: instructions, skills, MCP servers, hooks, prompts, and settings.
 
-### AGENTS.md and skills
+### 1.1 AGENTS.md and skills
 
 Instruction files are `AGENTS.md` at the repository root or in any directory below it; `project_doc_fallback_filenames = ["CLAUDE.md"]` reads `CLAUDE.md` too. Skills are `<name>/SKILL.md` folders in `.agents/skills/`, in `~/.uah/skills/` for every workspace, or in `$CODEX_HOME/skills`. `/context` shows how much of the context window they take.
 
 - **Naming a skill:** type `$` in the composer for a menu of the skills, each by its display name with its description; tab or enter fills in `$name `. Sending a message with `$name` loads the skill's `SKILL.md` before the message, so the model has it without a `SkillUse` call. `[tui] skill_mentions = false` turns off the menu and the loading.
 - **uah's own skill,** `uah-customization`, explains context preparation and uah's other customization points (prompts, hooks, skills, and the configuration layers), so you can ask the agent how uah works or how to extend it. uah writes it to `~/.uah/skills/.system/` and rewrites it on update; a skill of the same name in any skill folder replaces it.
 
-### MCP servers
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 1.2 MCP servers
 
 `uah mcp` adds, lists, logs in to, and approves MCP servers, in Codex's `[mcp_servers.<name>]` format in your user file, so a Codex configuration copies over.
 
@@ -82,7 +84,9 @@ When the TUI asks about an MCP call, `a` ("Yes, and don't ask again for this too
 
 The [MCP README](../internal/mcp/README.md) has the rest, and the [MCP design](design/mcp.md) the decisions.
 
-### Hooks
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 1.3 Hooks
 
 A hook runs a command at a session event, such as a notification when the agent is idle:
 
@@ -93,7 +97,9 @@ command = "osascript -e 'display notification \"uah is idle\"'"
 
 Hooks in a project's `.uah/config.toml` run only after `uah hooks trust`; hooks in the user file and the layers (`~/.uah/config.d/*.toml`, `UAH_EXTRA_CONFIG`) run as written. `uah hooks` lists them all and whether each runs. The [hooks README](../internal/hooks/README.md) has every event and its payload.
 
-### Prompts and context modules
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 1.4 Prompts and context modules
 
 The system prompt, the compaction prompt, the auto-review policy, and the context modules are files you can replace.
 
@@ -109,7 +115,9 @@ uah context --show         # lists the context modules for this workspace and pr
 - **The system prompts:** the default (`system.md`) is Codex's prompt for gpt-6.1-sol with uah's tool names ([the changes](configuration.md#codexs-prompt)). `system-codex.md` is Codex's unmodified prompt and `system-runner.md` the runner's short host prompt; their `model_instructions_file` lines are printed commented out, so each is used only when you choose it. AGENTS.md files and the [environment context](configuration.md#the-environment-context) still follow the system prompt.
 - **Context modules:** `uah prompts init` writes the built-in modules of the [prepared context](../README.md#context-preparation) to `~/.uah/prompts/context.defaults/`, a reference that uah never reads. To change one, copy it to the same path under `~/.uah/prompts/context/` and edit the copy. A file there replaces the built-in for as long as it exists, so uah updates to that module stop reaching you: copy only what you change. `uah prompts status` flags copies identical to the built-in, and `uah prompts prune` deletes those. Modules of your own go in `~/.uah/prompts/context.d/`; see the [context preparation guide](context-preparation.md).
 
-### `/config` and `uah config`
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 1.5 `/config` and `uah config`
 
 `/config` in the TUI changes the basic settings: compaction, the model and effort, fast mode, adaptive effort, the permission mode, the number of open subagents, web search, the details view, the mouse, and file links, each with its value and its source. ↑↓ choose, enter or space changes, esc closes.
 
@@ -117,19 +125,23 @@ uah context --show         # lists the context modules for this workspace and pr
 - **Precedence:** a flag, a configuration layer, or a trusted project file that sets the same key still wins, and `/config` says so.
 - **`uah config`** shows each setting's value and where it came from, and `uah doctor` checks that everything works.
 
-### The shell commands run in
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 1.6 The shell commands run in
 
 Commands run in `$SHELL` when it names an executable file (a bare name such as `fish` is looked up on `PATH`), else in the user's login shell from the user database (as Codex reads it, `internal/shellenv`) unless that is a service account's `nologin` or `false`, else in `/bin/sh`.
 
 A service that starts uah without the user's environment can leave out `SHELL`, the locale, and the user's tool directories on `PATH`. The environment block of the prepared context then says which shell uah picked, that the locale is not UTF-8, and which tool directories exist but are not on `PATH`, and a session opens with a warning, in the TUI and in `uah exec`, when `SHELL` was unset or unusable. uah changes neither `PATH` nor the locale.
 
+<sub>[↑ Back to top](#using-uah)</sub>
+
 ---
 
-## Models and requests
+## 2. Models and requests
 
 Which model answers, how hard it thinks, how much of the plan it uses, and what happens when a request fails.
 
-### Model and effort
+### 2.1 Model and effort
 
 The model and effort change from the next model request, even mid-run, and a session keeps its own.
 
@@ -143,14 +155,18 @@ The model and effort change from the next model request, even mid-run, and a ses
 - **What the provider offers:** `uah models` (`--json`, `--refresh`), `/model ` then tab, or tab after `-m`. `/model` refuses a model the provider does not list, with the nearest names ("gpt-luna-6 is not available on openai-codex; did you mean gpt-6-luna?"), and `uah doctor` warns about one. `-m` and the configuration are not checked: the model goes to the provider as written.
 - **The prompt cache survives an effort change** on gpt-6.1-sol and the other gpt-6 models, because uah sends the change as an update in the conversation rather than in the request, as Codex does. A backend that rejects the update gets the request again without it, and the session then changes the effort per request, with a one-line notice.
 
-### Adaptive effort
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 2.2 Adaptive effort
 
 Adaptive effort lowers the effort on the turns that only follow tool results, where the model needs less thought. `1-step` goes one level below your effort on those turns and `2-steps` two, never below low; the first request and every turn with your message stay at your effort. On the agent benchmark at high effort, at the same pass rate, it cut wall time by 18–35% and cost by 16–25%, more at 2 steps.
 
 - **Set it** with alt+e, `/adaptive [off|1-step|2-steps]`, or the `/config` row, from the next model request; with `--adaptive-effort` at start; or with `adaptive_effort` for new sessions. `off` is the default, and a session keeps its own value.
 - **The footer** shows `high↓` or `high⇊`, and `high→low` while a lowered follow-up is out.
 
-### Plan usage
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 2.3 Plan usage
 
 On `openai-codex`, uah shows how much of the ChatGPT plan's usage is left, from the same endpoint Codex reads. Other providers have no usage to show.
 
@@ -165,7 +181,9 @@ uah usage --json   # the same for scripts
 - **Windows** are named by their length (5h, daily, weekly), because a plan can have only a weekly window. uah reads the usage when you ask and after each run, never on a timer.
 - **Prompt cache:** `/usage`, `/status`, and `uah sessions show` also show how much of the session's input the cache served, and the input it missed by cause, such as `prompt cache 86% · missed 119k: effort switches 72k, cold start 9k, other 38k · ≈20% of usage (API-price estimate)`. See [session prompt cache](../internal/usage/README.md#session-prompt-cache).
 
-### Retries
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 2.4 Retries
 
 A model request that fails because the connection dropped, it timed out, or the provider answered 429 or a server error is sent again: after 2 s, then 4, 8, and 16 s, then every 30 s. uah allows 10 attempts, about 3 minutes, so a Wi-Fi switch or a short outage does not end the run. The working line says so meanwhile:
 
@@ -175,13 +193,15 @@ A model request that fails because the connection dropped, it timed out, or the 
 
 When every attempt loses the connection, the run fails with "gave up after 10 attempts because the connection to the model was lost". Change the limit with `request_max_attempts` in the [configuration](../README.md#configuration), `--max-attempts`, or `UAH_LLM_MAX_ATTEMPTS`.
 
+<sub>[↑ Back to top](#using-uah)</sub>
+
 ---
 
-## Working in a session
+## 3. Working in a session
 
 What the agent can do during a session, and how you steer it.
 
-### The agent's questions
+### 3.1 The agent's questions
 
 When a decision has a few plausible answers, the agent stops and asks with the `request_user_input` tool: one to three questions above the prompt, each with its options and what each one means, the recommended one first, and `Type your own answer`. When the options are things to compare, such as three versions of a handler, the highlighted option's preview shows beside the list (under it on a narrow terminal). The agent waits, with no time limit.
 
@@ -201,7 +221,9 @@ When a decision has a few plausible answers, the agent stops and asks with the `
 
 See the [questions design](design/questions.md).
 
-### Goals
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.2 Goals
 
 A goal keeps the agent working, turn after turn, until it marks the goal complete with `update_goal`. Each continuation is Codex's continuation message, which tells the agent to keep the full objective, work from the current state, and mark the goal complete only after it checks every requirement against evidence.
 
@@ -222,7 +244,9 @@ A goal keeps the agent working, turn after turn, until it marks the goal complet
 
 See the [goal design](design/goal.md).
 
-### Subagents and agent files
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.3 Subagents and agent files
 
 Subagents are child sessions that the agent starts, messages, waits for, and closes with Codex's multi-agent tools; they run in parallel, in the background. Ask for them in your message, such as "use two subagents to review the TUI and the store in parallel". Each shows in the transcript as `AGENT <name>` with what it is doing, and `/agents` lists them. Subagents never start subagents of their own.
 
@@ -246,7 +270,9 @@ Review only; do not edit files. List each finding with its file and line.
 - **Watching:** `/agents <name>`, or alt+← and alt+→, shows a subagent's transcript, and what you type goes to it. `uah sessions show subagent-1a2b3c4d` prints a finished one's transcript.
 - **Results:** when a subagent finishes or is interrupted, the main agent gets its final answer: at its next model request while it works, else with your next message. The main agent is told to leave a running subagent alone and wait for it, and to message it only with something new from you, an answer to its question, or to stop a clear failure.
 
-### Images
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.4 Images
 
 Images go to the model with your message, as `[Image #N]` placeholders in the prompt:
 
@@ -259,7 +285,9 @@ Images go to the model with your message, as `[Image #N]` placeholders in the pr
 
 See the [images design](design/images.md).
 
-### Shell mode
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.5 Shell mode
 
 Shell mode runs your own command in the workspace and gives its output to the agent with your next message.
 
@@ -273,7 +301,9 @@ Shell mode runs your own command in the workspace and gives its output to the ag
 
 The [shell mode design](design/shell-mode.md) compares Codex and Claude Code.
 
-### Web search
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.6 Web search
 
 On openai and openai-codex, the model can search the web with the provider's hosted `web_search` tool; it is on by default. The transcript shows each search as a `WEB` line, such as `searched: latest Go release` or `opened: https://go.dev/dl/`, and `uah exec` prints the same line.
 
@@ -284,7 +314,9 @@ On openai and openai-codex, the model can search the web with the provider's hos
 
 The [web search design](design/web-search.md) compares it with Codex.
 
-### `/diff` and `/review`
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.7 `/diff` and `/review`
 
 `/diff` shows the workspace's git changes in the transcript: staged, unstaged, and untracked files, with binary and large files named but not shown. The agent does not see it.
 
@@ -312,7 +344,9 @@ uah review --base main -o REVIEW.md       # also write the review to a file, in 
 
 The [review design](design/review.md) has Codex's behavior and the decisions.
 
-### Compaction and `/context`
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.8 Compaction and `/context`
 
 uah compacts automatically at 90% of the context window. It first replaces old tool outputs with short stubs, and summarizes only when that does not free enough; on openai and openai-codex the provider compacts. Each summary ends with a ledger of the files changed, the commands still failing, the files read, and the skills loaded, and the last five tool calls stay as they were.
 
@@ -327,13 +361,15 @@ uah compacts automatically at 90% of the context window. It first replaces old t
 
 `uah sessions show` prints what each compaction freed. The summary model, its prompt, and when compaction starts are [configurable](configuration.md#compaction).
 
+<sub>[↑ Back to top](#using-uah)</sub>
+
 ---
 
-## Permissions
+## 4. Permissions
 
 What the agent's commands can do without asking, and who answers when one asks.
 
-### Permission modes
+### 4.1 Permission modes
 
 The permission mode picks the sandbox and who answers an escalation; shift+tab cycles it, and the footer shows it:
 
@@ -350,7 +386,9 @@ The permission mode picks the sandbox and who answers an escalation; shift+tab c
 - **Start in a mode** with `permission_mode` in the [configuration](../README.md#configuration), or for one session with `--sandbox read-only` or `--sandbox workspace-write`.
 - **`--yolo`** (or Codex's `--dangerously-bypass-approvals-and-sandbox`) starts the TUI or `uah exec` in yolo mode and adds yolo after auto in the shift+tab cycle. Without the flag, yolo is not offered, and no file can set it. It takes no `--sandbox` or `--ask`. Use it only where something outside uah sandboxes the machine. The footer shows `yolo mode` in the warning color, and the terminal title says `yolo`.
 
-### Command rules
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 4.2 Command rules
 
 A command rule lets a command prefix run outside the sandbox without asking, or forbids it. Three ways to stop being asked for the same command:
 
@@ -366,13 +404,15 @@ A command rule lets a command prefix run outside the sandbox without asking, or 
 
 The [approvals README](../internal/approval/README.md) gives the order in which rules, the sandbox, the auto-reviewer, hooks, and you decide.
 
+<sub>[↑ Back to top](#using-uah)</sub>
+
 ---
 
-## Sessions and history
+## 5. Sessions and history
 
 Sessions are kept on disk under `~/.uah/sessions`, so you can resume, rewind, search, and delete them.
 
-### Resume a session
+### 5.1 Resume a session
 
 ```sh
 uah resume              # pick one of this directory's sessions (--all: any directory)
@@ -384,7 +424,9 @@ uah --session 3f2a      # a session by ID or unique prefix
 - **In the TUI**, ctrl+s opens the picker and ctrl+n (or `/new`) starts a new session with a fresh ID. The picker hides sessions from `uah exec` and subagents.
 - **Choosing a new session's ID:** `uah --session-id <uuid>` or `uah exec --session-id <uuid>`, as Claude Code's `--session-id`. The ID must be a UUID that no session has used; `--session-id` never resumes. A session that opened and never ran, such as a launch stopped before its first message, has no history, so `--session-id` takes its ID again and `uah resume <id>` resumes it.
 
-### Rewind to an earlier message
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 5.2 Rewind to an earlier message
 
 Rewinding cuts the conversation at one of your messages and puts that message back in the prompt to edit.
 
@@ -394,7 +436,9 @@ Rewinding cuts the conversation at one of your messages and puts that message ba
 
 The message and everything after it leave the agent's context and the screen, and a resumed session keeps the cut. The session file keeps the old branch, and `uah sessions show` prints it. Files the agent changed stay changed. See the [rewind design](design/rewind.md).
 
-### Prompt history
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 5.3 Prompt history
 
 Each folder has its own prompt history, from this session and earlier ones: the folder is the session's workspace, and `/resume` into a session of another folder shows that folder's prompts.
 
@@ -410,7 +454,9 @@ Each folder has its own prompt history, from this session and earlier ones: the 
 
 See the [prompt history design](design/prompt-history.md).
 
-### List, search, and delete sessions
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 5.4 List, search, and delete sessions
 
 ```sh
 uah sessions                           # this directory's sessions, newest first (--all: every directory)
@@ -424,7 +470,9 @@ uah sessions rm 3f2a                   # delete a session with its runs and suba
 - **For programs:** each session's sidecar, `~/.uah/sessions/<id>.uah.json`, has its `workspace`, its `first_prompt` (200 characters), its `last_activity`, and its `last_sequence`, so a program can find a session and see that it changed from that file alone. `last_sequence` is the `Sequence` of the last item in the [session file](../internal/sessionfile/README.md) when the last turn ended.
 - **A session that never ran** has a sidecar and no session file: `uah sessions` lists it with 0 runs and no first prompt, and it resumes under its ID ([a session that never ran](../internal/sessionfile/README.md#a-session-that-never-ran)).
 
-### Select and copy text
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 5.5 Select and copy text
 
 Drag over the transcript to select text; double click selects a word and triple click a line. Letting go copies the selection to the clipboard, and a short note in the transcript's corner says how many lines; nothing else on the screen moves.
 
@@ -434,7 +482,9 @@ Drag over the transcript to select text; double click selects a word and triple 
 
 See the [selection design](design/selection.md).
 
-### File links and the terminal title
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 5.6 File links and the terminal title
 
 File paths in the transcript are underlined links: the files a READ line reads, a patch's and `/diff`'s files, a `/review` finding's place, and the files the agent names in its messages that exist in the workspace. A click shows the file in an overlay over the session, scrolled to the line, with that line or range marked.
 
@@ -444,13 +494,15 @@ File paths in the transcript are underlined links: the files a READ line reads, 
 
 The terminal's title shows the session's state and its workspace, to find a pane among many: `uah · api` when idle, `uah · working · api` while the agent works, `uah · approve? · api` while an approval waits, and `uah · answer? · api` while the agent's questions wait. `[tui] title = false` turns it off. See the [file links design](design/file-links.md).
 
+<sub>[↑ Back to top](#using-uah)</sub>
+
 ---
 
-## Headless: `uah exec`
+## 6. Headless: `uah exec`
 
 `uah exec` runs the agent without the TUI: progress on stderr, each answer on stdout, and an exit when the agent is idle. `uah run` is the same command, and `uah exec --help` lists the flags.
 
-### Running it
+### 6.1 Running it
 
 ```sh
 uah exec "Fix the failing test in pkg/foo"
@@ -466,22 +518,26 @@ uah exec --ephemeral -o answer.md "..."           # keep no session; write the f
 - **No one to ask:** commands that need an approval are declined with a reason, and the question tool is not offered, so the agent asks in its answer.
 - **No time limit:** a script that needs one wraps the run, as in `timeout 30m uah exec …` with GNU coreutils, which exits 124.
 
-### JSON events
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 6.2 JSON events
 
 `--json` prints one JSON event per line. Plain `uah exec` prints each answer once, when it is complete; `--json` streams it:
 
 | Event | When |
 | --- | --- |
 | `text_delta`, `reasoning_delta`, `stream_reset` | While the model writes, before the final `assistant_message` |
-| `web_search` | When a [web search](#web-search) starts and when it ends, with its query or URL |
+| `web_search` | When a [web search](#36-web-search) starts and when it ends, with its query or URL |
 | `compaction_started`, `compacted` | Around a compaction; `compacted` has its `stats`: the strategy, the tokens before and after, and the summary call's usage |
 | `auto_reviewed` | After each auto-review: the command, the verdict, its risk and reason, how long the review took, and the reviewer's tokens |
-| `goal_updated`, `goal_continued`, `goal_cleared` | A [goal](#goals) changed (the goal, what changed, and who changed it), uah starts a run for it, or it was cleared; the progress lines say each change |
+| `goal_updated`, `goal_continued`, `goal_cleared` | A [goal](#32-goals) changed (the goal, what changed, and who changed it), uah starts a run for it, or it was cleared; the progress lines say each change |
 | `error` | A message did not reach the agent, or a run failed |
 
 See the [streaming design](design/streaming.md).
 
-### Exit codes
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 6.3 Exit codes
 
 | Code | When |
 | --- | --- |
@@ -493,7 +549,9 @@ See the [streaming design](design/streaming.md).
 
 After a failure, the error is on stderr (an `error` notice with `--json`), and the work already sent still finishes; `-o` writes an answer only when a later run gives one, never an earlier run's.
 
-### Tool policy
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 6.4 Tool policy
 
 `--tools` limits the tools the model may use, and `--deny-tools` takes tools away; both narrow `[tools] allow` and `deny` and can never widen them ([tool policy](configuration.md#tool-policy)). The model is offered only those tools, and a call to any other is refused before a hook, an approval, or a job sees it. Subagents get the same limit, and `--tools ""` allows no tools at all.
 
@@ -511,3 +569,5 @@ CRM_TOKEN=… CRM_CALLER=alice uah exec --ephemeral --json --sandbox read-only \
 
 - **Hooks:** under a tool policy, a PreToolUse or PermissionRequest hook that fails blocks its call instead of being ignored ([hooks](../internal/hooks/README.md#output-and-decisions)).
 - **Skills and instructions:** `--no-skills` (or `[skills] enabled = false`) leaves skills out of the prompt and the tools; AGENTS.md files still apply unless `--no-instructions` is given too.
+
+<sub>[↑ Back to top](#using-uah)</sub>

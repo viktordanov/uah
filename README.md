@@ -36,16 +36,16 @@ Contents:
 ## Features
 
 - **[Context preparation](#context-preparation):** every new session starts with one developer message of facts about its shell, sandbox, git state, and loaded instruction files, built from Markdown modules you can extend.
-- **[Sessions](docs/guide.md#resume-a-session):** kept on disk with a SQLite index; resume them (`uah resume`), search them (`uah sessions --search`), [rewind](docs/guide.md#rewind-to-an-earlier-message) one to an earlier message, and recall earlier prompts per folder with ↑ and ctrl+r.
-- **[Subagents](docs/guide.md#subagents-and-agent-files):** Codex's multi-agent tools (`spawn_agent`, `send_input`, `wait_agent`), run in parallel in the background, with roles from Markdown or TOML agent files, per-subagent model and effort, and `fork_context`.
-- **[Goals](docs/guide.md#goals):** `/goal <objective>` continues the agent until it marks the goal complete with `update_goal`, up to 16 goal turns in one run, within a token budget, a cap on continuations, and no-progress guards.
-- **[Instructions and skills](docs/guide.md#agentsmd-and-skills):** AGENTS.md from the project root down, with `@path` imports; skills from `.agents/skills`, `~/.uah/skills`, and `$CODEX_HOME/skills`, loaded by the model or by naming one as `$name`.
-- **Tools:** Bash, `apply_patch` with diffs in the transcript, `view_image`, [questions with options](docs/guide.md#the-agents-questions) (`request_user_input`), the provider's hosted [web search](docs/guide.md#web-search), and [MCP servers](docs/guide.md#mcp-servers) over stdio and streamable HTTP with OAuth, resources, and prompts.
-- **[Sandbox and approvals](docs/guide.md#permission-modes):** Seatbelt on macOS and bubblewrap on Linux; read-only, workspace, auto, and yolo modes on shift+tab; [command rules](docs/guide.md#command-rules) as Starlark `prefix_rule` entries; an auto-reviewer that decides escalations in auto mode.
-- **[Compaction](docs/guide.md#compaction-and-context):** the provider's own on OpenAI providers, else a summary with a state ledger of changed files, failing commands, and loaded skills, after old tool outputs are elided first; `/context` shows what fills the window.
-- **[Hooks](docs/guide.md#hooks):** Claude Code's contract (JSON on stdin, exit 2 blocks) for ten events, from `SessionStart` to `PermissionRequest`; project hooks run only after `uah hooks trust`.
-- **[Headless](docs/guide.md#headless-uah-exec):** `uah exec` with JSONL events, `-o` for the final answer, `--ephemeral`, and a tool policy (`--tools`, `--deny-tools`); [`uah review`](docs/guide.md#diff-and-review) runs `/review`'s read-only reviewer.
-- **[Usage](docs/guide.md#plan-usage):** the ChatGPT plan's rate limits in the footer and `uah usage`, and how much of each session's input the prompt cache served.
+- **[Sessions](docs/guide.md#51-resume-a-session):** kept on disk with a SQLite index; resume them (`uah resume`), search them (`uah sessions --search`), [rewind](docs/guide.md#52-rewind-to-an-earlier-message) one to an earlier message, and recall earlier prompts per folder with ↑ and ctrl+r.
+- **[Subagents](docs/guide.md#33-subagents-and-agent-files):** Codex's multi-agent tools (`spawn_agent`, `send_input`, `wait_agent`), run in parallel in the background, with roles from Markdown or TOML agent files, per-subagent model and effort, and `fork_context`.
+- **[Goals](docs/guide.md#32-goals):** `/goal <objective>` continues the agent until it marks the goal complete with `update_goal`, up to 16 goal turns in one run, within a token budget, a cap on continuations, and no-progress guards.
+- **[Instructions and skills](docs/guide.md#11-agentsmd-and-skills):** AGENTS.md from the project root down, with `@path` imports; skills from `.agents/skills`, `~/.uah/skills`, and `$CODEX_HOME/skills`, loaded by the model or by naming one as `$name`.
+- **Tools:** Bash, `apply_patch` with diffs in the transcript, `view_image`, [questions with options](docs/guide.md#31-the-agents-questions) (`request_user_input`), the provider's hosted [web search](docs/guide.md#36-web-search), and [MCP servers](docs/guide.md#12-mcp-servers) over stdio and streamable HTTP with OAuth, resources, and prompts.
+- **[Sandbox and approvals](docs/guide.md#41-permission-modes):** Seatbelt on macOS and bubblewrap on Linux; read-only, workspace, auto, and yolo modes on shift+tab; [command rules](docs/guide.md#42-command-rules) as Starlark `prefix_rule` entries; an auto-reviewer that decides escalations in auto mode.
+- **[Compaction](docs/guide.md#38-compaction-and-context):** the provider's own on OpenAI providers, else a summary with a state ledger of changed files, failing commands, and loaded skills, after old tool outputs are elided first; `/context` shows what fills the window.
+- **[Hooks](docs/guide.md#13-hooks):** Claude Code's contract (JSON on stdin, exit 2 blocks) for ten events, from `SessionStart` to `PermissionRequest`; project hooks run only after `uah hooks trust`.
+- **[Headless](docs/guide.md#6-headless-uah-exec):** `uah exec` with JSONL events, `-o` for the final answer, `--ephemeral`, and a tool policy (`--tools`, `--deny-tools`); [`uah review`](docs/guide.md#37-diff-and-review) runs `/review`'s read-only reviewer.
+- **[Usage](docs/guide.md#23-plan-usage):** the ChatGPT plan's rate limits in the footer and `uah usage`, and how much of each session's input the prompt cache served.
 
 > [!NOTE]
 > The docs are kept in sync with the code by [Memoria](https://github.com/viktordanov/rs-memoria): CI fails when code changes and its README hasn't been reviewed.
@@ -60,8 +60,8 @@ Contents:
 - **Choosing a provider, or signing in:** [providers and sign-in](#providers-and-sign-in).
 - **Moving from Codex or Claude Code:** [what carries over](#coming-from-codex-or-claude-code).
 - **Doing one task**, such as resuming a session, setting a goal, or reviewing your changes: the [task guides](docs/guide.md).
-- **Running it from a script or CI:** [headless mode](docs/guide.md#headless-uah-exec).
-- **Teaching the agent about your project:** [context preparation](#context-preparation), and [AGENTS.md and skills](docs/guide.md#agentsmd-and-skills).
+- **Running it from a script or CI:** [headless mode](docs/guide.md#6-headless-uah-exec).
+- **Teaching the agent about your project:** [context preparation](#context-preparation), and [AGENTS.md and skills](docs/guide.md#11-agentsmd-and-skills).
 - **Changing a setting:** [configuration](#configuration), and the [reference](docs/configuration.md) for every key.
 - **Changing uah itself:** [development](#development) and the [code map](#code-map).
 
@@ -107,11 +107,11 @@ Contents:
 | ctrl+j, alt+enter, shift+enter | New line; ctrl+j and alt+enter work in every terminal, alt+enter on macOS where Option sends Meta. In tmux without extended keys, shift+enter arrives as enter and sends; see the [keys design](docs/design/keys.md) |
 | esc esc | Interrupt; queued messages stay. While the agent is idle, on an empty prompt: go back to an earlier message and edit it |
 | ↑ / ↓ on an empty prompt | Your earlier prompts in this folder, from this session and earlier ones; ↓ past the newest empties the prompt again. With messages queued, ↑ takes the last one back first |
-| ctrl+r | Search your earlier prompts; see [Reuse an earlier prompt](docs/guide.md#prompt-history) |
+| ctrl+r | Search your earlier prompts; see [Reuse an earlier prompt](docs/guide.md#53-prompt-history) |
 | `/` | Commands, such as `/model`, `/effort`, `/goal`, `/compact`, `/context`, `/diff`, `/review`, `/mcp`, `/agents`, `/status`, `/resume`, and `/new` |
 | `@` | Mention a workspace file (fuzzy search) |
 | `$` | Complete a skill's name; a sent `$name` loads the skill for the turn. `[tui] skill_mentions = false` turns both off |
-| ↑ / ↓, 1–9, n, enter, tab | When the agent asks questions: choose an option, pick one by its number, add a note, answer, and go to the next question; the last row takes your own words. See [Answer the agent's questions](docs/guide.md#the-agents-questions) |
+| ↑ / ↓, 1–9, n, enter, tab | When the agent asks questions: choose an option, pick one by its number, add a note, answer, and go to the next question; the last row takes your own words. See [Answer the agent's questions](docs/guide.md#31-the-agents-questions) |
 | ctrl+t | The detailed view: turns, tokens, and each tool's result |
 | ctrl+g | Edit the prompt in `$VISUAL` or `$EDITOR` (vim by default); the saved text comes back as the prompt, with its images. The draft file lives in `~/.uah/editor`, where sandboxed commands cannot reach it |
 | a click on a file path | Peek at the file in an overlay over the session (esc closes it, `e` opens it in the editor, `o` with the system), or open it in `$VISUAL` / `$EDITOR` at its line or with the system's default app, as `[tui] file_links` says |
@@ -151,7 +151,7 @@ uah reads what you already have, so a setup from Codex or Claude Code mostly car
 | Skills in `.agents/skills` or `$CODEX_HOME/skills` | Offered as they are, beside `~/.uah/skills` |
 | `[mcp_servers]` in Codex's `config.toml` | The same format; `uah mcp add` writes it |
 | Codex's `.rules` files with `prefix_rule` | The same [command rules](internal/rules/README.md) |
-| Claude Code's `.claude/agents/*.md` | Work as [agent files](docs/guide.md#subagents-and-agent-files), as do Codex's TOML role files |
+| Claude Code's `.claude/agents/*.md` | Work as [agent files](docs/guide.md#33-subagents-and-agent-files), as do Codex's TOML role files |
 | Claude Code hooks | The same contract: JSON on stdin, exit 2 blocks ([hooks](internal/hooks/README.md)) |
 | `--dangerously-bypass-approvals-and-sandbox` | Accepted, as uah's `--yolo` |
 
@@ -205,7 +205,7 @@ A flag wins over the environment, which wins over a resumed session's settings (
 
 Earlier versions used `~/.config/uagent`, `~/.local/state/unreal-agent`, and a project's `.uagent`. On its first start without `~/.uah`, uah copies the two folders into `~/.uah` and says so; the old folders are only read. It never moves a project's `.uagent`: uah and `uah doctor` show the `git mv .uagent .uah` that does. `UAGENT_CONFIG` and `UAGENT_STATE_DIR` are no longer read, and uah warns when either is set.
 
-`/config` in the TUI changes the basic settings in the user file (see [the `/config` panel](docs/guide.md#config-and-uah-config)). Every key, by group. The [configuration reference](docs/configuration.md) gives each one's type, default, flag, and merge rule, and the environment variables.
+`/config` in the TUI changes the basic settings in the user file (see [the `/config` panel](docs/guide.md#15-config-and-uah-config)). Every key, by group. The [configuration reference](docs/configuration.md) gives each one's type, default, flag, and merge rule, and the environment variables.
 
 | Group | Keys |
 | --- | --- |
