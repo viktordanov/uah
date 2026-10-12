@@ -2,6 +2,7 @@ package embedded_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -158,4 +159,47 @@ func TestEmbedded_CompactionSurvivesANewSandboxPolicy(t *testing.T) {
 	assert.Equal(t, append(slices.Clone(reqs[3].UserTexts), "third"), reqs[4].UserTexts, "the compaction still applies")
 	_, done := compactions(ev2.all)
 	assert.Empty(t, done, "no mismatch")
+}
+
+// TestEmbedded_SandboxBackgroundShell: a background shell runs in the
+// sandbox of the run's mode, as a command does, a wait_shell that times
+// out says so, and kill_shell stops it.
+func TestEmbedded_SandboxBackgroundShell(t *testing.T) {
+	t.Parallel()
+	ws := t.TempDir()
+	policy := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws}
+	if _, err := policy.Wrap([]string{"/bin/sh"}); err != nil {
+		t.Skipf("no sandbox here: %v", err)
+	}
+	outside := harnesstest.OutsideDir(t, "uah-sandbox-")
+	script := "echo ok > inside.txt; echo no > " + filepath.Join(outside, "x.txt") + "; sleep 30"
+	args, err := json.Marshal(map[string]any{"command": script, "background": true})
+	require.NoError(t, err)
+	e := newEnv(t,
+		fakellm.Reply{Calls: []fakellm.Call{{Name: "Bash", Args: string(args)}}},
+		fakellm.Reply{Calls: []fakellm.Call{{Name: "wait_shell", Args: `{"shell_ids":["shell-1"],"timeout_ms":1000}`}}},
+		fakellm.Reply{Calls: []fakellm.Call{{Name: "kill_shell", Args: `{"shell_id":"shell-1"}`}}},
+		fakellm.Reply{Text: "done"},
+	)
+	e.Workspace = ws
+	eng := embedded.New(embedded.Config{
+		StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv,
+		Sandbox: &policy, SandboxDir: filepath.Join(e.StateDir, "sandbox"),
+	})
+	s, err := session.Open(context.Background(), eng, session.Options{Settings: e.settings()})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	ev := &events{t: t, s: s}
+
+	_, err = s.Submit("start it in the background")
+	require.NoError(t, err)
+	assert.Equal(t, core.StatusOK, ev.finished().Status)
+
+	assert.FileExists(t, filepath.Join(ws, "inside.txt"))
+	assert.NoFileExists(t, filepath.Join(outside, "x.txt"), "the sandbox holds the shell")
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 4)
+	assert.Contains(t, reqs[1].ToolOutputs[0], "Background shell shell-1 started")
+	assert.Contains(t, reqs[2].ToolOutputs[1], `"timed_out":true`)
+	assert.Contains(t, reqs[3].ToolOutputs[2], `"state":"killed"`)
 }

@@ -128,3 +128,62 @@ func TestHooks_SessionStartContextAndPostToolUse(t *testing.T) {
 	assert.Contains(t, string(data), `"tool_input":{"command":"ls"}`)
 	assert.Contains(t, string(data), `"tool_response":{"success":true,"detail":"exit 0"}`)
 }
+
+// TestHooks_ANotificationHeldBehindABlockedPromptStartsItsRun: a
+// notification that arrives while a prompt's hooks run waits for them, and
+// when the hook blocks the prompt, it starts its run.
+func TestHooks_ANotificationHeldBehindABlockedPromptStartsItsRun(t *testing.T) {
+	h := withHooks(t, hooks.Hook{Event: hooks.UserPromptSubmit, Command: `sleep 0.3; echo 'not now' >&2; exit 2`})
+	_, err := h.s.Submit("blocked")
+	require.NoError(t, err)
+	_, live := h.s.Inject("a shell ended")
+	assert.False(t, live, "held while the prompt's hooks run")
+	h.until(isType[session.InputFailed])
+
+	run := h.nextRun()
+	assert.Equal(t, []string{"a shell ended"}, texts(run.req.Messages))
+	run.finish(core.StatusOK)
+}
+
+// TestHooks_AWithdrawnNotificationStartsNoRun: a notification withdrawn
+// while it waited behind a prompt's hooks starts no run when the hook
+// blocks the prompt.
+func TestHooks_AWithdrawnNotificationStartsNoRun(t *testing.T) {
+	h := withHooks(t, hooks.Hook{Event: hooks.UserPromptSubmit, Command: `sleep 0.3; echo 'not now' >&2; exit 2`})
+	_, err := h.s.Submit("blocked")
+	require.NoError(t, err)
+	withdraw, _ := h.s.Inject("a shell ended")
+	withdraw()
+	h.until(isType[session.InputFailed])
+	h.until(isType[session.Idle])
+	select {
+	case r := <-h.eng.started:
+		t.Fatalf("no run should start, got %v", texts(r.req.Messages))
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+// TestHooks_ANotificationRunVoidsAPendingStopHook: a notification that
+// starts a run while the last run's Stop hook runs voids the hook, so its
+// block does not start another run after the user stops the new one.
+func TestHooks_ANotificationRunVoidsAPendingStopHook(t *testing.T) {
+	h := withHooks(t, hooks.Hook{Event: hooks.Stop, Command: `sleep 0.5; echo '{"decision":"block","reason":"keep going"}'`})
+	_, err := h.s.Submit("work")
+	require.NoError(t, err)
+	h.nextRun().finish(core.StatusOK)
+	h.until(isType[core.RunFinished])
+	time.Sleep(100 * time.Millisecond) // the run ended; its Stop hook runs for 0.5 s
+
+	_, live := h.s.Inject("a shell ended") // while the Stop hook runs
+	assert.True(t, live)
+	woken := h.nextRun()
+	assert.Equal(t, []string{"a shell ended"}, texts(woken.req.Messages))
+	require.NoError(t, h.s.Interrupt())
+	h.until(isType[session.Idle])
+
+	select {
+	case r := <-h.eng.started:
+		t.Fatalf("the old Stop hook started a run after the user's stop: %v", texts(r.req.Messages))
+	case <-time.After(time.Second):
+	}
+}

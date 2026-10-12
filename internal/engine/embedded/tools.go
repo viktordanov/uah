@@ -38,10 +38,20 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 		return nil, err
 	}
 	w.commands = newCommands(ctx, scope.commandTimeout())
+	w.commands.shells = func(group int) bool { return w.e.shells.owns(string(sessionID), group) }
+	// Background shells come with Bash and wait_shell; a scope with a
+	// limit on each command (a /review's reviewer) gets none, since they
+	// would outlive the limit.
+	background := !scope.closed() && scope.commandTimeout() == 0 &&
+		!slices.Contains(req.DisallowedTools, tool.BashName) && !slices.Contains(req.DisallowedTools, toolWaitShell)
+	w.shellSession = w.e.shells.attach(string(sessionID), w.inject, w.notify)
 	b, sandboxed := translators.Bash.(sandboxedBash)
-	if sandboxed {
-		b.ctx, b.commands = approvals, w.commands
+	switch {
+	case sandboxed:
+		b.ctx, b.commands, b.background = approvals, w.commands, background
 		translators.Bash = b
+	default:
+		translators.Bash = plainBackground{Translator: translators.Bash, shell: w.shell(), dir: req.Workspace, offered: background}
 	}
 	if w.commands.limit > 0 {
 		translators.Bash = timedBash{Translator: translators.Bash, c: w.commands}
@@ -51,7 +61,7 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	if !w.e.cfg.NoSkills {
 		skills, skillErrs = discoverSkills(req.Workspace, w.getenv)
 	}
-	registry := tool.NewRegistry(translators, toolNames(req, len(skills) > 0)...)
+	registry := withShells(tool.NewRegistry(translators, toolNames(req, len(skills) > 0)...), background, req.DisallowedTools)
 	if sandboxed && b.available() {
 		registry = w.withSandbox(registry, req)
 	}

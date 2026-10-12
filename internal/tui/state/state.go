@@ -135,6 +135,9 @@ type State struct {
 	// agentIDs are the subagents' IDs in the order they started, so lookups
 	// of the agents do not walk the whole transcript (Agents).
 	agentIDs []string
+	// shells are the session's background shells, each as its latest
+	// update, in the order they started (shells.go).
+	shells []engine.ShellUpdated
 	// viewGen numbers the agent views opened (AgentView.Gen).
 	viewGen int
 	// View, when set, shows a subagent's transcript instead of the

@@ -147,3 +147,32 @@ func TestPolicyOperations(t *testing.T) {
 	}
 	assert.Same(t, operation.Manager(f), withPolicyOperations(f, nil), "no policy: the manager as it is")
 }
+
+// TestPolicyOperations_Shells: a restored background shell job runs only
+// as its tools are allowed: a start with Bash and wait_shell, a wait with
+// wait_shell, a stop with kill_shell.
+func TestPolicyOperations_Shells(t *testing.T) {
+	remote := func(data string) operation.Operation {
+		spec, err := operation.NewRemoteJobSpec(operation.RemoteJobPlan{Type: shellPlanType, Version: 1, Data: jsontext.Value(data)})
+		require.NoError(t, err)
+
+		return operation.Operation{MaxOutputLength: 1 << 10, ID: operation.ID(data), Type: spec.Type, Version: spec.Version, Status: operation.StatusReady, State: spec.State}
+	}
+	start := remote(`{"op":"start","shell":"/bin/sh","command":"true"}`)
+	wait := remote(`{"op":"wait","shell_ids":["shell-1"]}`)
+	kill := remote(`{"op":"kill","shell_ids":["shell-1"]}`)
+	cases := []struct {
+		allow             []string
+		start, wait, kill bool
+	}{
+		{[]string{"Bash", "wait_shell", "kill_shell"}, true, true, true},
+		{[]string{"Bash"}, false, false, false},
+		{[]string{"wait_shell", "kill_shell"}, false, true, true},
+	}
+	for _, c := range cases {
+		allowed := operationAllowed(toolpolicy.Policy{Allow: c.allow}, nil, func(string) bool { return false })
+		assert.Equal(t, c.start, allowed(start), "start under %v", c.allow)
+		assert.Equal(t, c.wait, allowed(wait), "wait under %v", c.allow)
+		assert.Equal(t, c.kill, allowed(kill), "kill under %v", c.allow)
+	}
+}

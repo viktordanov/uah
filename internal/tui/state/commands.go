@@ -47,6 +47,7 @@ func Commands() []Command {
 		{Name: "usage", Help: "your plan's usage: each limit, what is left, and when it resets (openai-codex); this session's prompt cache", WhileBusy: true, run: cmdUsage},
 		{Name: "mcp", Args: "[verbose]", Help: "MCP servers: state, transport, and tool count; verbose adds auth and each tool", WhileBusy: true, run: cmdMCP},
 		{Name: cmdAgentsName, Args: "[name]", Help: "subagents the agent started, and their state; a name shows that agent's transcript as it works", WhileBusy: true, run: cmdAgents},
+		{Name: cmdPsName, Args: "[stop <id>|stop all]", Help: "background shells the agent started, and their state; stop <id> or stop all stops them", WhileBusy: true, run: cmdPs},
 		{Name: "sandbox", Help: "what commands may do: the permission mode and its sandbox (shift+tab changes it)", WhileBusy: true, run: cmdSandbox},
 		{Name: "reasoning", Help: "show or hide reasoning summaries", WhileBusy: true, run: func(s *State, _ string) []Effect { s.ShowReasoning = !s.ShowReasoning; return nil }},
 		{Name: "details", Help: "show or hide turns, run dividers, and token totals", WhileBusy: true, run: func(s *State, _ string) []Effect { s.Details = !s.Details; return nil }},

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -106,7 +107,10 @@ type wiring struct {
 	// commands follows the run's commands: their process groups, and the
 	// scope's limit on each (commands.go).
 	commands *commands
-	closers  []closer
+	// shellSession is the session's background shells, which the run's
+	// starts go to (shells.attach).
+	shellSession *sessionShells
+	closers      []closer
 }
 
 // closer releases something a starting run opened. One that saves the
@@ -196,7 +200,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if err := w.effortUpdates(ctx, sw, s, req); err != nil {
 		return nil, err
 	}
-	operations := w.commands.wrap(withPolicyOperations(operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx)), w.opAllowed))
+	operations := w.commands.wrap(withPolicyOperations(operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newShellJobs(runCtx, &w.e.shells, w.shellSession, string(s.id), filepath.Join(w.l.SessionsDir, "operations", string(s.id), "shells")), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx)), w.opAllowed))
 	first := compaction.Trigger("")
 	switch {
 	case opts.Clear:

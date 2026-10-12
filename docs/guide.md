@@ -23,6 +23,7 @@ Task guides for uah, one section per task, grouped by area. Each section says wh
    - [3.6 Web search](#36-web-search)
    - [3.7 `/diff` and `/review`](#37-diff-and-review)
    - [3.8 Compaction and `/context`](#38-compaction-and-context)
+   - [3.9 Background shells](#39-background-shells)
 4. [Permissions](#4-permissions)
    - [4.1 Permission modes](#41-permission-modes)
    - [4.2 Command rules](#42-command-rules)
@@ -268,7 +269,7 @@ Review only; do not edit files. List each finding with its file and line.
 - **Model and effort:** a subagent runs on the parent's provider. Ask for another model or effort ("use a subagent on gpt-6-luna with low effort"), set `model`, `effort`, and `fast: true` in its agent file, or set defaults in `[agents]`. See [agent files](configuration.md#82-agent-role-files).
 - **Forking:** ask for a forked subagent ("fork a subagent to write the tests for what we just discussed") to hand it the conversation so far through `fork_context`.
 - **Watching:** `/agents <name>`, or alt+← and alt+→, shows a subagent's transcript, and what you type goes to it. `uah sessions show subagent-1a2b3c4d` prints a finished one's transcript.
-- **Results:** when a subagent finishes or is interrupted, the main agent gets its final answer: at its next model request while it works, else with your next message. The main agent is told to leave a running subagent alone and wait for it, and to message it only with something new from you, an answer to its question, or to stop a clear failure.
+- **Results:** when a subagent finishes or is interrupted, the main agent gets its final answer: at its next model request while it works; when it is idle, the answer starts a turn of its own, unless you stopped the last turn with esc esc, in which case it waits for your next message. The main agent is told to leave a running subagent alone and wait for it, and to message it only with something new from you, an answer to its question, or to stop a clear failure.
 
 <sub>[↑ Back to top](#using-uah)</sub>
 
@@ -360,6 +361,29 @@ uah compacts automatically at 90% of the context window. It first replaces old t
 `/context` shows the last request sent as a 10×10 grid, one cell per percent, with each category's tokens (system prompt, instruction files, skills, tools, MCP tools, your messages, agent messages, and tool calls with their results), the free space, and the auto-compact buffer, then a line per file, skill, and tool. The counts are estimated at 4 bytes a token and scaled to the input tokens the provider reported (`internal/contextusage`).
 
 `uah sessions show` prints what each compaction freed. The summary model, its prompt, and when compaction starts are [configurable](configuration.md#10-compaction).
+
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.9 Background shells
+
+The agent can start a command that keeps running after its call, such as a dev server, a watcher, or a long batch, and go on working beside it.
+
+1. Ask for it, for example "start the dev server and check the login page". The agent calls Bash with `background`, and gets back the shell's ID (`shell-1`), its process group, and its log file.
+2. The agent reads the log with `tail` or `grep` while the shell runs. Nothing keeps the turn open: the turn can end while the shell runs.
+3. When the shell exits, the agent is told, with its exit code and the end of its output: at once if it is working, otherwise in a turn the exit starts, so the agent takes up the result without a message from you. After you stop a turn with esc esc, an exit waits for your next message instead.
+
+| To | Do |
+| --- | --- |
+| See the shells | The footer counts the ones running (`1 shell running · /ps`); `/ps` lists each one's state, how long it has run, its process group, command, and log. In the transcript, the call that started one reads `BG shell-1 <command>` |
+| Stop one | `/ps stop shell-1`, or `/ps stop all`; the agent is told |
+| Stop them all and leave | ctrl+c on the empty composer asks once more while a shell runs, then quits and stops them, with the subagents |
+
+- **Esc esc** interrupts the turn only; the shells keep running, and their exits wait for your next message.
+- **The agent's own tools:** `wait_shell` waits up to 4.5 minutes for a shell to exit, and `kill_shell` stops one.
+- **Sandbox:** a background shell runs in the sandbox of the permission mode it started in, and asks for approval as any command does.
+- **Limits:** 16 running shells per session, and 256 MiB of log each. Shells do not survive quitting uah, or a resume after it.
+
+The [background shells design](design/background-shells.md) has what the sessions showed and how Codex and Claude Code do it.
 
 <sub>[↑ Back to top](#using-uah)</sub>
 

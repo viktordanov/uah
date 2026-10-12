@@ -287,10 +287,9 @@ func TestAgents_ProgressAfterTheParentsRun(t *testing.T) {
 	assert.Equal(t, "Ada", done.Nickname)
 }
 
-// TestAgents_NotifyTheParentWhenAChildEnds sends Codex's
-// <subagent_notification> to the parent when a child finishes that the
-// parent did not wait for: the parent is idle then, so it goes with the
-// parent's next message and starts no run of its own.
+// TestAgents_NotifyTheParentWhenAChildEnds: a child that ends while its
+// parent is idle sends the <subagent_notification>, which starts a run of
+// the parent's own, so the parent takes up the answer without a message.
 func TestAgents_NotifyTheParentWhenAChildEnds(t *testing.T) {
 	gate := make(chan struct{})
 	e := newEnv(t, agents.Config{},
@@ -304,32 +303,19 @@ func TestAgents_NotifyTheParentWhenAChildEnds(t *testing.T) {
 	require.NoError(t, err)
 	ev.finished()
 	close(gate)
-	ev.agentState(engine.AgentCompleted)
-	parentRequests := func() int {
-		n := 0
-		for _, r := range e.llm.Requests() {
-			if !isChild(r) {
-				n++
-			}
-		}
+	assert.Equal(t, "the agent said forty-two", ev.finished().Answer, "the notification started the parent's run")
 
-		return n
-	}
-	_, err = s.Submit("what did it say?")
-	require.NoError(t, err)
-	ev.finished()
-	assert.Equal(t, 3, parentRequests(), "the notification started no run of its own; it went with the next message")
-	var last fakellm.Request
+	var parent []fakellm.Request
 	for _, r := range e.llm.Requests() {
 		if !isChild(r) {
-			last = r
+			parent = append(parent, r)
 		}
 	}
-	require.GreaterOrEqual(t, len(last.UserTexts), 2)
-	note := last.UserTexts[len(last.UserTexts)-2]
+	require.Len(t, parent, 3)
+	last := parent[2]
+	note := last.UserTexts[len(last.UserTexts)-1]
 	assert.Contains(t, note, "<subagent_notification>")
 	assert.Contains(t, note, `"status":{"completed":"forty-two"}`)
-	assert.Equal(t, "what did it say?", last.UserTexts[len(last.UserTexts)-1])
 }
 
 // TestAgents_NotifyTheLiveRun tells a parent that works while its child
@@ -410,4 +396,51 @@ func TestAgents_AWaitAfterTheNotificationKeepsTheAnswerOnce(t *testing.T) {
 	last = lastParent(e)
 	assert.Equal(t, "anything else?", last.UserTexts[len(last.UserTexts)-1])
 	assert.Equal(t, 1, strings.Count(strings.Join(slices.Concat(last.UserTexts, last.DeveloperTexts), "\n"), "<subagent_notification>"), "the next run does not repeat it")
+}
+
+// TestAgents_AChildWokenByItsShellWorksAgain: a child that finished while
+// a background shell it started runs is woken by the shell's end; it is
+// running again, and its new answer reaches the parent.
+func TestAgents_AChildWokenByItsShellWorksAgain(t *testing.T) {
+	e := newEnv(t, agents.Config{},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-B start the job"}`)}},
+		fakellm.Reply{Text: "spawned"},
+		fakellm.Reply{Text: "noted"},
+		fakellm.Reply{Text: "noted again"},
+	)
+	e.llm.Route("CHILD-B",
+		fakellm.Reply{Calls: []fakellm.Call{call("Bash", `{"command":"sleep 0.5","background":true}`)}},
+		fakellm.Reply{Text: "started the job"},
+		fakellm.Reply{Text: "the job finished"},
+	)
+	s, ev := e.open(t, false)
+	_, err := s.Submit("delegate")
+	require.NoError(t, err)
+	ev.finished()
+
+	ev.until("the child running again", func(x core.Event) bool {
+		u, ok := x.(engine.AgentUpdated)
+		return ok && u.State == engine.AgentRunning && u.Started.After(time.Time{}) && seenCompleted(ev)
+	})
+	deadline := time.Now().Add(waitTimeout)
+	for time.Now().Before(deadline) {
+		for _, r := range e.llm.Requests() {
+			if !isChild(r) && strings.Contains(strings.Join(slices.Concat(r.UserTexts, r.DeveloperTexts), "\n"), `"completed":"the job finished"`) {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("the parent never heard the child's new answer")
+}
+
+// seenCompleted reports whether the events so far show the child done once.
+func seenCompleted(ev *events) bool {
+	for _, x := range ev.all {
+		if u, ok := x.(engine.AgentUpdated); ok && u.State == engine.AgentCompleted {
+			return true
+		}
+	}
+
+	return false
 }

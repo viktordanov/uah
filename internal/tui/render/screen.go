@@ -364,6 +364,9 @@ func (st *Styles) footerLine(s state.State, w int) string {
 	if g := s.GoalIndicator(); g != "" {
 		text += " · " + g
 	}
+	if n := s.RunningShells(); n > 0 {
+		text += " · " + plural(n, "shell") + " running"
+	}
 	if s.Shell {
 		hint = shellHint
 	}
@@ -412,6 +415,9 @@ func (st *Styles) compactFooter(s state.State, w int) string {
 	}
 	if u, ok := s.UsageLeft(); ok {
 		before(u) // the plan's tightest window
+	}
+	if n := s.RunningShells(); n > 0 {
+		before(plural(n, "shell") + " running · /ps") // stays on screen while they run
 	}
 	if g := s.GoalIndicator(); g != "" {
 		before(g) // Codex's goal indicator: "Pursuing goal (12.5K / 50K)"

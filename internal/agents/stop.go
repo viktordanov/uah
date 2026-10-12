@@ -32,10 +32,13 @@ func (m *Manager) checkStop(c *child, check stopCheck) {
 	d := m.template().Hooks.Run(ctx, in)
 
 	m.mu.Lock()
+	if c.stopCheck == check.gen {
+		c.stopCheck = 0
+	}
 	if c.closed || c.gen != check.gen {
 		m.mu.Unlock()
 
-		return // closed, or the parent sent a message meanwhile
+		return // closed, or the parent sent a message, or the child woke, meanwhile
 	}
 	reason := strings.TrimSpace(d.Reason)
 	if d.Block && reason != "" && c.stopStreak < maxStopContinuations {

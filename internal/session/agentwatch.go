@@ -83,3 +83,17 @@ func (s *Session) SetAgentLimit(n int) error {
 
 	return nil
 }
+
+// ErrNoShells means the session's engine runs no background shells.
+var ErrNoShells = errors.New("this session has no background shells")
+
+// StopShell stops one of the session's background shells; its agent is
+// told, since it did not stop it.
+func (s *Session) StopShell(id string) error {
+	e, ok := s.eng.(engine.ShellStopper)
+	if !ok {
+		return ErrNoShells
+	}
+
+	return e.StopShell(s.id, id) // the engine's errors are the user's to read
+}

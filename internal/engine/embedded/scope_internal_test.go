@@ -17,7 +17,7 @@ func TestScope_Tools(t *testing.T) {
 	assert.Equal(t, []string{"x"}, none.disallow([]string{"x"}))
 
 	s := newScope(engine.Scope{Tools: []string{"Bash", "mcp__docs", "mcp__gh__*", "mcp__db__query"}})
-	assert.Equal(t, []string{"ViewImage", "SkillUse", "apply_patch", "request_user_input"}, s.disallow(nil))
+	assert.Equal(t, []string{"ViewImage", "SkillUse", "apply_patch", "request_user_input", "wait_shell", "kill_shell"}, s.disallow(nil))
 	tools := []mcp.Tool{{Name: "mcp__docs__search"}, {Name: "mcp__gh__issue"}, {Name: "mcp__db__query"}, {Name: "mcp__db__drop"}, {Name: "mcp__docsx__a"}}
 	var names []string
 	for _, tl := range s.mcpTools(tools) {

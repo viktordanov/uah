@@ -97,8 +97,8 @@ func (s *Session) onPromptChecked(m evPromptChecked) {
 	s.showMessages(m.decision)
 	if m.decision.Block {
 		s.emit(InputFailed{At: time.Now(), IDs: []string{p.input.ID}, Reason: "blocked by a UserPromptSubmit hook: " + m.decision.Reason})
-		if s.state == StateIdle && len(s.hooks.checking) == 0 && s.closeReply == nil {
-			s.emit(Idle{At: time.Now()})
+		if s.state == StateIdle && len(s.hooks.checking) == 0 && s.closeReply == nil && !s.wakeIdle() {
+			s.emit(Idle{At: time.Now()}) // a notification held behind the hooks starts its run instead
 		}
 
 		return

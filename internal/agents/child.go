@@ -76,6 +76,8 @@ type child struct {
 	stopStreak int
 	// review marks a /review's reviewer (reviewagent.go), and stopReview
 	// stops its review.
+	// stopCheck is the generation whose SubagentStop hooks run (0: none).
+	stopCheck  int
 	review     bool
 	stopReview context.CancelFunc
 	// reserved counts the sends to a reviewer that are under way, from
@@ -246,6 +248,29 @@ func (m *Manager) watch(c *child) {
 	m.notify(c)
 }
 
+// woken marks a child running again when its session started a run on
+// its own while it was done: a background shell's or its own subagent's
+// end woke it. It is the child's work again, so a wait waits for it and
+// its end is told. It holds m.mu.
+func (c *child) woken() bool {
+	if c.stopCheck != 0 && c.stopCheck == c.gen && !c.closed {
+		// Woken while its SubagentStop hooks ran: a new generation, so the
+		// check, which still holds the old one, cannot end the new work.
+		c.gen++
+		c.stopCheck = 0
+
+		return false
+	}
+	if !c.status.Final() || c.closed || c.review || c.status.State == engine.AgentShutdown {
+		return false
+	}
+	c.gen++
+	c.started = time.Now()
+	c.status = Status{State: engine.AgentRunning}
+
+	return true
+}
+
 // observe folds one event into the child and reports whether its status
 // changed, or the stop check to run before it does. It holds m.mu.
 func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
@@ -270,6 +295,8 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 		if e.Level == session.LevelError {
 			c.failed = e.Message
 		}
+	case core.RunStarted:
+		return c.woken(), nil
 	case session.Idle:
 		if c.sending > 0 || len(c.pending) > 0 || c.closed {
 			return false, nil
@@ -284,6 +311,8 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 		c.last, c.failed, c.cause, c.answers = nil, "", "", nil
 		clear(c.early)
 		if status.State == engine.AgentCompleted && !c.review && m.tmpl.Hooks.Has(hooks.SubagentStop, "") {
+			c.stopCheck = c.gen
+
 			return false, &stopCheck{gen: c.gen, status: status}
 		}
 		c.status, c.stopStreak = status, 0

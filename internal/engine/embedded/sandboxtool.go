@@ -1,6 +1,7 @@
 package embedded
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -58,6 +59,11 @@ type sandboxedBash struct {
 	// commands are the run's commands: a kill of the session's own ones
 	// runs outside the sandbox (commands.ownKill).
 	commands *commands
+	// plainShell is the shell outside the sandbox, which a background
+	// shell allowed outside it runs in; background is set when the run
+	// offers background shells.
+	plainShell string
+	background bool
 }
 
 // sandboxShell is a translator that runs commands through a sandboxing
@@ -134,7 +140,7 @@ func (w *wiring) sandboxedBash(req core.Request, opsDir, realShell string) (tool
 		return nil, err
 	}
 	b := sandboxedBash{
-		Translator: newBash(plain), mode: w.mode, approver: w.e.cfg.Approver, ask: w.ask, grants: w.grants,
+		Translator: newBash(plain), plainShell: plain, mode: w.mode, approver: w.e.cfg.Approver, ask: w.ask, grants: w.grants,
 		policy: func(m sandbox.Mode) sandbox.Policy { return w.policy(req, m) },
 		ctx:    context.Background(), cwd: req.Workspace, warn: w.l.Stderr,
 	}
@@ -221,7 +227,8 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	if err != nil {
 		return refuse(tool.ErrorStatus(err.Error(), 0))
 	}
-	if run, ok := b.killOwn(call, args.Command, sandboxed); ok {
+	background := b.background && backgroundRequested(call.Arguments)
+	if run, ok := b.killOwn(call, args.Command, sandboxed); ok && !background {
 		return run
 	}
 	d := b.approver.Decide(ctx, approval.Request{
@@ -235,7 +242,13 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 	}
 	switch d.Run {
 	case approval.Unsandboxed:
-		return func(tc tool.Context) tool.CallStatus { return b.Translator.Translate(tc, call) }
+		return func(tc tool.Context) tool.CallStatus {
+			if background {
+				return startShell(tc, call, b.plainShell, b.cwd)
+			}
+
+			return b.Translator.Translate(tc, call)
+		}
 	case approval.Sandboxed:
 		// The shell for the grants when the command starts, not when it
 		// was decided: one dropped meanwhile must not reach it.
@@ -243,6 +256,9 @@ func (b sandboxedBash) decide(ctx context.Context, call llm.ToolCall) submit {
 			box, err := b.box(mode)
 			if err != nil {
 				return tool.ErrorStatus(err.Error(), 0)
+			}
+			if background {
+				return startShell(tc, call, cmp.Or(box.shell, b.plainShell), b.cwd)
 			}
 
 			return box.Translate(tc, call)
@@ -306,6 +322,9 @@ func (b sandboxedBash) forbidden(command string) bool {
 // compaction covers it as it was (compaction.Record), so a result must not
 // change when a new policy or version gives the sandbox a new script.
 func (b sandboxedBash) TranslateResult(callID string, status tool.CallStatus, ops []operation.Operation) (llm.ToolResult, error) {
+	if result, ok := shellJobResult(callID, status, ops); ok {
+		return result, nil
+	}
 	result, err := b.Translator.TranslateResult(callID, status, ops)
 	if err != nil || len(ops) != 1 {
 		return result, err // the coordinator wraps tool errors

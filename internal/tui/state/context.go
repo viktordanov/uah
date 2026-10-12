@@ -63,6 +63,8 @@ func (s *State) onEngineEvent(ev core.Event) bool {
 		s.onAgentUpdated(e)
 	case engine.AgentActivity:
 		s.onAgentActivity(e)
+	case engine.ShellUpdated:
+		s.onShellUpdated(e)
 	case engine.PatchApplied:
 		s.onPatchApplied(e)
 	case engine.ToolOutput:

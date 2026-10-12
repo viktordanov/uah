@@ -34,6 +34,9 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 		}
 		note, ok := s.agentNote(e.Text)
 		if !ok {
+			note, ok = shellNote(e.Text)
+		}
+		if !ok {
 			note, ok = reviewNote(e.Text)
 		}
 		if !ok && contextprep.IsPrepared(e.Text) {
@@ -54,6 +57,9 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 			return
 		}
 		note, ok := s.agentNote(e.Text) // a notification sent into the live run
+		if !ok {
+			note, ok = shellNote(e.Text)
+		}
 		if !ok {
 			note = preparedNote(e.Text)
 		}

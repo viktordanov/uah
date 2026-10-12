@@ -138,6 +138,11 @@ type Session struct {
 	clearPending bool
 	// held are injected messages waiting for the next run (Inject).
 	held []core.UserInput
+	// wake are the held injected messages that should start a run
+	// (wakeIdle), by ID, and quiet is set once the user stopped the last
+	// run, which leaves them for the user's next message.
+	wake  map[string]bool
+	quiet bool
 	// injected are the injected messages sent into the live run that the
 	// runner has not recorded yet: a run that ends first holds them again.
 	injected []core.UserInput

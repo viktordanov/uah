@@ -337,17 +337,50 @@ func e2eRequests(s *fakellm.Server) []fakellm.Request {
 		// finished in), and the cache key (the session's ID) differ by run.
 		r.System, r.Input, r.CacheKey = "", nil, ""
 		slices.Sort(r.ToolOutputs)
-		// apply_patch is the embedded engine's own tool, and SkillUse
-		// comes with its system skills.
-		for _, own := range []string{"apply_patch", "SkillUse"} {
+		// apply_patch and the shell tools are the embedded engine's own
+		// tools, as is Bash's background argument, and SkillUse comes with
+		// its system skills.
+		for _, own := range []string{"apply_patch", "SkillUse", "wait_shell", "kill_shell"} {
 			r.ToolNames = slices.DeleteFunc(r.ToolNames, func(n string) bool { return n == own })
 			r.ToolDefs = slices.DeleteFunc(r.ToolDefs, func(d json.RawMessage) bool { return strings.Contains(string(d), `"name":"`+own+`"`) })
 			delete(r.Tools, own)
+		}
+		if b, ok := r.Tools["Bash"]; ok {
+			r.Tools["Bash"] = withoutBackground(b, "properties")
+		}
+		for i, d := range r.ToolDefs {
+			if strings.Contains(string(d), `"name":"Bash"`) {
+				r.ToolDefs[i] = json.RawMessage(withoutBackground(string(d), "parameters", "properties"))
+			}
 		}
 		out = append(out, r)
 	}
 
 	return out
+}
+
+// withoutBackground is a JSON object without Bash's background argument
+// at the path, encoded again.
+func withoutBackground(raw string, path ...string) string {
+	var v map[string]any
+	if json.Unmarshal([]byte(raw), &v) != nil {
+		return raw
+	}
+	m := v
+	for _, k := range path {
+		next, ok := m[k].(map[string]any)
+		if !ok {
+			return raw
+		}
+		m = next
+	}
+	delete(m, "background")
+	data, err := json.Marshal(v)
+	if err != nil {
+		return raw
+	}
+
+	return string(data)
 }
 
 func withoutPrefix(lines []string, prefix string) []string {

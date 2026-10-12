@@ -281,8 +281,28 @@ func operationAllowed(p toolpolicy.Policy, mcpAllowed []mcp.Tool, servers func(s
 			return json.Unmarshal(state.Plan.Data, &plan) == nil && p.Allows(plan.Tool)
 		case engine.PatchPlanType:
 			return p.Allows(patch.ToolName)
+		case shellPlanType:
+			return shellPlanAllowed(p, state.Plan.Data)
 		}
 
 		return true
 	}
+}
+
+// shellPlanAllowed reports whether the policy allows a background shell's
+// job: a start as background shells are offered, with Bash and
+// wait_shell, and a wait or a stop by its tool.
+func shellPlanAllowed(p toolpolicy.Policy, data []byte) bool {
+	var plan shellPlan
+	if json.Unmarshal(data, &plan) != nil {
+		return false
+	}
+	switch plan.Op {
+	case shellOpStart:
+		return p.Allows(tool.BashName) && p.Allows(toolWaitShell)
+	case shellOpWait:
+		return p.Allows(toolWaitShell)
+	}
+
+	return p.Allows(toolKillShell)
 }

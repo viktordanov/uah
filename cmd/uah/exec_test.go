@@ -2,9 +2,12 @@ package main_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -165,4 +168,25 @@ func TestExecNoInstructionsContext(t *testing.T) {
 	context := strings.Join(req.DeveloperTexts, "\n")
 	assert.Contains(t, context, "Loading instruction files (AGENTS.md) is turned off for this session")
 	assert.NotContains(t, context, "none to search for")
+}
+
+// TestExecStopsBackgroundShells pins that uah exec returns only after its
+// background shells are stopped, a shell that ignores SIGTERM included.
+func TestExecStopsBackgroundShells(t *testing.T) {
+	t.Parallel()
+	llm := fakellm.New(t,
+		fakellm.Reply{Calls: []fakellm.Call{{Name: "Bash", Args: `{"command":"trap '' TERM; echo $$ > group.txt; sleep 60","background":true}`}}},
+		fakellm.Reply{Calls: []fakellm.Call{{Name: "wait_shell", Args: `{"shell_ids":["shell-1"],"timeout_ms":1000}`}}},
+		fakellm.Reply{Text: "started"},
+	)
+	e, env := modelEnv(t, llm)
+	res := uahWith(t, env, "", "exec", "--yolo", "-C", e.Workspace, "start it")
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Contains(t, res.stderr, "shell shell-1: started")
+
+	data, err := os.ReadFile(filepath.Join(e.Workspace, "group.txt"))
+	require.NoError(t, err)
+	group, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	require.NoError(t, err)
+	assert.True(t, errors.Is(syscall.Kill(-group, 0), syscall.ESRCH), "the shell's group is gone when exec returns")
 }

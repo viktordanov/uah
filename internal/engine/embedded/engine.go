@@ -159,12 +159,16 @@ type Engine struct {
 	transports transports
 	// runs counts the runs in progress (Config.ReturnMemory).
 	runs runs
+	// shells are the sessions' background shells (shells.go).
+	shells shells
 }
 
 // Forget drops what the engine kept for a session that closed: the
 // auto-reviewer's transcript, the last request for /context, and a cache
-// key or scope it may have (engine.Forgetter).
+// key or scope it may have (engine.Forgetter), and stops its background
+// shells.
 func (e *Engine) Forget(sessionID string) {
+	e.shells.forget(sessionID)
 	e.transcripts.Delete(sessionID)
 	e.cacheKeys.Delete(sessionID)
 	e.scopes.Delete(sessionID)
@@ -221,9 +225,10 @@ func (e *Engine) StartMCP(ctx context.Context) []mcp.ServerStatus {
 	return e.cfg.MCP.Started(ctx)
 }
 
-// Close stops the subagents and the MCP servers; a later run starts the
-// servers again.
+// Close stops the background shells, the subagents, and the MCP servers;
+// a later run starts the servers again.
 func (e *Engine) Close() error {
+	e.shells.close()
 	var errs []error
 	if c, ok := e.cfg.Subagents.(io.Closer); ok {
 		errs = append(errs, c.Close())
@@ -352,3 +357,11 @@ func (s *lockedSink) emit(e core.Event) {
 
 // Subagents is the engine's subagents, for a view that follows one.
 func (e *Engine) Subagents() engine.Subagents { return e.cfg.Subagents }
+
+// StopShell stops one of a session's background shells
+// (engine.ShellStopper).
+func (e *Engine) StopShell(sessionID, id string) error {
+	_, err := e.shells.stop(sessionID, id, false)
+
+	return err
+}

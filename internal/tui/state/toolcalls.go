@@ -41,6 +41,11 @@ func (s *State) toolCall(e core.ToolCalled) Item {
 		it.Command = bashCommand(e.Arguments, e.Label)
 		sum := cmdparse.Summarize(it.Command, s.pathEnv())
 		it.Verb, it.Parts = sum.Label, sum.Parts
+		if background(e.Arguments) {
+			it.Verb = verbBackground // its shell's ID joins the line once it runs (onShellUpdated)
+		}
+	case e.Name == toolWaitShell || e.Name == toolKillShell:
+		it.Verb, it.Parts = shellCallParts(e.Name, e.Arguments)
 	case isMCP(e.Name):
 		it.Parts = mcpParts(e.Name, e.Arguments)
 	case e.Name == engine.QuestionToolName:

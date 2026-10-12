@@ -18,6 +18,8 @@ func (s *Session) startRun(inputs []core.UserInput) {
 	// Injected messages that waited for a run go first (Inject).
 	s.noteFirstPrompt(inputs)
 	inputs, s.startHeld, s.held = slices.Concat(s.held, inputs), s.held, nil
+	clear(s.wake)
+	s.quiet = false
 	s.state = StateStarting
 	s.markSent(inputs)
 	s.noteGoalRun()
@@ -71,7 +73,9 @@ func (s *Session) onStarted(m evStarted) bool {
 			}
 		}
 		s.startSteers = nil
-		s.emit(InputFailed{At: time.Now(), IDs: ids, Reason: m.err.Error()})
+		if len(ids) > 0 { // a run started for injected messages fails none of the user's
+			s.emit(InputFailed{At: time.Now(), IDs: ids, Reason: m.err.Error()})
+		}
 		s.emit(Notice{At: time.Now(), Level: LevelError, Message: m.err.Error()})
 		s.interruptWhenStarted, s.restartAfterStop = false, false
 		s.state = StateIdle
@@ -139,6 +143,13 @@ func (s *Session) onRunEvent(e core.Event) {
 // onEnded handles the end of a run and reports whether the session closed.
 func (s *Session) onEnded(m evEnded) bool {
 	s.run = nil
+	// The run never read them: the next one takes them up, as held
+	// messages go out, as the user's, since a run of developer messages
+	// alone asks the model for no response.
+	for i := range s.injected {
+		s.injected[i].Role = ""
+		s.wakeFor(s.injected[i].ID)
+	}
 	s.held, s.injected = slices.Concat(s.injected, s.held), nil // the run never read them
 	s.noteLast(nil)
 	s.declinePending(false)
@@ -146,6 +157,7 @@ func (s *Session) onEnded(m evEnded) bool {
 		s.emit(Notice{At: time.Now(), Level: LevelError, Message: m.err.Error()})
 	}
 	userStopped := s.state == StateStopping && !s.restartAfterStop
+	s.quiet = userStopped
 	s.endGoalRun(m.result, m.err, userStopped)
 	s.requeueUnread(userStopped && s.closeReply == nil) // a close keeps them queued too
 	s.live, s.modelBusy = nil, false

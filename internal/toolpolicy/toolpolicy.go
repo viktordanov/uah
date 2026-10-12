@@ -25,6 +25,7 @@ import (
 var Builtins = []string{
 	tool.BashName, tool.ViewImageName, tool.SkillUseName, patch.ToolName, webSearch, questionTool,
 	spawnAgent, "send_input", "wait_agent", "close_agent", "resume_agent",
+	"wait_shell", "kill_shell",
 	goal.GetToolName, goal.CreateToolName, goal.UpdateToolName,
 	mcp.ListResourcesTool, mcp.ListResourceTemplatesTool, mcp.ReadResourceTool,
 }

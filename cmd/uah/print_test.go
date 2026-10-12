@@ -32,6 +32,20 @@ func TestPrinter_Agents(t *testing.T) {
 	assert.Empty(t, out.String())
 }
 
+// TestPrinter_Shells prints a background shell's start and end.
+func TestPrinter_Shells(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	p := newPrinter(&out, false)
+	p.print(engine.ShellUpdated{ID: "shell-1", Command: "make  build", State: engine.ShellRunning, Log: "/tmp/shell-1.log"})
+	p.print(engine.ShellUpdated{ID: "shell-1", State: engine.ShellExited, ExitCode: 2})
+	p.print(engine.ShellUpdated{ID: "shell-2", State: engine.ShellKilled})
+
+	assert.Contains(t, out.String(), "shell shell-1: started: make build (log /tmp/shell-1.log)")
+	assert.Contains(t, out.String(), "shell shell-1: exited 2")
+	assert.Contains(t, out.String(), "shell shell-2: stopped")
+}
+
 // TestPrinter_EffortUpdatesOff warns on stderr when the backend rejects
 // effort updates.
 func TestPrinter_EffortUpdatesOff(t *testing.T) {

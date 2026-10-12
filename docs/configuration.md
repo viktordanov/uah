@@ -309,7 +309,7 @@ The tool policy limits the tools the model may use, for example for a headless, 
 
 A name in `allow` or `deny` is one of these:
 
-1. A built-in tool: `Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `web_search`, `request_user_input`, the agent tools `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent`, the goal tools `get_goal`, `create_goal`, and `update_goal`, and the MCP resource tools `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource`.
+1. A built-in tool: `Bash`, `ViewImage`, `SkillUse`, `apply_patch`, `web_search`, `request_user_input`, the agent tools `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent`, the background shell tools `wait_shell` and `kill_shell` (a policy that leaves out `wait_shell` also takes Bash's `background` argument away), the goal tools `get_goal`, `create_goal`, and `update_goal`, and the MCP resource tools `list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource`.
 2. An MCP tool: `mcp__<server>__<tool>`, where `<server>` is the server's name as the model sees it (`/mcp` lists it) and `<tool>` is the tool's own name as the server lists it, `read-file` say, not the `read_file` of the model's name. uah allows a tool by that identity, never by the name the model sees, so the entry allows nothing while the server has no such tool, and it never passes to another tool when tool lists change.
 3. Every tool of one MCP server: `mcp__<server>__*`, or `mcp__<server>`. The pattern matches the tools of that server only, never of another server whose name starts the same way.
 

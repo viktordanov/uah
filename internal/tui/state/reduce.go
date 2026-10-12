@@ -261,12 +261,13 @@ func (s *State) onIntent(ev any) (State, []Effect) { //nolint:gocyclo // a dispa
 
 		return *s, nil
 	case Quit:
-		if !s.Busy || (!s.quitArmed.IsZero() && s.Now.Sub(s.quitArmed) < confirmWindow) {
+		shells := s.RunningShells()
+		if (!s.Busy && shells == 0) || (!s.quitArmed.IsZero() && s.Now.Sub(s.quitArmed) < confirmWindow) {
 			s.Quitting, s.Status = true, "stopping…"
 
 			return *s, []Effect{EffQuit{}}
 		}
-		s.quitArmed, s.Status = s.Now, "press ctrl+c again to stop the run and quit"
+		s.quitArmed, s.Status = s.Now, quitHint(s.Busy, shells)
 
 		return *s, nil
 	case EditLastQueued:
@@ -394,4 +395,5 @@ func (s *State) nextKey(prefix string) string {
 
 func (s *State) resetTranscript() {
 	s.Items, s.index, s.agentIDs, s.Totals, s.Scroll, s.Files, s.ContextUsed = nil, map[string]int{}, nil, Totals{}, 0, nil, 0
+	s.shells = nil // the session's own; switching stops the old session's
 }

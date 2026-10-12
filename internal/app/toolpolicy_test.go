@@ -16,6 +16,7 @@ import (
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/patch"
@@ -185,6 +186,7 @@ func TestSetup_ToolPolicyResume(t *testing.T) {
 func TestToolPolicy_KnowsEveryTool(t *testing.T) {
 	names := append([]string{engine.QuestionToolName, "web_search", "Bash", "ViewImage", "SkillUse", patch.ToolName}, goal.ToolNames...)
 	names = append(names, mcp.ListResourcesTool, mcp.ListResourceTemplatesTool, mcp.ReadResourceTool)
+	names = append(names, embedded.ShellToolNames...)
 	for _, n := range agents.ToolNames() {
 		if n != "wait" { // wait_agent's old name: resolved for old sessions, never offered
 			names = append(names, n)

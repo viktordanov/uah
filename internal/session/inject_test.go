@@ -3,6 +3,7 @@ package session_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,42 +34,61 @@ func TestSession_InjectIntoTheLiveRun(t *testing.T) {
 			require.Len(t, r.sent, 1)
 			assert.Equal(t, core.RoleDeveloper, r.sent[0].Role)
 			r.finish(core.StatusOK)
+			if tc.unread {
+				// The run never read it: the next run starts for it.
+				next := <-h.eng.started
+				assert.Equal(t, []string{"<subagent_notification>done</subagent_notification>"}, texts(next.req.Messages), "held again, and a run starts for it")
+				assert.Equal(t, core.Role(""), next.req.Messages[0].Role, "as the user's: a developer message alone asks for no response")
+				next.finish(core.StatusOK)
+			}
 			h.until(isType[session.Idle])
 
 			_, err = h.s.Submit("next")
 			require.NoError(t, err)
 			next := <-h.eng.started
-			var texts []string
-			for _, m := range next.req.Messages {
-				texts = append(texts, m.Text)
-			}
-			if tc.unread {
-				assert.Equal(t, []string{"<subagent_notification>done</subagent_notification>", "next"}, texts, "held again for the next run")
-			} else {
-				assert.Equal(t, []string{"next"}, texts)
-			}
+			assert.Equal(t, []string{"next"}, texts(next.req.Messages))
 			next.finish(core.StatusOK)
 		})
 	}
 }
 
-// TestSession_InjectWhileIdleIsHeld: with no run, an injected message waits
-// for the next run, and withdraw takes it back.
-func TestSession_InjectWhileIdleIsHeld(t *testing.T) {
+// TestSession_InjectWhileIdleStartsARun: with no run, an injected message
+// starts one, so the agent takes up a subagent's or a shell's end.
+func TestSession_InjectWhileIdleStartsARun(t *testing.T) {
 	h := newHarness(t, fakeCaps{LiveInput: true})
+	_, live := h.s.Inject("a shell ended")
+	assert.True(t, live)
+	r := <-h.eng.started
+	assert.Equal(t, []string{"a shell ended"}, texts(r.req.Messages))
+	r.finish(core.StatusOK)
+	h.until(isType[session.Idle])
+}
+
+// TestSession_InjectAfterAStopIsHeld: after the user stopped a run, an
+// injected message waits for the user's next message, and withdraw takes
+// it back.
+func TestSession_InjectAfterAStopIsHeld(t *testing.T) {
+	h := newHarness(t, fakeCaps{LiveInput: true})
+	_, err := h.s.Submit("work")
+	require.NoError(t, err)
+	h.nextRun()
+	require.NoError(t, h.s.Interrupt())
+	h.until(isType[session.Idle])
+
 	_, live := h.s.Inject("kept")
 	assert.False(t, live)
 	withdraw, _ := h.s.Inject("taken back")
 	withdraw()
+	select {
+	case r := <-h.eng.started:
+		t.Fatalf("no run should start after the user's stop, got %v", texts(r.req.Messages))
+	case <-time.After(100 * time.Millisecond):
+	}
 
-	_, err := h.s.Submit("next")
+	_, err = h.s.Submit("next")
 	require.NoError(t, err)
 	r := <-h.eng.started
-	var texts []string
-	for _, m := range r.req.Messages {
-		texts = append(texts, m.Text)
-	}
-	assert.Equal(t, []string{"kept", "next"}, texts)
+	assert.Equal(t, []string{"kept", "next"}, texts(r.req.Messages))
 	r.finish(core.StatusOK)
 }
 
@@ -76,23 +96,14 @@ func TestSession_InjectWhileIdleIsHeld(t *testing.T) {
 // back the held message it took, and the next run gets it.
 func TestSession_InjectSurvivesAFailedStart(t *testing.T) {
 	h := newHarness(t, fakeCaps{LiveInput: true})
-	h.s.Inject("note")
 	h.eng.startErr = errors.New("preflight blocked the run")
-	_, err := h.s.Submit("first")
-	require.NoError(t, err)
-	failed := h.until(isType[session.InputFailed]).(session.InputFailed)
-	assert.NotContains(t, failed.IDs, "", "only the user's message failed")
-	assert.Len(t, failed.IDs, 1)
+	h.s.Inject("note") // its run fails to start, and none is tried again
 	h.until(isType[session.Idle])
 
 	h.eng.startErr = nil
-	_, err = h.s.Submit("second")
+	_, err := h.s.Submit("second")
 	require.NoError(t, err)
 	r := <-h.eng.started
-	var texts []string
-	for _, m := range r.req.Messages {
-		texts = append(texts, m.Text)
-	}
-	assert.Equal(t, []string{"note", "second"}, texts)
+	assert.Equal(t, []string{"note", "second"}, texts(r.req.Messages))
 	r.finish(core.StatusOK)
 }

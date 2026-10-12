@@ -35,6 +35,9 @@ type commands struct {
 	// stopped.
 	timers   map[operation.ID]*time.Timer
 	timedOut map[operation.ID]bool
+	// shells reports whether a process group is one of the session's
+	// background shells that still run (nil: none).
+	shells func(group int) bool
 }
 
 func newCommands(ctx context.Context, limit time.Duration) *commands {
@@ -204,10 +207,13 @@ func (b timedBash) TranslateResult(callID string, status tool.CallStatus, ops []
 }
 
 // owns reports whether a process group is one of the run's commands that
-// still run.
+// still run, or one of the session's background shells.
 func (c *commands) owns(group int) bool {
 	if c == nil || group <= 1 {
 		return false
+	}
+	if c.shells != nil && c.shells(group) {
+		return true
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -391,9 +391,13 @@ func (s *Session) continueGoal() bool {
 	return true
 }
 
-// goIdle reports the session idle, or continues the goal instead.
+// goIdle reports the session idle, or continues the goal, or starts a run
+// for an injected message that waits (wakeIdle), instead.
 func (s *Session) goIdle(userStopped bool) {
 	if !userStopped && s.continueGoal() {
+		return
+	}
+	if !userStopped && s.wakeIdle() {
 		return
 	}
 	s.emit(Idle{At: time.Now()})

@@ -211,6 +211,21 @@ func (m Model) run(e state.Effect) term.Cmd { //nolint:gocyclo // a dispatch swi
 		}
 	case state.EffOpenSession:
 		return m.switchTo(e.ID)
+	case state.EffStopShells:
+		return func() term.Msg {
+			if sess == nil {
+				return fail(errNoSession)
+			}
+			var errs []error
+			for _, id := range e.IDs {
+				errs = append(errs, sess.StopShell(id))
+			}
+			if err := errors.Join(errs...); err != nil {
+				return fail(err)
+			}
+
+			return nil
+		}
 	case state.EffViewAgent:
 		return m.watchAgent(e.ID)
 	case state.EffAgentSend:

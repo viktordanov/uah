@@ -108,10 +108,13 @@ func runAction(ctx context.Context, cmd *cli.Command) error {
 func drive(ctx context.Context, s *session.Session, lines <-chan stdinLine, busy bool, out *runOutput) error {
 	events := s.Events()
 	closing := false
+	// closed ends once Close returns: the session's background shells are
+	// stopped by then, and the command must not exit before.
+	closed := make(chan struct{})
 	closeSession := func() {
 		if !closing {
 			closing = true
-			go func() { _ = s.Close() }()
+			go func() { _ = s.Close(); close(closed) }()
 		}
 	}
 	if !busy && lines == nil {
@@ -149,9 +152,15 @@ func drive(ctx context.Context, s *session.Session, lines <-chan stdinLine, busy
 			busy = true
 		case e, ok := <-events:
 			if !ok {
+				closeSession() // the session closed itself: Close returns at once
+				<-closed
+
 				return out.exit(interrupted)
 			}
 			out.handle(e)
+			if _, started := e.(core.RunStarted); started {
+				busy = true // also a run a shell's or a subagent's end started
+			}
 			if _, idle := e.(session.Idle); idle {
 				busy = false
 				if lines == nil {

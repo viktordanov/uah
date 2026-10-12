@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,4 +80,47 @@ exit 2
 	ran, err := os.ReadFile(tools)
 	require.NoError(t, err)
 	assert.Equal(t, "Bash\n", string(ran), "the child's Bash call ran the PostToolUse hook")
+}
+
+// TestAgents_AChildWokenDuringItsStopHook: a child whose background shell
+// ends while its SubagentStop hook runs is woken; the hook's check, of the
+// earlier work, does not end the new work, and the parent hears only the
+// new answer.
+func TestAgents_AChildWokenDuringItsStopHook(t *testing.T) {
+	runner, err := hooks.New([]hooks.Hook{
+		{Event: hooks.SubagentStop, Command: "cat >/dev/null; sleep 1", Source: hooks.SourceUser},
+	}, nil, "")
+	require.NoError(t, err)
+	e := newEnv(t, agents.Config{},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-H start the job"}`)}},
+		fakellm.Reply{Text: "spawned"},
+		fakellm.Reply{Text: "noted"},
+		fakellm.Reply{Text: "noted again"},
+	)
+	e.hooks = runner
+	e.llm.Route("CHILD-H",
+		fakellm.Reply{Calls: []fakellm.Call{call("Bash", `{"command":"sleep 0.3","background":true}`)}},
+		fakellm.Reply{Text: "started the job"},
+		fakellm.Reply{Text: "the job finished"},
+	)
+	s, ev := e.open(t, false)
+	_, err = s.Submit("delegate")
+	require.NoError(t, err)
+	ev.finished()
+
+	parentSaw := func(text string) bool {
+		for _, r := range e.llm.Requests() {
+			if !isChild(r) && strings.Contains(strings.Join(slices.Concat(r.UserTexts, r.DeveloperTexts), "\n"), text) {
+				return true
+			}
+		}
+
+		return false
+	}
+	deadline := time.Now().Add(waitTimeout)
+	for !parentSaw(`"completed":"the job finished"`) && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	assert.True(t, parentSaw(`"completed":"the job finished"`), "the new answer reaches the parent")
+	assert.False(t, parentSaw(`"completed":"started the job"`), "the earlier check did not end the new work")
 }

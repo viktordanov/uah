@@ -142,6 +142,15 @@ func (p *printer) print(event core.Event) { //nolint:gocyclo // a dispatch switc
 		} else {
 			p.say(fmt.Sprintf("agent %s: %s", e.Nickname, e.State))
 		}
+	case engine.ShellUpdated:
+		switch e.State {
+		case engine.ShellRunning:
+			p.say(fmt.Sprintf("shell %s: started: %s (log %s)", e.ID, oneLine(e.Command, 80), e.Log))
+		case engine.ShellKilled:
+			p.say(fmt.Sprintf("shell %s: stopped", e.ID))
+		default:
+			p.say(fmt.Sprintf("shell %s: exited %d", e.ID, e.ExitCode))
+		}
 	case engine.AgentActivity:
 		if f, ok := e.Event.(core.ToolFinished); ok && p.verbose {
 			p.say(fmt.Sprintf("  agent %s: %s  %s (%s, %.1fs)", p.agents[e.ID], f.Name, f.Label, f.Detail, f.Duration.Seconds()))

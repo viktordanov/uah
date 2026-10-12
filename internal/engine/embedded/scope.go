@@ -20,7 +20,7 @@ var _ engine.Scoper = (*Engine)(nil)
 
 // builtinTools are the tools a scope can leave out through the request's
 // disallowed tools; MCP tools are filtered by name.
-var builtinTools = []string{tool.BashName, tool.ViewImageName, tool.SkillUseName, patch.ToolName, engine.QuestionToolName}
+var builtinTools = []string{tool.BashName, tool.ViewImageName, tool.SkillUseName, patch.ToolName, engine.QuestionToolName, toolWaitShell, toolKillShell}
 
 // SetScope narrows a session's tools and pre-approves some of its actions
 // from its next run (engine.Scoper).

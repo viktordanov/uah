@@ -164,15 +164,18 @@ func TestEmbedded_RewindRefusesUnknownMessagesAndKeepsTheContext(t *testing.T) {
 func TestEmbedded_RewindSendsWhatWentWithTheMessageAgain(t *testing.T) {
 	e := newEnv(t,
 		fakellm.Reply{Text: "answer one"},
+		fakellm.Reply{Text: "noted"},
 		fakellm.Reply{Text: "answer two"},
 		fakellm.Reply{Text: "answer two, again"},
 	)
 	s, ev := e.open(t, e.embedded(), "")
 	send(t, s, ev, "first")
-	s.Inject("a note for the agent")
+	s.Inject("a note for the agent") // the idle session starts a run for it
+	ev.finished()
+	ev.idle()
 	second := send(t, s, ev, "second")
 	reqs := e.llm.Requests()
-	require.Equal(t, []string{"first", "a note for the agent", "second"}, reqs[1].UserTexts)
+	require.Equal(t, []string{"first", "a note for the agent", "second"}, reqs[2].UserTexts)
 
 	require.NoError(t, s.Rewind(second))
 	send(t, s, ev, "second, edited")
