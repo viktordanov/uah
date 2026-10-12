@@ -160,6 +160,9 @@ type AgentUpdated struct {
 	Effort string
 	// Forked is a child started with fork_context.
 	Forked bool
+	// Review is a /review's reviewer, which the session's review events
+	// already show.
+	Review bool
 }
 
 // AgentActivity is one of a child's tool events (core.ToolCalled,

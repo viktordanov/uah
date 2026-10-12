@@ -39,6 +39,18 @@ func TestReduce_Agents(t *testing.T) {
 	assert.Contains(t, s.Items[len(s.Items)-1].Text, "Ada (reviewer) · errored: The model is not supported · a1")
 }
 
+// TestReduce_ReviewerHasNoAgentLine: a /review's reviewer is one of the
+// main agent's agents, but its review's item shows it, so it gets no line
+// of its own, nor does its activity.
+func TestReduce_ReviewerHasNoAgentLine(t *testing.T) {
+	s := opened()
+	n := len(s.Items)
+	s, _ = apply(s, engine.AgentUpdated{ID: "subagent-r", Nickname: "Reviewer", Role: "review", State: engine.AgentRunning, Review: true})
+	s, _ = apply(s, engine.AgentActivity{ID: "subagent-r", Event: core.ToolCalled{CallID: "c1", Name: "exec_command"}})
+	assert.Len(t, s.Items, n)
+	assert.Empty(t, s.Agents())
+}
+
 // TestReduce_AgentView opens a subagent's transcript by nickname: the
 // session keeps reducing its own events, messages go to the agent, other
 // commands wait, and esc returns.

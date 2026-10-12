@@ -13,8 +13,12 @@ import (
 
 // onAgentUpdated shows a subagent as one line, added where it was spawned
 // and updated in place: KindAgent with Name the nickname, Label the role,
-// and Detail its state.
+// and Detail its state. A /review's reviewer gets no line: its review's
+// item shows it.
 func (s *State) onAgentUpdated(e engine.AgentUpdated) {
+	if e.Review {
+		return
+	}
 	key := "agent:" + e.ID
 	set := func(it *Item) {
 		if e.State == engine.AgentCompleted && it.Detail == engine.AgentRunning && !e.Started.IsZero() {

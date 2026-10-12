@@ -326,7 +326,7 @@ func (m *Manager) notify(c *child) {
 	parent := m.parents[c.parent]
 	update := engine.AgentUpdated{
 		At: time.Now(), ID: c.id, Nickname: c.nickname, Role: c.role, State: c.status.State, Started: c.started,
-		CallID: c.callID, Task: c.task, Model: c.model, Effort: c.effort, Forked: c.forked,
+		CallID: c.callID, Task: c.task, Model: c.model, Effort: c.effort, Forked: c.forked, Review: c.review,
 	}
 	if c.status.State == engine.AgentErrored {
 		update.Message = c.status.Message

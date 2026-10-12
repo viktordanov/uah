@@ -123,6 +123,7 @@ func TestReview_TheReviewerIsAnAgent(t *testing.T) {
 	assert.Contains(t, reqs[len(reqs)-1].UserTexts, "The user asks you to answer now.", "the message reached the reviewer's run")
 	update := ev.agentState(engine.AgentRunning)
 	assert.Equal(t, "review", update.Role)
+	assert.True(t, update.Review, "the update marks the reviewer, which the review's events show")
 	assert.Contains(t, update.Task, "started by the user: leave it alone unless the user asks you to act on it")
 }
 
