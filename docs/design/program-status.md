@@ -1,6 +1,6 @@
 # Program status: OSC 7501
 
-Status: built 2026-10-13, for v1.12.0. Ledger item 144.
+Status: done in v1.12.0. Ledger item 144.
 
 The TUI tells the terminal what the session is doing (idle, working, blocked on you, done, or failed) with the [program status protocol](https://superlogical.com/rex/docs/build/program-status), OSC 7501, revision 0.4 (2026-10-10, a draft). A terminal, or a tool that hosts terminals, can then show it in a tab, a session list, or a notification, through ssh and containers, with no hooks to set up.
 
