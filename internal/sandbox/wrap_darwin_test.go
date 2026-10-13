@@ -5,6 +5,7 @@ package sandbox_test
 import (
 	"bytes"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -403,4 +404,57 @@ func TestWrapSeatbeltSignals(t *testing.T) {
 	code, out = run(t, p, "kill "+strconv.Itoa(earlier.Process.Pid), nil, nil)
 	assert.NotEqual(t, 0, code)
 	assert.Contains(t, out, "not permitted", "another sandbox's process")
+}
+
+// TestSeatbelt_ConnectsOnlyToItsSockets: without the network, a command
+// connects to a Unix socket the policy names and to no other.
+func TestSeatbelt_ConnectsOnlyToItsSockets(t *testing.T) {
+	short, err := os.MkdirTemp("/tmp", "sb") // a socket's address holds about 100 bytes
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
+	dir, err := filepath.EvalSymlinks(short)
+	require.NoError(t, err)
+	listen := func(name string) string {
+		path := filepath.Join(dir, name)
+		ln, err := net.Listen("unix", path)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = ln.Close() })
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				_, _ = c.Write([]byte("hi\n"))
+				_ = c.Close()
+			}
+		}()
+
+		return path
+	}
+	allowed, other := listen("a.sock"), listen("b.sock")
+	p := sandbox.Policy{Mode: sandbox.ReadOnly, Workspace: dir, Sockets: []string{allowed}}
+	connect := func(path string) (int, string) {
+		return run(t, p, `/usr/bin/python3 -c 'import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); print(s.recv(10).decode().strip())' `+path, nil, nil)
+	}
+	code, out := connect(allowed)
+	require.Equal(t, 0, code, out)
+	assert.True(t, strings.HasSuffix(strings.TrimSpace(out), "hi"), out) // python3 may warn first about its cache
+	code, out = connect(other)
+	assert.NotEqual(t, 0, code, "another socket stays closed: %s", out)
+}
+
+// TestSeatbelt_HidesItsHiddenDirs: a command cannot read a Hidden
+// directory, also with the network, where any socket is open to it.
+func TestSeatbelt_HidesItsHiddenDirs(t *testing.T) {
+	ws := workspace(t, false)
+	hidden, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(hidden, "secret"), []byte("token"), 0o600))
+	for _, network := range []bool{false, true} {
+		p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, Network: network, Hidden: []string{hidden}}
+		code, out := run(t, p, "cat "+filepath.Join(hidden, "secret"), nil, nil)
+		assert.NotEqual(t, 0, code, "network %t: %s", network, out)
+		assert.NotContains(t, out, "token")
+	}
 }

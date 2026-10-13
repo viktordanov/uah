@@ -29,6 +29,12 @@ const (
 var version = "dev"
 
 func main() {
+	// `uah tool` runs inside a session's commands, maybe in a read-only
+	// sandbox: it skips startup, which may move files, and every
+	// configuration.
+	if len(os.Args) > 1 && os.Args[1] == "tool" {
+		os.Exit(runTool(context.Background(), os.Args[2:], os.Stdin, os.Stdout, os.Stderr, os.Getenv))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	ctx = context.WithValue(ctx, startupKey{}, startup(ctx, os.Stderr, os.Args))
 	err := newApp().Run(ctx, os.Args)
@@ -58,7 +64,7 @@ func newApp() *cli.Command {
 			c.Hidden = false
 			c.Usage = "print the shell completion script: bash, zsh, fish, or pwsh"
 		},
-		Commands: []*cli.Command{runCommand(), reviewCommand(), resumeCommand(), sessionsCommand(), hooksCommand(), contextCommand(), configCommand(), doctorCommand(), modelsCommand(), usageCommand(), mcpCommand(), promptsCommand(), compactionCommand()},
+		Commands: []*cli.Command{runCommand(), reviewCommand(), resumeCommand(), sessionsCommand(), hooksCommand(), contextCommand(), configCommand(), doctorCommand(), modelsCommand(), usageCommand(), mcpCommand(), promptsCommand(), compactionCommand(), toolCommand()},
 	})
 }
 

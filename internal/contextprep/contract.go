@@ -51,6 +51,9 @@ type Facts struct {
 	// MaxOutputLength is the Bash tool's default max_output_length, or 0
 	// when it is not known.
 	MaxOutputLength int
+	// ToolBridge is true when the session's commands can call its MCP
+	// tools with `uah tool` (internal/toolbridge).
+	ToolBridge bool
 }
 
 // Sandbox describes the sandbox commands run in.

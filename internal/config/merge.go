@@ -31,6 +31,9 @@ func merge(base, over Config) Config {
 	if over.Tools.ExperimentalRequestUserInput.Enabled != nil {
 		base.Tools.ExperimentalRequestUserInput.Enabled = over.Tools.ExperimentalRequestUserInput.Enabled
 	}
+	if over.Tools.Bridge.Enabled != nil {
+		base.Tools.Bridge.Enabled = over.Tools.Bridge.Enabled
+	}
 	mergeToolPolicy(&base.Tools, over.Tools)
 	if over.Skills.Enabled != nil {
 		base.Skills.Enabled = over.Skills.Enabled

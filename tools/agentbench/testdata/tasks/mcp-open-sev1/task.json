@@ -1,0 +1,7 @@
+{
+  "prompt": "Using the incidents MCP server, find every incident whose title or body mentions \"connection pool\", whose severity is SEV1 or SEV2, and that is not resolved. Write their IDs to ANSWER.md, sorted, one per line, and nothing else.",
+  "check": "python3 -I check_answer.py",
+  "exercises": "a paged MCP search, a filter on the results, and a lookup of each hit's status: many dependent MCP calls whose results are large",
+  "tags": ["mcp", "uah-only"],
+  "mcp_servers": {"incidents": {"command": "python3", "args": ["-I", "{{TASK_DIR}}/../../mcp/incidents.py"]}}
+}

@@ -16,9 +16,11 @@ import (
 
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/mcp"
 	"github.com/viktordanov/uah/internal/sandbox"
 	uahsession "github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/toolbridge"
 )
 
 // tools builds the registry the coordinator runs: Bash, ViewImage, and
@@ -33,35 +35,25 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	req.SessionID = string(sessionID)
 	policy := w.e.cfg.Tools
 	req.DisallowedTools = policyDisallow(policy, scope.disallow(req.DisallowedTools))
-	translators, err := w.translators(req, sessionID) //nolint:contextcheck,nolintlint // on Linux, the sandbox probes bwrap once per process, with its own timeout; not on darwin
+	w.openBridge(scope, req.DisallowedTools, string(sessionID)) //nolint:contextcheck // first, as the sandbox's shells name its socket; the bridge outlives the run
+	translators, err := w.translators(req, sessionID)           //nolint:contextcheck,nolintlint // on Linux, the sandbox probes bwrap once per process, with its own timeout; not on darwin
 	if err != nil {
 		return nil, err
 	}
-	w.commands = newCommands(ctx, scope.commandTimeout())
-	w.commands.shells = func(group int) bool { return w.e.shells.owns(string(sessionID), group) }
-	// Background shells come with Bash and wait_shell; a scope with a
-	// limit on each command (a /review's reviewer) gets none, since they
-	// would outlive the limit.
-	background := !scope.closed() && scope.commandTimeout() == 0 &&
-		!slices.Contains(req.DisallowedTools, tool.BashName) && !slices.Contains(req.DisallowedTools, toolWaitShell)
-	w.shellSession = w.e.shells.attach(string(sessionID), w.inject, w.notify)
-	b, sandboxed := translators.Bash.(sandboxedBash)
-	switch {
-	case sandboxed:
-		b.ctx, b.commands, b.background = approvals, w.commands, background
-		translators.Bash = b
-	default:
-		translators.Bash = plainBackground{Translator: translators.Bash, shell: w.shell(), dir: req.Workspace, offered: background}
-	}
-	if w.commands.limit > 0 {
-		translators.Bash = timedBash{Translator: translators.Bash, c: w.commands}
-	}
+	var (
+		background, sandboxed bool
+		b                     sandboxedBash
+	)
+	translators.Bash, b, sandboxed, background = w.wireBash(ctx, approvals, req, scope, string(sessionID), translators.Bash)
 	var skills []tool.Skill
 	var skillErrs []error
 	if !w.e.cfg.NoSkills {
 		skills, skillErrs = discoverSkills(req.Workspace, w.getenv)
 	}
 	registry := withShells(tool.NewRegistry(translators, toolNames(req, len(skills) > 0)...), background, req.DisallowedTools)
+	if w.bridge != nil {
+		registry = withBridgeNote(registry) // before the sandbox layer reads Bash's definition
+	}
 	if sandboxed && b.available() {
 		registry = w.withSandbox(registry, req)
 	}
@@ -92,6 +84,9 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 		w.opAllowed = operationAllowed(policy, allowed, mp.allowsServer)
 	}
 	registry = withMCP(registry, scope.mcpTools(allowed), resources, scope.disallowResources(req.DisallowedTools), gate)
+	if w.bridge != nil {
+		w.updateBridge(req, scope.mcpTools(allowed), bridgeResources(resources, scope.disallowResources(req.DisallowedTools)), gate)
+	}
 	registry = withPatch(registry, offersPatch(w.e.models, req), w.patchGate(approvals, req))
 	registry = w.withAgents(registry, req)
 	registry = withQuestions(registry, questionTranslator{offered: w.offersQuestions(req), root: !isSubagent(req.SessionID), ctx: approvals, ask: w.askUser})
@@ -105,6 +100,103 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	}
 
 	return registry, nil
+}
+
+// offersBridge reports whether the run's commands may call the session's
+// tools with `uah tool`: the bridge is on, the session has MCP servers,
+// its commands run through the sandbox's script, which gives them the
+// token and uah on PATH (every session uah opens has a sandbox policy,
+// full access included), and the run offers Bash with no limit on each
+// command, which a /review's reviewer has. Where bwrap leaves the host's
+// /proc visible (some containers), a sandboxed command could read any
+// session's token through /proc/<pid>/root, so no session gets one; and
+// where the environment policy drops PATH, commands could not find uah,
+// so the model is not told of it.
+func (w *wiring) offersBridge(scope *scope, disallowed []string) bool {
+	return !w.e.cfg.NoToolBridge && w.e.cfg.Sandbox != nil && w.e.cfg.MCP != nil && w.e.cfg.MCP.HasServers() && sandbox.ProcIsolated() &&
+		w.e.cfg.Env.Getenv(w.getenv, "PATH")("PATH") != "" &&
+		!scope.closed() && scope.commandTimeout() == 0 && !slices.Contains(disallowed, tool.BashName)
+}
+
+// wireBash puts the run's commands, background shells, and the scope's
+// limit around Bash: it returns Bash, its sandboxed form when it has one,
+// and whether the run offers background shells, which come with Bash and
+// wait_shell. A scope with a limit on each command (a /review's reviewer)
+// gets none, since they would outlive the limit.
+func (w *wiring) wireBash(ctx, approvals context.Context, req core.Request, scope *scope, sessionID string, bash tool.Translator) (tool.Translator, sandboxedBash, bool, bool) {
+	w.commands = newCommands(ctx, scope.commandTimeout())
+	w.commands.shells = func(group int) bool { return w.e.shells.owns(sessionID, group) }
+	background := !scope.closed() && scope.commandTimeout() == 0 &&
+		!slices.Contains(req.DisallowedTools, tool.BashName) && !slices.Contains(req.DisallowedTools, toolWaitShell)
+	w.shellSession = w.e.shells.attach(sessionID, w.inject, w.notify)
+	b, sandboxed := bash.(sandboxedBash)
+	if sandboxed {
+		b.ctx, b.commands, b.background = approvals, w.commands, background
+		bash = b
+	} else {
+		bash = plainBackground{Translator: bash, shell: w.shell(), dir: req.Workspace, offered: background}
+	}
+	if w.commands.limit > 0 {
+		bash = timedBash{Translator: bash, c: w.commands}
+	}
+
+	return bash, b, sandboxed, background
+}
+
+// openBridge opens the session's tool bridge when the run offers it, and
+// closes one an earlier run opened when this run does not: a background
+// shell holding the old token can call nothing this run's scope forbids.
+func (w *wiring) openBridge(scope *scope, disallowed []string, sessionID string) {
+	if !w.offersBridge(scope, disallowed) {
+		w.e.bridges.forget(sessionID) // a bridge an earlier run opened must not keep its permissions
+
+		return
+	}
+	br, err := w.e.bridges.open(sessionID, uahsession.TempDir(w.l.SessionsDir, sessionID), filepath.Join(w.l.SessionsDir, "operations", sessionID))
+	if err != nil {
+		_, _ = fmt.Fprintf(w.l.Stderr, "embedded: %v; commands cannot call the session's tools\n", err)
+
+		return
+	}
+	w.bridge = br
+}
+
+// bridgeResources are the resource tools the run offers, each as the
+// direct registry offers it (withMCP).
+func bridgeResources(offered bool, disallowed []string) []string {
+	if !offered {
+		return nil
+	}
+	var out []string
+	for _, d := range resourceTools() {
+		if !slices.Contains(disallowed, d.Tool.Name) {
+			out = append(out, d.Tool.Name)
+		}
+	}
+
+	return out
+}
+
+// updateBridge gives the session's bridge what this run allows: its MCP
+// tools, the resource tools, the gate with the run's whole approval chain
+// (the scope's approvals, the auto-reviewer, then the user, as for the
+// model's own call), and the PreToolUse hooks. A call that needs the user
+// after the run ended, from a background shell, is refused with the
+// reason, as the run's ask is gone.
+func (w *wiring) updateBridge(req core.Request, tools []mcp.Tool, resources []string, gate mcpGate) {
+	tools = slices.DeleteFunc(slices.Clone(tools), func(t mcp.Tool) bool { return slices.Contains(req.DisallowedTools, t.Name) })
+	notify := w.notify
+	if notify == nil {
+		notify = w.emit
+	}
+	w.bridge.update(bridgeState{
+		manager: w.e.cfg.MCP, tools: tools, resources: resources, servers: gate.servers, gate: gate,
+		hooks: w.e.cfg.Hooks, hookBase: hooks.Input{
+			Event: hooks.PreToolUse, SessionID: req.SessionID, RunID: req.RunID, Cwd: req.Workspace,
+			Model: req.Model, Effort: req.Effort, TranscriptPath: filepath.Join(w.l.SessionsDir, req.SessionID+".session.jsonl"),
+		},
+		notify: notify,
+	})
 }
 
 // withSandbox offers Bash with the escalation arguments and a note on the
@@ -235,6 +327,11 @@ func (w *wiring) policy(req core.Request, mode sandbox.Mode) sandbox.Policy {
 		// whose read-only sandbox has no network: a /review's reviewer
 		// never reaches it.
 		p.Network = false
+	}
+	if w.bridge != nil { // `uah tool` reaches the session's socket in every mode
+		p.Sockets = append(slices.Clip(p.Sockets), w.bridge.sockets...)
+		p.BinDir = w.bridge.bin
+		p.SetEnv = map[string]string{toolbridge.TokenVar: w.bridge.token}
 	}
 
 	return p

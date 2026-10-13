@@ -13,6 +13,7 @@ fast                                              true                          
 adaptive_effort                                   off                           default
 context_preparation                               true                          default
 tools.experimental_request_user_input.enabled     true                          default
+tools.bridge.enabled                              true                          default
 model_verbosity                                   low                           default
 permission_mode                                   read-only                     env
 sandbox_mode                                      read-only                     env

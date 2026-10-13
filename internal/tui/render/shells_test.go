@@ -3,6 +3,7 @@ package render_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -32,4 +33,17 @@ func TestShellLines(t *testing.T) {
 
 	s = apply(s, engine.ShellUpdated{At: t0, ID: "shell-1", Command: "npm run dev", State: engine.ShellKilled, CallID: "c1", Started: t0, Ended: t0})
 	assert.False(t, strings.Contains(footer(s), "shell running"), "gone once none runs")
+}
+
+// TestBridgeCallLine: a call a command made with uah tool reads as an MCP
+// call, marked as a script's, with its time, or its error.
+func TestBridgeCallLine(t *testing.T) {
+	s := apply(finishedRun(t),
+		engine.ToolBridgeCalled{At: t0, Name: "mcp__docs__search", Arguments: `{"q":"retry"}`, OK: true, Duration: 1200 * time.Millisecond},
+		engine.ToolBridgeCalled{At: t0, Name: "mcp__docs__get", Arguments: `{"id":"7"}`, Error: "blocked by a PreToolUse hook: no"},
+	)
+	out := screen(s, "")
+	assert.Contains(t, out, "docs · search")
+	assert.Contains(t, out, "· uah tool")
+	assert.Contains(t, out, "blocked by a PreToolUse hook")
 }

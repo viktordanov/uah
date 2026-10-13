@@ -154,6 +154,9 @@ type Tools struct {
 	// (request_user_input), as Codex's key: on by default, where a user can
 	// answer it.
 	ExperimentalRequestUserInput ToolToggle `toml:"experimental_request_user_input"`
+	// Bridge is the tool bridge: commands call the session's MCP tools with
+	// `uah tool` (internal/toolbridge). On by default.
+	Bridge ToolToggle `toml:"bridge"`
 	// Allow are the only tools the model may use (internal/toolpolicy):
 	// unset allows every tool, and an empty list none. Each file's list
 	// narrows the others', so no layer widens another's.
@@ -181,6 +184,14 @@ type ToolToggle struct {
 // questions with request_user_input (true by default).
 func (c Config) RequestUserInputEnabled() bool {
 	e := c.Tools.ExperimentalRequestUserInput.Enabled
+
+	return e == nil || *e
+}
+
+// ToolBridgeEnabled reports whether commands may call the session's tools
+// with `uah tool` (true by default).
+func (c Config) ToolBridgeEnabled() bool {
+	e := c.Tools.Bridge.Enabled
 
 	return e == nil || *e
 }

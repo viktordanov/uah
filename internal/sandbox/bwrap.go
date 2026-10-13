@@ -88,6 +88,11 @@ func bwrapLayout(p Policy, mountProc bool) []string {
 	for _, path := range later {
 		args = protect(args, path)
 	}
+	for _, dir := range p.Hidden { // last, so no bind uncovers it
+		if exists(dir) {
+			args = append(args, "--tmpfs", dir)
+		}
+	}
 	args = append(args, "--unshare-user", "--unshare-pid", "--unshare-ipc")
 	if !p.Network {
 		args = append(args, "--unshare-net")

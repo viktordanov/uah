@@ -16,3 +16,7 @@ func wrap(p Policy, argv []string) ([]string, error) {
 
 	return append(out, argv...), nil
 }
+
+// ProcIsolated reports whether a sandboxed command cannot reach other
+// processes' files: Seatbelt has no /proc.
+func ProcIsolated() bool { return true }

@@ -179,3 +179,18 @@ func TestScriptMode(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, sandbox.WorkspaceWrite, mode)
 }
+
+// TestShellBinDirAndSetEnv: BinDir goes first on PATH and SetEnv's
+// variables are set, under every environment policy, also when the
+// policy keeps only some variables or sets PATH itself.
+func TestShellBinDirAndSetEnv(t *testing.T) {
+	scripts, ws, bin := t.TempDir(), t.TempDir(), t.TempDir()
+	p := sandbox.Policy{Mode: sandbox.FullAccess, Workspace: ws, BinDir: bin, SetEnv: map[string]string{"UAH_TOOL_TOKEN": "abc"}}
+	for _, env := range []sandbox.EnvPolicy{{}, {IncludeOnly: []string{"PATH"}}, {Inherit: sandbox.InheritCore}, {Set: map[string]string{"PATH": "/usr/bin:/bin"}}} {
+		path, err := sandbox.Shell(scripts, p, env, "/bin/sh")
+		require.NoError(t, err)
+		out, err := exec.Command(path, "-c", `printf '%s|%s' "${PATH%%:*}" "$UAH_TOOL_TOKEN"`).Output()
+		require.NoError(t, err)
+		assert.Equal(t, bin+"|abc", string(out), "%+v", env)
+	}
+}

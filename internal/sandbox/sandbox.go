@@ -72,6 +72,22 @@ type Policy struct {
 	// the sandboxing scripts, which run outside the sandbox. Shell adds
 	// its own directory.
 	ReadOnly []string
+	// Sockets are Unix sockets a sandboxed command may connect to also
+	// without the network: the session's tool bridge (internal/toolbridge).
+	// Only Seatbelt needs them; under bwrap a socket that is a file is
+	// reachable in any network namespace.
+	Sockets []string
+	// BinDir, when set, goes first on PATH for every command Shell runs:
+	// the session's own commands, such as uah itself for `uah tool`.
+	BinDir string
+	// SetEnv are variables every command Shell runs gets, such as the
+	// session's tool bridge token. Shell hides its scripts, which hold
+	// them, from every command (Hidden).
+	SetEnv map[string]string
+	// Hidden are directories a command may not read: bwrap shows them
+	// empty and Seatbelt denies reading them, so another session's command
+	// cannot read what they hold, such as a bridge token.
+	Hidden []string
 }
 
 // Writable returns the directories a command may write under the policy,

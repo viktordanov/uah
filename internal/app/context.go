@@ -75,6 +75,7 @@ func PreviewContext(ctx context.Context, in Inputs, getenv func(string) string) 
 	main := contextprep.Facts{
 		Workspace: workspace, GOOS: runtime.GOOS, MaxOutputLength: operation.DefaultMaxOutputLength,
 		InstructionsOff: !r.Instructions, // as newEngine sets it
+		ToolBridge:      !r.NoToolBridge && len(cfg.MCPServers) > 0,
 	}.WithEnvironment(getenv, r.Env.Getenv(getenv, shellenv.Keys...)) // commands get r.Env, as in a session
 	if r.Instructions {
 		loaded, _, err := loadInstructions(workspace, cfg)

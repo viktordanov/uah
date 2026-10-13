@@ -46,6 +46,17 @@ func TestPrinter_Shells(t *testing.T) {
 	assert.Contains(t, out.String(), "shell shell-2: stopped")
 }
 
+// TestPrinter_ToolBridge prints a script's call of a session tool.
+func TestPrinter_ToolBridge(t *testing.T) {
+	t.Parallel()
+	var out bytes.Buffer
+	p := newPrinter(&out, false)
+	p.print(engine.ToolBridgeCalled{Name: "mcp__docs__search", OK: true, Duration: 1500 * time.Millisecond})
+	p.print(engine.ToolBridgeCalled{Name: "mcp__docs__get", Error: "denied"})
+	assert.Contains(t, out.String(), "uah tool: mcp__docs__search (ok, 1.5s)")
+	assert.Contains(t, out.String(), "uah tool: mcp__docs__get failed: denied")
+}
+
 // TestPrinter_EffortUpdatesOff warns on stderr when the backend rejects
 // effort updates.
 func TestPrinter_EffortUpdatesOff(t *testing.T) {

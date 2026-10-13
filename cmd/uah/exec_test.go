@@ -190,3 +190,27 @@ func TestExecStopsBackgroundShells(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, errors.Is(syscall.Kill(-group, 0), syscall.ESRCH), "the shell's group is gone when exec returns")
 }
+
+// TestExecScriptsCallMCPTools pins the tool bridge end to end: the model's
+// command, in the default sandbox, runs uah tool, which the session puts
+// first on PATH, and calls the session's MCP tool; the output reaches the
+// model, and the call is printed.
+func TestExecScriptsCallMCPTools(t *testing.T) {
+	t.Parallel()
+	llm := fakellm.New(t,
+		fakellm.Reply{Commands: []string{`uah tool list | cut -f1 | grep -c mcp__test__ && uah tool call mcp__test__echo '{"text":"through the bridge"}'`}},
+		fakellm.Reply{Text: "done"},
+	)
+	e, env := modelEnv(t, llm)
+	home := filepath.Join(e.StateDir, "..", "home")
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(home, "config.toml"), []byte("[mcp_servers.test]\ncommand = \""+harnesstest.MCPServer(t)+"\"\n"), 0o600))
+
+	res := uahWith(t, env, "", "exec", "-C", e.Workspace, "call it from a script")
+	require.Equal(t, 0, res.code, res.stderr)
+	reqs := llm.Requests()
+	require.Len(t, reqs, 2)
+	out := strings.Join(reqs[1].ToolOutputs, "\n")
+	assert.Contains(t, out, "through the bridge", out)
+	assert.Contains(t, res.stderr, "uah tool: mcp__test__echo (ok")
+}

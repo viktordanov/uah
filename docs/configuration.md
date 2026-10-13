@@ -174,12 +174,13 @@ These keys bound a run: how often a model request is retried, and how much tool 
 
 ### 2.3 Hosted web search and the question tool
 
-`web_search` controls the provider's hosted search tool, and `[tools.experimental_request_user_input]` the agent's question tool.
+`web_search` controls the provider's hosted search tool, `[tools.experimental_request_user_input]` the agent's question tool, and `[tools.bridge]` whether commands can call the session's MCP tools.
 
 | Key | Type | Default | Flag, env | Merge | Meaning |
 | --- | --- | --- | --- | --- | --- |
 | `web_search` | string | `live` | none | override | The provider's hosted web search tool, as Codex's key: `live` offers it on openai and openai-codex (other providers never get it), `disabled` does not. Codex's `cached` and `indexed` are errors: the runner sends the tool without Codex's access options, which the API treats as live search. The search runs on the provider's servers, so the sandbox's network rule does not apply; it is offered in every permission mode, as in Codex ([web search](design/web-search.md)) |
 | `[tools.experimental_request_user_input]` `enabled` | bool | true | `UAH_REQUEST_USER_INPUT` (`on` or `off`) | override, can unset | The agent's question tool, `request_user_input`, as Codex's key (`experimental_request_user_input` in the `[tools]` table): in the TUI, the main agent stops to ask a few questions with options and waits for the answers ([questions](design/questions.md)). `false` stops offering it, and the default system prompt says to ask in the final message instead, as before the tool. `uah exec` never offers it. Set it in a `config.d` layer or the file `UAH_EXTRA_CONFIG` names to turn it off for one integration, such as a web terminal that cannot show the picker |
+| `[tools.bridge]` `enabled` | bool | true | `UAH_TOOL_BRIDGE` (`on` or `off`) | override, can unset | The tool bridge (`tools.bridge` in `uah config`): inside a session's commands, `uah tool` lists, describes, and calls the session's MCP tools, so a script can call them and filter their results before the model reads them ([scripted tool calls](guide.md#310-scripted-tool-calls)). A call is checked as the model's own call of the tool: the tool policy, PreToolUse hooks, and the tool's `approval_mode`. Only sessions with MCP servers offer it; `false` stops offering it, and Bash's description and the prepared context no longer name it |
 
 - **One integration only:** to turn the question tool off for one integration only, give it a layer of its own: `UAH_EXTRA_CONFIG=~/.uah/web-tty.toml uah` with that file holding `[tools.experimental_request_user_input]` and `enabled = false`, or `UAH_REQUEST_USER_INPUT=off` in its environment. A file in `config.d` turns it off everywhere.
 
@@ -739,6 +740,7 @@ The variables uah reads, with the flag and key each one matches; a variable with
 | `UAH_ADAPTIVE_EFFORT` | `--adaptive-effort` | `adaptive_effort` | Adaptive effort: off, 1-step, or 2-steps |
 | `UAH_CONTEXT_PREPARATION` | `--no-context-preparation` (off) | `context_preparation` | Context preparation: on or off |
 | `UAH_REQUEST_USER_INPUT` | none | `[tools.experimental_request_user_input] enabled` | The agent's question tool: on or off |
+| `UAH_TOOL_BRIDGE` | none | `[tools.bridge] enabled` | The tool bridge (`uah tool` inside commands): on or off |
 | `UAH_MODEL_VERBOSITY` | `--model-verbosity` | `model_verbosity` | The model's verbosity: low, medium, or high |
 | `UAH_HOME` | none | none | uah's home, `~/.uah` by default |
 | `UAH_CONFIG` | `--config` | none | The user file, `<home>/config.toml` by default |

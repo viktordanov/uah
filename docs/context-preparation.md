@@ -94,7 +94,7 @@ The blocks come in this order:
 | `sandbox` | What sandboxed commands may write, the session's private `$TMPDIR`, and what macOS's sandbox blocks | Modules `sandbox/*` |
 | `workspace` | The git branch, `git status --short`, and the tracked files by top directory | Code (git's output), not modules |
 | `agent files` | The instruction files in the system prompt, said to be all of them; or, for a session whose system prompt replaces uah's without them (`/review`'s reviewer), the files it leaves out; or, with `--no-instructions` or `instructions.enabled = false`, that loading them is off (not that there are none) | Modules `agent-files`, `agent-files-omitted`, `agent-files-off`, `agent-files-none` |
-| `harness` | How to size the Bash tool's `max_output_length` | Module `harness/output` |
+| `harness` | How to size the Bash tool's `max_output_length`, and, where commands can call the session's MCP tools, how to script them with `uah tool` | Modules `harness/output`, `harness/tool-bridge` |
 | One block per extra module | Each library, user, or project module that applies, titled with its id | The module |
 
 - **Empty blocks:** a block with nothing to say is left out.
@@ -167,6 +167,7 @@ Run mage test instead of go test; CI runs the same target. Put caches in {{tmpdi
 | `shell_source` | list | Where the shell came from: `env` (`$SHELL`, a bare name looked up on `PATH`), `login` (the login shell from the user database, as `$SHELL` was unset or not an executable file), or `default` (`/bin/sh`, as neither was usable) |
 | `utf8` | bool | Whether the locale commands get names UTF-8: `LC_ALL`, else `LC_CTYPE`, else `LANG`, the first that is set, after `[shell_environment_policy]` |
 | `path_minimal` | bool | Whether the `PATH` commands get has none of the user's tool directories that exist: `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/go/bin`, `~/.cargo/bin` |
+| `tool_bridge` | bool | Whether the session's commands can call its MCP tools with `uah tool` (the [tool bridge](guide.md#310-scripted-tool-calls): on, the session has MCP servers, and it runs Bash) |
 
 <sub>[↑ Back to top](#context-preparation)</sub>
 

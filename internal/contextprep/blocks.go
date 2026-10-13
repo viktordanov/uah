@@ -31,7 +31,7 @@ var blocks = []block{
 		"sandbox/read-only", "sandbox/workspace-write", "sandbox/tmpdir", "sandbox/bash-heredoc", "sandbox/processes", "sandbox/local-sockets",
 	}},
 	{"agent files", []string{"agent-files", "agent-files-omitted", "agent-files-off", "agent-files-none"}},
-	{"harness", []string{"harness/output"}},
+	{"harness", []string{"harness/output", "harness/tool-bridge"}},
 }
 
 // sectionOrder is every built-in block's modules, in order.
@@ -256,6 +256,7 @@ func (w When) mismatch(f Facts) string {
 		{"instructions_off", w.InstructionsOff, f.InstructionsOff, "loading instruction files is turned off", "loading instruction files is on"},
 		{"utf8", w.UTF8, !f.NotUTF8, "the locale is UTF-8", "the locale is not UTF-8"},
 		{"path_minimal", w.PathMinimal, len(f.MissingPathDirs) > 0, "PATH has none of the user's tool directories", "PATH has the user's tool directories"},
+		{"tool_bridge", w.ToolBridge, f.ToolBridge, "commands can call the session's tools with uah tool", "commands cannot call the session's tools"},
 	} {
 		if c.want != nil && *c.want != c.have {
 			if c.have {

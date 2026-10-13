@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,11 +73,22 @@ type Task struct {
 	// FakeHome gives the run its own HOME, filled from home/, so a task
 	// may edit files under ~ without touching the user's.
 	FakeHome bool `json:"fake_home,omitempty"`
+	// MCPServers are MCP servers the uah run gets, by name, written into
+	// that run's configuration: a stdio server's command and arguments,
+	// where {{TASK_DIR}} is the task's directory. Codex's runs would need
+	// them too, so a task with them is tagged uah-only.
+	MCPServers map[string]MCPServer `json:"mcp_servers,omitempty"`
 	// ReviewBase is the base branch of the task's review run (-review):
 	// the harness's review command (`uah review`, `codex review`) reviews
 	// the checked-out branch against it, in place of the prompt, and its
 	// review becomes REVIEW.md for the check.
 	ReviewBase string `json:"review_base,omitempty"`
+}
+
+// MCPServer is a task's stdio MCP server.
+type MCPServer struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
 }
 
 // ReviewFile is where a review run's harness writes its review, in the
@@ -88,6 +100,25 @@ const TagUAHOnly = "uah-only"
 
 // UAHOnly reports whether only uah runs the task.
 func (t Task) UAHOnly() bool { return slices.Contains(t.Tags, TagUAHOnly) }
+
+// mcpProblems are what is wrong with the task's MCP servers.
+func (t Task) mcpProblems() []string {
+	var problems []string
+	if len(t.MCPServers) > 0 && !t.UAHOnly() {
+		problems = append(problems, "MCP servers need the tag "+TagUAHOnly)
+	}
+	for _, name := range slices.Sorted(maps.Keys(t.MCPServers)) {
+		if t.MCPServers[name].Command == "" || !mcpName.MatchString(name) {
+			problems = append(problems, "MCP server "+name+": a name of letters, digits, _ and -, and a command")
+		}
+	}
+
+	return problems
+}
+
+// mcpName is an MCP server's name, which becomes a TOML key and part of
+// its tools' names.
+var mcpName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // Duration is a time.Duration written as "90s" in JSON.
 type Duration time.Duration
@@ -162,6 +193,7 @@ func LoadTask(dir string) (Task, error) {
 	if len(t.FollowUps) > 0 && !t.UAHOnly() {
 		problems = append(problems, "follow-ups need the tag "+TagUAHOnly)
 	}
+	problems = append(problems, t.mcpProblems()...)
 	for _, d := range []string{repoDir, solutionDir} {
 		if d == solutionDir && t.SolutionScript != "" {
 			continue // the script is the solution; git keeps no empty folder

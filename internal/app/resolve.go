@@ -87,6 +87,8 @@ type Inputs struct {
 	Interactive bool
 	// RequestUserInput is UAH_REQUEST_USER_INPUT, on or off ("": unset).
 	RequestUserInput string
+	// ToolBridge is UAH_TOOL_BRIDGE, on or off ("": unset).
+	ToolBridge string
 	// Tools is --tools, the only tools the model may use (nil: unset; an
 	// empty list allows none), and DenyTools is --deny-tools. They narrow
 	// [tools] allow and deny, never widen them.
@@ -153,6 +155,9 @@ type Resolved struct {
 	// NoSkills turns skills off: none is discovered or offered
 	// (--no-skills, or [skills] enabled = false).
 	NoSkills bool
+	// NoToolBridge stops commands from calling the session's tools with
+	// `uah tool` ([tools.bridge] enabled, UAH_TOOL_BRIDGE).
+	NoToolBridge bool
 	// NoSkillMentions keeps "$name" in a message from loading the skill
 	// ([tui] skill_mentions = false).
 	NoSkillMentions bool
@@ -254,7 +259,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 		Settings: s, MaxDisk: maxDisk, Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
 		Sandbox: policy, Env: envPolicy, Compaction: compact, CompactPromptFile: promptFile, Approval: approvalPolicy, Rules: configured,
 		ApprovalsReviewer: reviewer, Review: reviewCfg, Agents: agentSettings, WebSearch: webSearch, Verbosity: verbosity, DefaultModel: defaulted,
-		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills, NoSkillMentions: !cfg.TUI.SkillMentionsOn(),
+		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills, NoSkillMentions: !cfg.TUI.SkillMentionsOn(), NoToolBridge: !tools.bridge,
 	}, nil
 }
 
@@ -276,6 +281,7 @@ func pickToolPolicy(in Inputs, resumed session.Info, cfg config.Config) (toolpol
 // toolSettings are what pickTools decides.
 type toolSettings struct {
 	questions bool
+	bridge    bool
 	goals     goal.Settings
 	policy    toolpolicy.Policy
 	noSkills  bool
@@ -289,6 +295,10 @@ func pickTools(in Inputs, resumed session.Info, cfg config.Config) (toolSettings
 	if err != nil {
 		return toolSettings{}, err
 	}
+	bridge, err := pickOnOff(in.ToolBridge, EnvToolBridge, cfg.ToolBridgeEnabled())
+	if err != nil {
+		return toolSettings{}, err
+	}
 	goals, err := pickGoals(cfg)
 	if err != nil {
 		return toolSettings{}, err
@@ -299,7 +309,7 @@ func pickTools(in Inputs, resumed session.Info, cfg config.Config) (toolSettings
 	}
 
 	return toolSettings{
-		questions: questions && policy.Allows(engine.QuestionToolName), goals: goals, policy: policy,
+		questions: questions && policy.Allows(engine.QuestionToolName), bridge: bridge, goals: goals, policy: policy,
 		noSkills: in.NoSkills || !cfg.SkillsEnabled(),
 	}, nil
 }

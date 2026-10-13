@@ -135,6 +135,9 @@ type Config struct {
 	// NoSkillMentions keeps a message's "$name" from loading the skill
 	// ([tui] skill_mentions = false, which also turns off the "$" menu).
 	NoSkillMentions bool
+	// NoToolBridge turns the tool bridge off ([tools] bridge = false):
+	// commands cannot call the session's MCP tools with `uah tool`.
+	NoToolBridge bool
 	// Subagents, when set, offers its tools to the runs it attaches and
 	// hears when the user interrupts a run; the engine closes it when it is
 	// an io.Closer.
@@ -159,8 +162,10 @@ type Engine struct {
 	transports transports
 	// runs counts the runs in progress (Config.ReturnMemory).
 	runs runs
-	// shells are the sessions' background shells (shells.go).
-	shells shells
+	// shells are the sessions' background shells (shells.go), and bridges
+	// their tool bridges (bridge.go).
+	shells  shells
+	bridges bridges
 }
 
 // Forget drops what the engine kept for a session that closed: the
@@ -169,6 +174,7 @@ type Engine struct {
 // shells.
 func (e *Engine) Forget(sessionID string) {
 	e.shells.forget(sessionID)
+	e.bridges.forget(sessionID)
 	e.transcripts.Delete(sessionID)
 	e.cacheKeys.Delete(sessionID)
 	e.scopes.Delete(sessionID)
@@ -229,6 +235,7 @@ func (e *Engine) StartMCP(ctx context.Context) []mcp.ServerStatus {
 // a later run starts the servers again.
 func (e *Engine) Close() error {
 	e.shells.close()
+	e.bridges.close()
 	var errs []error
 	if c, ok := e.cfg.Subagents.(io.Closer); ok {
 		errs = append(errs, c.Close())

@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -416,7 +419,13 @@ func runOne(ctx context.Context, cfg Config, env *runEnv, t Task, k Key) (res Re
 		return res
 	}
 	limit := cmpDur(time.Duration(t.Timeout), cfg.Timeout)
-	inv := invocation(cfg, env, fx, t, k, ws, art)
+	runEnvs, err := t.withMCP(env, k, art)
+	if err != nil {
+		res.Error = err.Error()
+
+		return res
+	}
+	inv := invocation(cfg, runEnvs, fx, t, k, ws, art)
 	if k.Harness == HarnessUAH {
 		res.Env, res.UAHConfig = cfg.UAHEnv, cfg.UAHConfig
 	}
@@ -549,4 +558,52 @@ func Remeasure(path string, price Price) error {
 	}
 
 	return os.Rename(tmp, path)
+}
+
+// withMCP is the run's environment: env, or for a uah run of a task with
+// MCP servers, env with a configuration file of the run's own that has
+// them.
+func (t Task) withMCP(env *runEnv, k Key, art string) (*runEnv, error) {
+	if len(t.MCPServers) == 0 || k.Harness != HarnessUAH {
+		return env, nil
+	}
+	path, err := t.uahConfigWithMCP(env.uahConfig, art)
+	if err != nil {
+		return nil, err
+	}
+	copied := *env
+	copied.uahConfig = path
+
+	return &copied, nil
+}
+
+// uahConfigWithMCP writes the run's configuration: the shared file's
+// lines, then a [mcp_servers.<name>] table for each of the task's servers,
+// with {{TASK_DIR}} the task's directory. It returns the file's path.
+func (t Task) uahConfigWithMCP(base, art string) (string, error) {
+	data, err := os.ReadFile(base)
+	if err != nil {
+		return "", err
+	}
+	dir, err := filepath.Abs(t.Dir)
+	if err != nil {
+		return "", err
+	}
+	var b strings.Builder
+	b.Write(data)
+	for _, name := range slices.Sorted(maps.Keys(t.MCPServers)) {
+		s := t.MCPServers[name]
+		args := make([]string, len(s.Args))
+		for i, a := range s.Args {
+			args[i] = strconv.Quote(strings.ReplaceAll(a, "{{TASK_DIR}}", dir))
+		}
+		fmt.Fprintf(&b, "\n[mcp_servers.%s]\ncommand = %s\nargs = [%s]\n", name, strconv.Quote(strings.ReplaceAll(s.Command, "{{TASK_DIR}}", dir)), strings.Join(args, ", "))
+	}
+	var check map[string]any
+	if _, err := toml.Decode(b.String(), &check); err != nil {
+		return "", fmt.Errorf("the run's MCP configuration: %w", err)
+	}
+	path := filepath.Join(art, "uah-mcp.toml")
+
+	return path, os.WriteFile(path, []byte(b.String()), 0o644)
 }

@@ -1,0 +1,7 @@
+{
+  "prompt": "oncall/oncall.go names the service we escalate memory leaks for, and its owner, and both are out of date. Using the incidents MCP server, find the service with the most open incidents that mention \"memory leak\" with severity SEV1 or SEV2, and set Service to it and Owner to that service's owner. Keep go test ./... passing.",
+  "check": "go test ./...",
+  "exercises": "an MCP search, lookups of each hit's status and owner, then a code change from what they say",
+  "tags": ["mcp", "go", "uah-only"],
+  "mcp_servers": {"incidents": {"command": "python3", "args": ["-I", "{{TASK_DIR}}/../../mcp/incidents.py"]}}
+}

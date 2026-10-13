@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,7 +36,11 @@ func Shell(dir string, p Policy, env EnvPolicy, realShell string) (string, error
 	if err != nil {
 		return "", err
 	}
+	// The scripts hold SetEnv's variables, such as a session's bridge
+	// token, which no other session's command may read: hidden from every
+	// command under bwrap, whatever its own policy sets.
 	p.ReadOnly = append(slices.Clip(p.ReadOnly), dir)
+	p.Hidden = append(slices.Clip(p.Hidden), dir)
 	if p.TempDir != "" {
 		// The sandbox can only grant a directory that exists: Seatbelt
 		// matches resolved paths and bwrap binds existing ones.
@@ -48,14 +53,14 @@ func Shell(dir string, p Policy, env EnvPolicy, realShell string) (string, error
 		if argv, err = p.Wrap(argv); err != nil {
 			return "", err
 		}
-	} else if env.isDefault() && p.TempDir == "" {
+	} else if env.isDefault() && p.TempDir == "" && p.BinDir == "" && len(p.SetEnv) == 0 {
 		return realShell, nil
 	}
 	words := make([]string, 0, len(argv)+8)
 	switch {
 	case !env.isDefault():
-		words = append(words, envWords(env, p.TempDir != "")...)
-	case p.TempDir != "":
+		words = append(words, envWords(env, p.TempDir != "", p.BinDir)...)
+	case p.TempDir != "" || len(p.SetEnv) > 0:
 		words = append(words, "/usr/bin/env")
 	}
 	if p.TempDir != "" {
@@ -67,10 +72,17 @@ func Shell(dir string, p Policy, env EnvPolicy, realShell string) (string, error
 			words = append(words, quote(name+"="+value))
 		}
 	}
+	for _, name := range slices.Sorted(maps.Keys(p.SetEnv)) {
+		words = append(words, quote(name+"="+p.SetEnv[name]))
+	}
 	for _, a := range argv {
 		words = append(words, quote(a))
 	}
-	script := "#!/bin/sh\n" + scriptHeader + string(p.Mode) + " sandbox.\nexec " + strings.Join(words, " ") + " \"$@\"\n"
+	path := ""
+	if p.BinDir != "" { // read when the command runs, also by the env words above
+		path = "PATH=" + quote(p.BinDir) + "${PATH:+:\"$PATH\"}\nexport PATH\n"
+	}
+	script := "#!/bin/sh\n" + scriptHeader + string(p.Mode) + " sandbox.\n" + path + "exec " + strings.Join(words, " ") + " \"$@\"\n"
 
 	return writeScript(dir, script)
 }
@@ -205,7 +217,7 @@ func Quote(s string) string { return quote(s) }
 // command runs ("NAME=$NAME"), so no inherited value is written to disk;
 // only the policy's own Set values are. With temp, tempVars are left out,
 // for Shell to set.
-func envWords(env EnvPolicy, temp bool) []string {
+func envWords(env EnvPolicy, temp bool, bin string) []string {
 	words := []string{"/usr/bin/env", "-i"}
 	for _, kv := range env.Apply(os.Environ()) {
 		name, value, _ := strings.Cut(kv, "=")
@@ -213,6 +225,9 @@ func envWords(env EnvPolicy, temp bool) []string {
 			continue
 		}
 		if v, ok := env.Set[name]; ok && v == value {
+			if name == "PATH" && bin != "" { // the export above names $PATH, not this
+				value = bin + ":" + value
+			}
 			words = append(words, quote(name+"="+value))
 		} else {
 			words = append(words, name+`="$`+name+`"`)

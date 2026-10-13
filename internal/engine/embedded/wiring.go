@@ -110,7 +110,10 @@ type wiring struct {
 	// shellSession is the session's background shells, which the run's
 	// starts go to (shells.attach).
 	shellSession *sessionShells
-	closers      []closer
+	// bridge is the session's tool bridge when the run offers it
+	// (bridge.go): its socket and bin directory go into every policy.
+	bridge  *bridge
+	closers []closer
 }
 
 // closer releases something a starting run opened. One that saves the

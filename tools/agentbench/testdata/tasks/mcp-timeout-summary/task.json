@@ -1,0 +1,7 @@
+{
+  "prompt": "Using the incidents MCP server, count, for each service, the incidents whose title or body mentions \"timeout\". The search pages its results. Write SUMMARY.json: one JSON object from service name to count, with no other keys.",
+  "check": "python3 -I check_summary.py",
+  "exercises": "an MCP search across many pages of large results, reduced to a small summary",
+  "tags": ["mcp", "uah-only"],
+  "mcp_servers": {"incidents": {"command": "python3", "args": ["-I", "{{TASK_DIR}}/../../mcp/incidents.py"]}}
+}

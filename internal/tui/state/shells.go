@@ -204,3 +204,18 @@ func quitHint(running bool, shells int) string {
 
 	return "press ctrl+c again to stop " + strings.Join(what, " and ") + " and quit"
 }
+
+// onBridgeCalled shows a call a command made with `uah tool call` as an
+// MCP call's line, marked as a script's: "MCP docs · search  q retry ·
+// uah tool".
+func (s *State) onBridgeCalled(e engine.ToolBridgeCalled) {
+	state := ToolOK
+	if !e.OK {
+		state = ToolFailed
+	}
+	parts := append(mcpParts(e.Name, e.Arguments), cmdparse.Part{Text: " · uah tool", Style: cmdparse.Dim})
+	s.put(Item{
+		Kind: KindTool, Key: s.nextKey("bridge"), Name: e.Name, Verb: "MCP", Parts: parts,
+		Tool: state, Started: e.At.Add(-e.Duration), Duration: e.Duration, ErrorLine: oneLine(e.Error),
+	})
+}

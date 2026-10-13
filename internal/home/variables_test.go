@@ -19,9 +19,10 @@ import (
 	"github.com/viktordanov/uah/internal/home"
 )
 
-// setForOthers are the variables uah sets for the commands it runs, and
-// does not read.
-var setForOthers = []string{"UAH_HOOK_EVENT", "UAH_PROJECT_DIR"}
+// setForOthers are the variables uah sets for the commands it runs: the
+// hooks', which uah does not read, and the tool bridge's token, which only
+// `uah tool` reads, inside a session's commands, never a user.
+var setForOthers = []string{"UAH_HOOK_EVENT", "UAH_PROJECT_DIR", "UAH_TOOL_TOKEN"}
 
 // TestVariables: every uah or runner variable the product code names is in
 // home.Variables (or is UAH_HOME, or one uah sets for hooks), and every

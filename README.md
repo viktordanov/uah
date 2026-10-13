@@ -40,7 +40,7 @@ Contents:
 - **[Subagents](docs/guide.md#33-subagents-and-agent-files):** Codex's multi-agent tools (`spawn_agent`, `send_input`, `wait_agent`), run in parallel in the background, with roles from Markdown or TOML agent files, per-subagent model and effort, and `fork_context`.
 - **[Goals](docs/guide.md#32-goals):** `/goal <objective>` continues the agent until it marks the goal complete with `update_goal`, up to 16 goal turns in one run, within a token budget, a cap on continuations, and no-progress guards.
 - **[Instructions and skills](docs/guide.md#11-agentsmd-and-skills):** AGENTS.md from the project root down, with `@path` imports; skills from `.agents/skills`, `~/.uah/skills`, and `$CODEX_HOME/skills`, loaded by the model or by naming one as `$name`.
-- **Tools:** Bash, with [background shells](docs/guide.md#39-background-shells) that tell the agent when they exit, `apply_patch` with diffs in the transcript, `view_image`, [questions with options](docs/guide.md#31-the-agents-questions) (`request_user_input`), the provider's hosted [web search](docs/guide.md#36-web-search), and [MCP servers](docs/guide.md#12-mcp-servers) over stdio and streamable HTTP with OAuth, resources, and prompts.
+- **Tools:** Bash, with [background shells](docs/guide.md#39-background-shells) that tell the agent when they exit and [scripted MCP calls](docs/guide.md#310-scripted-tool-calls) (`uah tool`), `apply_patch` with diffs in the transcript, `view_image`, [questions with options](docs/guide.md#31-the-agents-questions) (`request_user_input`), the provider's hosted [web search](docs/guide.md#36-web-search), and [MCP servers](docs/guide.md#12-mcp-servers) over stdio and streamable HTTP with OAuth, resources, and prompts.
 - **[Sandbox and approvals](docs/guide.md#41-permission-modes):** Seatbelt on macOS and bubblewrap on Linux; read-only, workspace, auto, and yolo modes on shift+tab; [command rules](docs/guide.md#42-command-rules) as Starlark `prefix_rule` entries; an auto-reviewer that decides escalations in auto mode.
 - **[Compaction](docs/guide.md#38-compaction-and-context):** the provider's own on OpenAI providers, else a summary with a state ledger of changed files, failing commands, and loaded skills, after old tool outputs are elided first; `/context` shows what fills the window.
 - **[Hooks](docs/guide.md#13-hooks):** Claude Code's contract (JSON on stdin, exit 2 blocks) for ten events, from `SessionStart` to `PermissionRequest`; project hooks run only after `uah hooks trust`.
@@ -295,6 +295,7 @@ Each part of uah is documented next to its code:
 | [Approvals](internal/approval/README.md), [rules](internal/rules/README.md), [auto-review](internal/review/README.md) | Who decides that a command runs, and in what order |
 | [Hooks](internal/hooks/README.md) | Every hook event and its payload |
 | [MCP](internal/mcp/README.md) | MCP servers, their tools, resources, prompts, and OAuth |
+| [Tool bridge](internal/toolbridge/README.md) | `uah tool`: how a command calls the session's MCP tools |
 | [Subagents](internal/agents/README.md) | The multi-agent tools, roles, limits, and resume |
 | [Goals](internal/goal/README.md) | `/goal`, its texts, and its guards |
 | [Compaction](internal/compaction/README.md) | Compaction, the state ledger, and its evaluation |

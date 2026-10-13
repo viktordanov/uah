@@ -109,6 +109,9 @@ type When struct {
 	// PathMinimal is whether PATH has none of the user's tool directories
 	// that exist.
 	PathMinimal *bool `yaml:"path_minimal"`
+	// ToolBridge is whether the session's commands can call its MCP tools
+	// with `uah tool`.
+	ToolBridge *bool `yaml:"tool_bridge"`
 }
 
 // Keys of When and placeholders that share a name.

@@ -89,3 +89,15 @@ func TestHarness(t *testing.T) {
 	assert.Contains(t, got, "(default 40000)")
 	assert.Empty(t, contextprep.Harness{}.Prepare(t.Context(), contextprep.Facts{}), "no default, no block")
 }
+
+// TestHarnessToolBridge: the harness block says how to script MCP calls
+// with uah tool only where commands can.
+func TestHarnessToolBridge(t *testing.T) {
+	t.Parallel()
+	without := contextprep.Harness{}.Prepare(t.Context(), contextprep.Facts{MaxOutputLength: 40000})
+	assert.NotContains(t, without, "uah tool")
+	with := contextprep.Harness{}.Prepare(t.Context(), contextprep.Facts{MaxOutputLength: 40000, ToolBridge: true})
+	assert.Contains(t, with, "`uah tool list`")
+	assert.Contains(t, with, "uah tool call mcp__docs__search")
+	assert.Contains(t, with, "max_output_length", "after the output module")
+}

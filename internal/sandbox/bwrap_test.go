@@ -166,3 +166,18 @@ func TestBwrapArgsNetwork(t *testing.T) {
 	assert.True(t, slices.Contains(off, "--unshare-net"))
 	assert.False(t, slices.Contains(on, "--unshare-net"))
 }
+
+// TestBwrapArgsHidden: a hidden directory is an empty tmpfs, mounted after
+// every bind, so none uncovers it.
+func TestBwrapArgsHidden(t *testing.T) {
+	ws, hidden := t.TempDir(), t.TempDir()
+	args := sandbox.BwrapArgs(sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, Hidden: []string{hidden}, ReadOnly: []string{hidden}})
+	i := slices.Index(args, "--tmpfs")
+	require.GreaterOrEqual(t, i, 0)
+	assert.Equal(t, hidden, args[i+1])
+	for j, a := range args {
+		if a == "--bind" || a == "--ro-bind" {
+			assert.Less(t, j, i, "every bind comes before the tmpfs")
+		}
+	}
+}

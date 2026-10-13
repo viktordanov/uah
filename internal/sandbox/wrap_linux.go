@@ -43,3 +43,16 @@ func canMountProc(bwrap string) bool {
 
 	return procOK
 }
+
+// ProcIsolated reports whether a sandboxed command sees only its own
+// processes: false where bwrap cannot mount a fresh /proc, so the host's
+// stays visible, and with it every process's files (/proc/<pid>/root),
+// the hidden ones included. Without bwrap there is no sandbox to isolate.
+func ProcIsolated() bool {
+	bwrap, err := exec.LookPath("bwrap")
+	if err != nil {
+		return true
+	}
+
+	return canMountProc(bwrap)
+}

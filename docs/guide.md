@@ -24,6 +24,7 @@ Task guides for uah, one section per task, grouped by area. Each section says wh
    - [3.7 `/diff` and `/review`](#37-diff-and-review)
    - [3.8 Compaction and `/context`](#38-compaction-and-context)
    - [3.9 Background shells](#39-background-shells)
+   - [3.10 Scripted tool calls](#310-scripted-tool-calls)
 4. [Permissions](#4-permissions)
    - [4.1 Permission modes](#41-permission-modes)
    - [4.2 Command rules](#42-command-rules)
@@ -384,6 +385,25 @@ The agent can start a command that keeps running after its call, such as a dev s
 - **Limits:** 16 running shells per session, and 256 MiB of log each. Shells do not survive quitting uah, or a resume after it.
 
 The [background shells design](design/background-shells.md) has what the sessions showed and how Codex and Claude Code do it.
+
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 3.10 Scripted tool calls
+
+With MCP servers configured, the agent can call their tools from a script: inside any command it runs, `uah tool` reaches the session's MCP tools. A script can then make many calls, filter or join what they return with `jq` or Python, and pass on only what the agent needs, instead of a model request per call with every result read in full.
+
+```sh
+uah tool list                                   # the tools a script may call
+uah tool describe mcp__github__search_issues    # one tool's input schema
+uah tool call mcp__github__search_issues '{"q":"label:bug"}' | jq -r '.[].number'
+```
+
+- **Nothing to set up:** it is on whenever the session has MCP servers. The agent is told about it in Bash's description and in the prepared context, and decides per task; a direct call is still right for one small lookup.
+- **Same rules:** a script's call is checked as the agent's own call of the tool would be: the tool policy, PreToolUse hooks, and the tool's `approval_mode`, which asks you. A refusal fails the command with the reason.
+- **What you see:** each call shows in the transcript as an MCP call's line marked `· uah tool`, under the command that made it.
+- **Turning it off:** `[tools.bridge] enabled = false` in the [configuration](configuration.md), or `UAH_TOOL_BRIDGE=off`.
+
+The [tool bridge design](design/tool-bridge.md) has why it is built on the shell, how it works, and the planned A/B test.
 
 <sub>[↑ Back to top](#using-uah)</sub>
 

@@ -65,6 +65,8 @@ func (s *State) onEngineEvent(ev core.Event) bool {
 		s.onAgentActivity(e)
 	case engine.ShellUpdated:
 		s.onShellUpdated(e)
+	case engine.ToolBridgeCalled:
+		s.onBridgeCalled(e)
 	case engine.PatchApplied:
 		s.onPatchApplied(e)
 	case engine.ToolOutput:

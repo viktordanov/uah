@@ -120,14 +120,14 @@ go run ./tools/agentbench -harness uah -mode auto -effort high -owner-env \
 ```
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tasks" files="bench/task.go bench/fixture.go bench/dry.go bench/harness.go bench/run.go" -->
+<!-- memoria:section id="tasks" files="bench/task.go bench/fixture.go bench/dry.go bench/harness.go bench/run.go bench/mcp_internal_test.go testdata/mcp/incidents.py" -->
 ## Tasks
 
 A task is a folder in `testdata/tasks/`:
 
 | Path | Holds |
 | --- | --- |
-| `task.json` | `prompt` (what both harnesses get), `check` (a shell command; exit status 0 passes), `exercises` (one line), `tags`, and optionally `follow_ups` (below), `check_timeout` (default 3m), `timeout` (the run's limit), `solution_delete`, `review_base` (the base branch of a [review run](#review-runs)), and the fixtures below |
+| `task.json` | `prompt` (what both harnesses get), `check` (a shell command; exit status 0 passes), `exercises` (one line), `tags`, and optionally `follow_ups` (below), `check_timeout` (default 3m), `timeout` (the run's limit), `solution_delete`, `review_base` (the base branch of a [review run](#review-runs)), `mcp_servers` ([MCP tasks](#mcp-tasks)), and the fixtures below |
 | `repo/` | the repository the agent starts from |
 | `solution/` | files laid over `repo/` that solve the task: the reference solution |
 | `check/` | files laid over the agent's result before the check runs: hidden tests, and the original visible tests, so editing a test does not pass it |
@@ -196,11 +196,25 @@ The suite has 50 tasks. The tag `slow` marks a task whose tests take 10 to 60 s,
 | `go-subagents-investigate` | go, slow, investigate, subagents | Three 30-second suites diagnosed by three subagents the prompt asks for, without changing code, merged into `findings.json`: the main agent's job is to wait |
 | `go-vet-fixes` | go, fix | Six `go vet` findings across two packages, with hidden tests so deleting code does not pass |
 | `home-config-surgery` | config, escalation, archetype | A hook removed from a tool's configuration under `~` (a fake home) among look-alikes; writing there needs an escalation |
+| `mcp-escalation-owner` | mcp, go, uah-only | The service with the most open SEV1 or SEV2 incidents that mention "memory leak", from an MCP search and a lookup of each hit, then a Go constant changed to it and its owner |
+| `mcp-open-sev1` | mcp, uah-only | Every unresolved SEV1 or SEV2 incident that mentions "connection pool": three pages of an MCP search (about 55 KB each), filtered, then a lookup of each of 21 hits for its status |
+| `mcp-timeout-summary` | mcp, uah-only | A count per service of the incidents that mention "timeout": nine pages of an MCP search, about 500 KB in all, reduced to one small JSON object |
 | `md-findings-report` | docs, investigate, archetype | A 10 to 25 KB findings document from eight sources about one outage, with numbers from a CSV |
 | `md-revise-handbook` | docs, edit, archetype | Five edits to a 38 KB handbook in one prompt: a rename outside code blocks, a new section, renumbering, a table, a removal |
 | `node-fix-module` | javascript, fix | A small ES module package whose `node --test` fails in three files |
 | `py-log-parser` | python, investigate | A symptom only (durations over an hour are wrong), traced through a Python log parser |
 | `py-slow-tests` | python, slow | A Python suite with 20 s of sleeps, a bug fix, and a new function from `docs/` |
+
+### MCP tasks
+
+`mcp_servers` gives the uah run stdio MCP servers, by name: `{"incidents": {"command": "python3", "args": ["-I", "{{TASK_DIR}}/../../mcp/incidents.py"]}}`, where `{{TASK_DIR}}` is the task's folder. The harness writes them as `[mcp_servers.<name>]` tables after the shared configuration's lines into the run's own file, `uah-mcp.toml` in its artifacts (`uahConfigWithMCP`). Codex would need them in its configuration too, so a task with MCP servers must carry the tag `uah-only`.
+
+The `mcp-*` tasks share `testdata/mcp/incidents.py`, a standard-library MCP server over a fixed, seeded catalogue of 1,200 incidents: `search_incidents` pages its matches 50 at a time, each with a long body (about 55 KB a page), without the status or owner, which only `get_incident` gives; `list_services` lists the owners. `incidents.py --expect <task>` prints a task's expected answer, which its `check/` holds. They measure what the [tool bridge](../../docs/design/tool-bridge.md) is for: large, paged MCP results and lookups that depend on them. Its A/B test runs uah against itself with the bridge off as the variant:
+
+```sh
+go run ./tools/agentbench -harness uah -tasks '^mcp-' -repeat 5 -uah-env UAH_TOOL_BRIDGE=off -variant nobridge
+go run ./tools/agentbench -harness uah -tasks '^mcp-' -repeat 5
+```
 
 Python tasks, the generator and check of `ci-log-triage`, and the check of `go-large-repo-guide` need `python3`, the JavaScript task needs `node`; neither needs a package.
 

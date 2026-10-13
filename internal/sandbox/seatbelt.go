@@ -49,7 +49,7 @@ func SeatbeltProfile(p Policy) (profile string, params []string) {
 		seatbeltBase,
 		"; allow read-only file operations\n(allow file-read*)",
 		writePolicy,
-		seatbeltNetworkPolicy(p.Network),
+		seatbeltNetworkPolicy(p.Network) + seatbeltSocketPolicy(p.Network, len(p.Sockets)) + seatbeltHiddenPolicy(len(p.Hidden)),
 		// Codex includes preferences only with full-disk reads, which is
 		// always the case here.
 		seatbeltPreferences,
@@ -62,8 +62,55 @@ func SeatbeltProfile(p Policy) (profile string, params []string) {
 	for _, prm := range writeParams {
 		params = append(params, "-D"+prm.key+"="+prm.value)
 	}
+	if !p.Network {
+		for i, path := range p.Sockets {
+			params = append(params, fmt.Sprintf("-DSOCKET_%d=%s", i, path))
+		}
+	}
+	for i, path := range p.Hidden {
+		params = append(params, fmt.Sprintf("-DHIDDEN_%d=%s", i, resolve(path)))
+	}
 
 	return strings.Join(sections, "\n"), params
+}
+
+// seatbeltHiddenPolicy denies reading the policy's Hidden directories
+// (HIDDEN_<n>), such as the sandbox scripts, which hold every session's
+// bridge token: with the network, a command could otherwise read another
+// session's token and reach its socket.
+func seatbeltHiddenPolicy(n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "(deny file-read* (subpath (param \"HIDDEN_%d\")))\n", i)
+	}
+
+	return b.String()
+}
+
+// resolve is a path with its symlinks resolved, which Seatbelt matches,
+// or the path when it cannot be resolved.
+func resolve(path string) string {
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		return r
+	}
+
+	return path
+}
+
+// seatbeltSocketPolicy lets a command without the network connect to the
+// policy's Unix sockets, each by its exact path (SOCKET_<n>), which Seatbelt
+// otherwise counts as network. With the network, every socket is allowed.
+func seatbeltSocketPolicy(network bool, n int) string {
+	if network || n == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("(allow system-socket (socket-domain AF_UNIX))\n")
+	for i := range n {
+		fmt.Fprintf(&b, "(allow network-outbound (remote unix-socket (path-literal (param \"SOCKET_%d\"))))\n", i)
+	}
+
+	return b.String()
 }
 
 func seatbeltNetworkPolicy(enabled bool) string {

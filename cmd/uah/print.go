@@ -142,6 +142,12 @@ func (p *printer) print(event core.Event) { //nolint:gocyclo // a dispatch switc
 		} else {
 			p.say(fmt.Sprintf("agent %s: %s", e.Nickname, e.State))
 		}
+	case engine.ToolBridgeCalled:
+		if e.OK {
+			p.say(fmt.Sprintf("uah tool: %s (ok, %.1fs)", e.Name, e.Duration.Seconds()))
+		} else {
+			p.say(fmt.Sprintf("uah tool: %s failed: %s", e.Name, oneLine(e.Error, 120)))
+		}
 	case engine.ShellUpdated:
 		switch e.State {
 		case engine.ShellRunning:

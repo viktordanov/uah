@@ -89,6 +89,7 @@ func (w *wiring) facts(req core.Request) contextprep.Facts {
 		MaxOutputLength: operation.DefaultMaxOutputLength,
 		Subagent:        strings.HasPrefix(req.SessionID, session.SubagentIDPrefix),
 		InstructionsOff: w.e.cfg.InstructionsOff,
+		ToolBridge:      w.offersBridge(w.e.scope(req.SessionID), policyDisallow(w.e.cfg.Tools, w.e.scope(req.SessionID).disallow(req.DisallowedTools))),
 	}.WithEnvironment(w.getenv, w.commandEnv())
 	if instructions.HasProject(req.SystemPrompt) {
 		f.InstructionFiles = w.e.cfg.InstructionFiles
