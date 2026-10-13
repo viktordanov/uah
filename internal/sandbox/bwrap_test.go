@@ -174,7 +174,7 @@ func TestBwrapArgsHidden(t *testing.T) {
 	args := sandbox.BwrapArgs(sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws, Hidden: []string{hidden}, ReadOnly: []string{hidden}})
 	i := slices.Index(args, "--tmpfs")
 	require.GreaterOrEqual(t, i, 0)
-	assert.Equal(t, hidden, args[i+1])
+	assert.Equal(t, []string{hidden, "--remount-ro", hidden}, args[i+1:i+4], "an empty directory, read-only")
 	for j, a := range args {
 		if a == "--bind" || a == "--ro-bind" {
 			assert.Less(t, j, i, "every bind comes before the tmpfs")
