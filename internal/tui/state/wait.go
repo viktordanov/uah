@@ -105,7 +105,7 @@ func (s State) toolWait() Wait {
 		return Wait{What: "Preparing " + called}
 	}
 
-	return Wait{What: "Working"}
+	return Wait{What: workingText}
 }
 
 // onProgress follows the model request; PhaseDone ends it, before or

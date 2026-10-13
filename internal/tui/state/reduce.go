@@ -38,7 +38,7 @@ func reduce(s State, ev any) (State, []Effect) {
 	if s.index == nil {
 		s.index = map[string]int{}
 	}
-	if effects, ok := s.onPointer(ev); ok {
+	if effects, ok := s.onFirst(ev); ok {
 		return s, effects
 	}
 	if s.onReview(ev) {
@@ -121,6 +121,7 @@ func (s *State) onEvent(ev core.Event) { //nolint:gocyclo // a dispatch switch o
 		s.Queue = append(s.Queue, Queued{ID: e.Input.ID, Text: e.Input.Text, AfterTool: e.AfterTool})
 		s.Busy = true
 	case session.InputSent:
+		s.notePending(e.IDs)
 		for _, id := range e.IDs {
 			i := slices.IndexFunc(s.Queue, func(q Queued) bool { return q.ID == id })
 			if i < 0 {
@@ -132,6 +133,7 @@ func (s *State) onEvent(ev core.Event) { //nolint:gocyclo // a dispatch switch o
 		}
 	case session.InputDelivered:
 		s.update("msg:"+e.ID, func(it *Item) { it.Input = InputDelivered })
+		delete(s.pending, e.ID)
 	case session.InputFailed:
 		for _, id := range e.IDs {
 			if !s.update("msg:"+id, func(it *Item) { it.Input = InputFailed }) {
@@ -139,6 +141,9 @@ func (s *State) onEvent(ev core.Event) { //nolint:gocyclo // a dispatch switch o
 			}
 		}
 		s.notice(session.LevelError, "not delivered: "+e.Reason)
+		if !s.unreadOnly(e.IDs) { // a run's unread input leaves its end alone
+			s.ended = failed("not delivered: " + e.Reason)
+		}
 	case session.InputWithdrawn:
 		s.Queue = slices.DeleteFunc(s.Queue, func(q Queued) bool { return q.ID == e.ID })
 	case session.SettingsChanged:
@@ -156,9 +161,12 @@ func (s *State) onEvent(ev core.Event) { //nolint:gocyclo // a dispatch switch o
 			s.notice(session.LevelWarning, fmt.Sprintf("%s hook %s: %s", e.Event, e.Outcome, e.Reason))
 		}
 	case session.Idle:
-		s.Busy, s.Live = false, nil
+		s.Busy, s.Live, s.unread = false, nil, nil
 	case session.Notice:
 		s.notice(e.Level, e.Message)
+		if e.StartFailed {
+			s.ended = failed(e.Message) // a run that could not start, also one for injected messages alone
+		}
 	default:
 		if !s.onGoalEvent(ev) && !s.onEngineEvent(ev) {
 			s.onRunEvent(ev)
@@ -192,6 +200,7 @@ func (s *State) finishRun(r core.Result) {
 	s.Totals.Overlap += r.Stats.ToolModelOverlap
 	s.Totals.ToolBusy += r.Stats.ToolBusyTime
 	s.Live = nil
+	s.endRun(r)
 }
 
 // loadHistory rebuilds the transcript from saved runs.
@@ -220,6 +229,8 @@ func (s *State) loadHistory(h HistoryLoaded) {
 		}
 	}
 	s.Live = nil
+	s.settleLoaded() // a saved run's end and its subagents' are not news
+	s.runErr, s.pending, s.unread = "", nil, nil
 }
 
 func (s *State) onIntent(ev any) (State, []Effect) { //nolint:gocyclo // a dispatch switch over a closed set; see docs/documentation/architecture.md
@@ -396,4 +407,5 @@ func (s *State) nextKey(prefix string) string {
 func (s *State) resetTranscript() {
 	s.Items, s.index, s.agentIDs, s.Totals, s.Scroll, s.Files, s.ContextUsed = nil, map[string]int{}, nil, Totals{}, 0, nil, 0
 	s.shells = nil // the session's own; switching stops the old session's
+	s.ended, s.runErr, s.seen, s.stale, s.pending, s.unread = nil, "", nil, nil, nil, nil
 }

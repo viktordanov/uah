@@ -375,6 +375,7 @@ func TestSession_Failures(t *testing.T) {
 		assert.Equal(t, []string{in.ID}, failed.IDs)
 		assert.Contains(t, failed.Reason, "run codex login")
 		assert.Equal(t, "error", notice.Level)
+		assert.True(t, notice.StartFailed, "the notice says the run could not start")
 	})
 
 	t.Run("messages the runner never accepted fail when the run ends", func(t *testing.T) {

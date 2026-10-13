@@ -129,6 +129,7 @@ func (s *State) onReview(ev any) bool {
 		if s.Reviewing == e.ID {
 			s.Reviewing = ""
 		}
+		s.endReview(e)
 		s.updateReview(e.ID, func(r *Review) {
 			r.Running, r.Ended = false, e.At
 			r.Output, r.Interrupted, r.Err, r.Limit = e.Output, e.Interrupted, e.Err, e.Limit

@@ -208,6 +208,20 @@ type State struct {
 	quitArmed   time.Time
 	Quitting    bool
 	nextNoticeN int
+
+	// ended is how the last run ended, until the user types; runErr is
+	// the live run's first error; seen is, by subagent, the update that
+	// ended it when the user last typed or sent (programstatus.go).
+	ended  *runEnd
+	runErr string
+	// pending are the messages sent to the runner and not echoed yet;
+	// unread, from a run's end to the session's Idle, the ones that run
+	// was sent and did not read, whose failure leaves its end alone.
+	pending, unread map[string]bool
+	seen            map[string]time.Time
+	// stale is, by subagent, the update a loaded session saved it with,
+	// running; it has no record until another comes.
+	stale map[string]time.Time
 }
 
 // New returns an empty state.

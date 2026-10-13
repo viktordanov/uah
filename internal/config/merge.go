@@ -112,7 +112,7 @@ func mergeTUI(base, over TUI) TUI {
 	base.Details = base.Details || over.Details
 	base.SyncInMultiplexer = base.SyncInMultiplexer || over.SyncInMultiplexer
 	base.KeepBlanks = base.KeepBlanks || over.KeepBlanks
-	for _, b := range []struct{ dst, v **bool }{{&base.Mouse, &over.Mouse}, {&base.Title, &over.Title}, {&base.SkillMentions, &over.SkillMentions}} {
+	for _, b := range []struct{ dst, v **bool }{{&base.Mouse, &over.Mouse}, {&base.Title, &over.Title}, {&base.SkillMentions, &over.SkillMentions}, {&base.ProgramStatus, &over.ProgramStatus}} {
 		if *b.v != nil {
 			*b.dst = *b.v
 		}

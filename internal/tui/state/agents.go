@@ -24,6 +24,9 @@ func (s *State) onAgentUpdated(e engine.AgentUpdated) {
 		if e.State == engine.AgentCompleted && it.Detail == engine.AgentRunning && !e.Started.IsZero() {
 			it.Duration = e.At.Sub(e.Started)
 		}
+		if e.Message == "" && it.Agent != nil && settle(it.Detail, e.State) == engine.AgentErrored {
+			e.Message = it.Agent.Message // a shutdown keeps why the child failed
+		}
 		it.Detail, it.Started, it.Agent = settle(it.Detail, e.State), e.Started, &e
 		if e.State != engine.AgentRunning {
 			for i := range it.Sub {

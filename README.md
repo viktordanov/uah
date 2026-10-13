@@ -45,6 +45,7 @@ Contents:
 - **[Compaction](docs/guide.md#38-compaction-and-context):** the provider's own on OpenAI providers, else a summary with a state ledger of changed files, failing commands, and loaded skills, after old tool outputs are elided first; `/context` shows what fills the window.
 - **[Hooks](docs/guide.md#13-hooks):** Claude Code's contract (JSON on stdin, exit 2 blocks) for ten events, from `SessionStart` to `PermissionRequest`; project hooks run only after `uah hooks trust`.
 - **[Headless](docs/guide.md#6-headless-uah-exec):** `uah exec` with JSONL events, `-o` for the final answer, `--ephemeral`, and a tool policy (`--tools`, `--deny-tools`); [`uah review`](docs/guide.md#37-diff-and-review) runs `/review`'s read-only reviewer.
+- **[Program status](docs/guide.md#57-status-for-the-terminal):** the TUI reports idle, working, blocked on an approval, a question, or a login, done, or failed, and each subagent's, as OSC 7501, for a terminal or a tool hosting it to show in a tab or a session list.
 - **[Usage](docs/guide.md#23-plan-usage):** the ChatGPT plan's rate limits in the footer and `uah usage`, and how much of each session's input the prompt cache served.
 
 > [!NOTE]
@@ -219,7 +220,7 @@ Earlier versions used `~/.config/uagent`, `~/.local/state/unreal-agent`, and a p
 | MCP servers | `[mcp_servers.<name>]` `command`, `args`, `env`, `env_vars`, `cwd`, `url`, `bearer_token_env_var`, `http_headers`, `env_http_headers`, `enabled`, `required`, `startup_timeout_sec`, `tool_timeout_sec`, `enabled_tools`, `disabled_tools`, `supports_parallel_tool_calls`, `default_tools_approval_mode`, `tools.<tool>.approval_mode`, `auth`, `scopes`, `oauth_resource`, `[oauth]`; `mcp_oauth_credentials_store`, `mcp_oauth_callback_port`, `mcp_oauth_callback_url` |
 | Subagents | `[agents]` `enabled`, `max_concurrent_threads_per_session`, `max_depth`, `default_subagent_model`, `default_subagent_reasoning_effort` |
 | `/review` | `review_model` |
-| TUI | `[tui]` `details`, `mouse`, `title`, `file_links`, `sync_in_multiplexer`, `keep_blanks` |
+| TUI | `[tui]` `details`, `mouse`, `title`, `program_status`, `file_links`, `sync_in_multiplexer`, `keep_blanks` |
 | Prompt history | `[history]` `persistence`, `max_bytes` |
 | Projects | `[projects."<path>"]` `trusted` |
 

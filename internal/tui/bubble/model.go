@@ -6,6 +6,7 @@ package bubble
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -238,12 +239,34 @@ func (m Model) onTerminalReport(msg term.Msg) (term.Model, term.Cmd) {
 }
 
 func (m Model) Update(msg term.Msg) (term.Model, term.Cmd) {
+	edits := mayEditDraft(msg)
+	var draft string
+	if edits {
+		draft = m.composer.Value()
+	}
 	next, cmd := m.update(msg)
 	if nm, ok := next.(Model); ok {
+		if edits && nm.composer.Value() != draft { // a key, a paste, a recalled prompt, the editor
+			nm.st, _ = state.Reduce(nm.st, state.TakeIn{})
+		}
 		next = nm.anchor()
 	}
 
 	return next, cmd
+}
+
+// mayEditDraft reports whether msg can change the composer's text, so
+// Update compares the draft around it: not the session's events, the
+// clock's ticks, a subagent view's events, or the mouse's motion and wheel,
+// which come often while a run streams and edit nothing, as a large draft
+// costs a copy for each comparison.
+func mayEditDraft(msg term.Msg) bool {
+	switch msg.(type) {
+	case eventsMsg, tickMsg, agentEventsMsg, term.MouseMotionMsg, term.MouseWheelMsg, edgeMsg, term.WindowSizeMsg:
+		return false
+	}
+
+	return true
 }
 
 func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
@@ -421,6 +444,7 @@ func (m Model) View() term.View {
 	v.Mouse = m.st.Mouse
 	// term clears the title when the program ends.
 	v.WindowTitle = m.st.WindowTitle()
+	v.Status = programStatus(m.st.ProgramStatus())
 	if c := m.composerCursor(); c != nil && composerRow >= 0 && m.st.Peek == nil {
 		c.Y += composerRow
 		v.Cursor = c
@@ -440,4 +464,49 @@ func needsSession(e state.Effect) bool {
 	}
 
 	return false
+}
+
+// programStatus is the session's status records as the terminal layer
+// sends them. A subagent's nickname is its ID when it is a valid one;
+// another, which two nicknames could share, such as "Scout A" and
+// "Scout-A", adds the start of the child's own ID's unique part, so each
+// child keeps its ID whatever other children show, unless two such
+// children's UUIDs start alike (one chance in about four billion).
+func programStatus(records []state.ProgramStatus) []term.Status {
+	out := make([]term.Status, len(records))
+	used := make(map[string]bool, len(records))
+	for i, r := range records {
+		id := r.ID
+		if id != "" {
+			parts := strings.SplitN(id, "/", 2)
+			if id = term.StatusID(parts...); id != r.ID || used[id] {
+				id = apart(parts, r.Agent, i, used)
+			}
+			used[id] = true
+		}
+		out[i] = term.Status{ID: id, State: r.State, Kind: r.Kind, Title: r.Title, Msg: r.Msg}
+	}
+
+	return out
+}
+
+// apart is an ID for a nickname that is not a valid ID as it is, or that
+// another child's took: its own ID's UUID, after "subagent-", first 8
+// characters and then more, before the nickname made valid, or the
+// record's index when even the whole ID is taken.
+func apart(parts []string, agent string, index int, used map[string]bool) string {
+	unique := strings.TrimPrefix(agent, "subagent-")
+	nickname := parts[len(parts)-1]
+	for n := 8; ; n += 8 {
+		parts[len(parts)-1] = unique[:min(n, len(unique))] + "." + nickname
+		if id := term.StatusID(parts...); !used[id] {
+			return id
+		}
+		if n >= len(unique) {
+			break
+		}
+	}
+	parts[len(parts)-1] = strconv.Itoa(index) + "." + nickname
+
+	return term.StatusID(parts...)
 }

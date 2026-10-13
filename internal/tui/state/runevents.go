@@ -18,6 +18,7 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 	switch e := ev.(type) {
 	case core.RunStarted:
 		s.Live = &Live{RunID: e.RunID, Started: e.At}
+		s.ended, s.runErr = nil, ""
 		s.put(Item{Kind: KindRun, Key: "run:" + e.RunID, RunID: e.RunID, Status: core.StatusRunning, Started: e.At})
 	case core.PreflightWarning:
 		s.notice(session.LevelWarning, e.Message)
@@ -76,6 +77,7 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 		})
 		if e.Failure != "" {
 			s.notice(session.LevelError, "model failure: "+e.Failure)
+			s.noteRunError("model failure: " + e.Failure)
 		}
 	case core.ToolCalled:
 		s.onToolCalled(e)
@@ -99,6 +101,7 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 		s.put(Item{Kind: KindReasoning, Key: s.finalKey(KindReasoning, "reason"), Text: e.Text})
 	case core.RunnerError:
 		s.notice(session.LevelError, e.Message)
+		s.noteRunError(e.Message)
 	case core.RunFinished:
 		s.dropStreamed()
 		s.finishRun(e.Result)

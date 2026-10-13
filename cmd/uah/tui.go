@@ -92,6 +92,7 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		Terminal: term.Options{
 			SyncInMultiplexer: st.Config.TUI.SyncInMultiplexer,
 			KeepBlanks:        st.Config.TUI.KeepBlanks,
+			StatusApp:         statusApp(st.Config.TUI.ProgramStatusOn()),
 		},
 		History:    &prompts,
 		Version:    buildVersion(),
@@ -209,3 +210,13 @@ func (t *takeOnce) take() string {
 // values without its cancellation, since term handles the signals that
 // cancel main's context.
 func tuiContext(ctx context.Context) context.Context { return context.WithoutCancel(ctx) }
+
+// statusApp is the name the TUI reports its status under (OSC 7501), or ""
+// when [tui] program_status is off.
+func statusApp(on bool) string {
+	if !on {
+		return ""
+	}
+
+	return "uah"
+}

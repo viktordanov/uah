@@ -35,6 +35,7 @@ Task guides for uah, one section per task, grouped by area. Each section says wh
    - [5.4 List, search, and delete sessions](#54-list-search-and-delete-sessions)
    - [5.5 Select and copy text](#55-select-and-copy-text)
    - [5.6 File links and the terminal title](#56-file-links-and-the-terminal-title)
+   - [5.7 Status for the terminal](#57-status-for-the-terminal)
 6. [Headless: `uah exec`](#6-headless-uah-exec)
    - [6.1 Running it](#61-running-it)
    - [6.2 JSON events](#62-json-events)
@@ -537,6 +538,26 @@ File paths in the transcript are underlined links: the files a READ line reads, 
 - **OSC 8:** the paths are also hyperlinks, which the terminal's own cmd+click or ctrl+click opens, also with the mouse off.
 
 The terminal's title shows the session's state and its workspace, to find a pane among many: `uah · api` when idle, `uah · working · api` while the agent works, `uah · approve? · api` while an approval waits, and `uah · answer? · api` while the agent's questions wait. `[tui] title = false` turns it off. See the [file links design](design/file-links.md).
+
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 5.7 Status for the terminal
+
+The TUI tells the terminal what the session is doing with OSC 7501, the [program status protocol](https://superlogical.com/rex/docs/build/program-status), so a terminal or a tool that hosts terminals can show it in a tab, a session list, or a notification, also through ssh, with nothing to set up. Terminals that do not know it ignore it.
+
+| The session | Status |
+| --- | --- |
+| At the prompt, or after you interrupt | `idle` |
+| The agent works | `working`, with what it waits on: `Thinking`, `Running 2 commands` |
+| An approval, the agent's questions, or an expired login waits | `blocked`, with `permission`, `question`, or `auth` |
+| The run finished | `done`, with the start of the answer, until you type |
+| The run failed | `error`, with the error, until you type |
+
+- **Subagents:** each has a record of its own, `agent/<nickname>`: `working` while it runs, then `done` or `error` until you type.
+- **Turning it off:** `[tui] program_status = false` in the [configuration](configuration.md).
+- **tmux** drops the reports.
+
+The [program status design](design/program-status.md) has the protocol and how uah sends it.
 
 <sub>[↑ Back to top](#using-uah)</sub>
 

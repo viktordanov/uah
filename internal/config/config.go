@@ -377,6 +377,11 @@ type TUI struct {
 	// SkillMentions completes a skill's name after "$" in the composer, as
 	// Codex does (on when unset, SkillMentionsOn).
 	SkillMentions *bool `toml:"skill_mentions"`
+	// ProgramStatus reports the session's status to the terminal as OSC
+	// 7501 (on when unset, ProgramStatusOn): idle, working, blocked on an
+	// approval, a question, or a login, done, or failed, and each
+	// subagent's.
+	ProgramStatus *bool `toml:"program_status"`
 }
 
 // History configures <home>/history.jsonl, the prompts ↑ and ctrl+r
@@ -415,6 +420,10 @@ func (t TUI) FileLinksMode() string {
 // SkillMentionsOn reports whether "$" completes skill names: on unless set
 // false.
 func (t TUI) SkillMentionsOn() bool { return t.SkillMentions == nil || *t.SkillMentions }
+
+// ProgramStatusOn reports whether the TUI reports its status to the
+// terminal (OSC 7501): on unless set false.
+func (t TUI) ProgramStatusOn() bool { return t.ProgramStatus == nil || *t.ProgramStatus }
 
 // TitleOn reports whether the TUI sets the terminal's title and progress:
 // on unless set false.

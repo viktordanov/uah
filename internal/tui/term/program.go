@@ -43,6 +43,9 @@ type Options struct {
 	// dropping them or erasing to the row's end on their background (EL),
 	// for a terminal that erases without the background in force.
 	KeepBlanks bool
+	// StatusApp, when set, sends the view's Status records (OSC 7501) as
+	// this program's, such as "uah".
+	StatusApp string
 
 	// clock is the time source (default the real one); loop tests fake it.
 	clock clock
@@ -81,6 +84,8 @@ type Program struct {
 	// cursorColor the OSC 12 colour ("": the terminal's own).
 	cursorStyle int
 	cursorColor string
+	// status is each status record's last report, by ID (status.go).
+	status map[string]string
 	// panicked is a command's panic, re-raised on the loop.
 	panicked any
 	// fatal ends the loop with an error: the terminal could not be taken
@@ -149,6 +154,7 @@ func (p *Program) Run(ctx context.Context) (final Model, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			_ = t.leave(p.restore())
+			p.sendLeaveStatus(fmt.Sprint("uah stopped: ", r))
 			panic(r)
 		}
 	}()
@@ -170,6 +176,11 @@ func (p *Program) Run(ctx context.Context) (final Model, err error) {
 	if lerr := t.leave(p.restore()); err == nil {
 		err = lerr
 	}
+	failure := ""
+	if err != nil { // the loop's, or leaving's
+		failure = "uah stopped: " + err.Error()
+	}
+	p.sendLeaveStatus(failure)
 
 	return p.model, err
 }
@@ -479,6 +490,9 @@ func (p *Program) draw() {
 	if p.resend {
 		p.resend = false
 		p.mouse, p.title, p.cursorStyle, p.cursorColor = !v.Mouse, "\x00", -1, "\x00"
+		for id := range p.status {
+			p.status[id] = "" // no report is empty: each is sent again
+		}
 	}
 	if v.Mouse != p.mouse {
 		p.mouse = v.Mouse
@@ -487,6 +501,10 @@ func (p *Program) draw() {
 	if v.WindowTitle != p.title {
 		p.title = v.WindowTitle
 		pre.WriteString(oscTitle(v.WindowTitle))
+	}
+	status := p.status
+	if p.opts.StatusApp != "" {
+		status = p.writeStatus(&pre, v.Status)
 	}
 	if c := v.Cursor; c != nil {
 		// The shape and colour stay while the cursor hides.
@@ -501,6 +519,8 @@ func (p *Program) draw() {
 	}
 	frame := p.screen.Frame(strings.Split(v.Content, "\n"), v.Cursor)
 	if pre.Len() == 0 && frame == nil {
+		p.status = status
+
 		return
 	}
 	if err := p.term.writeFrame(pre.String(), frame); err != nil {
@@ -513,9 +533,12 @@ func (p *Program) draw() {
 			p.fatal = err
 		}
 
+		p.status = mayHaveSent(p.status, status)
+
 		return
 	}
 	p.writeFails = 0
+	p.status = status
 }
 
 // maxWriteFails is how many frames in a row may fail to write before the

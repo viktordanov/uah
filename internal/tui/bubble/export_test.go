@@ -38,3 +38,6 @@ func (m Model) ToastText() string {
 
 	return m.st.Toast.Text
 }
+
+// ProgramStatus is programStatus, which makes the records' IDs valid.
+var ProgramStatus = programStatus

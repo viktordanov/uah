@@ -69,6 +69,7 @@ func fileSettings(workspace string, l config.Layers, r Resolved, cfg config.Conf
 		added(l, "tui.sync_in_multiplexer", cfg.TUI.SyncInMultiplexer, func(c config.Config) any { return c.TUI.SyncInMultiplexer }),
 		added(l, "tui.keep_blanks", cfg.TUI.KeepBlanks, func(c config.Config) any { return c.TUI.KeepBlanks }),
 		overridden(l, "tui.skill_mentions", cfg.TUI.SkillMentionsOn(), func(c config.Config) any { return c.TUI.SkillMentions }),
+		overridden(l, "tui.program_status", cfg.TUI.ProgramStatusOn(), func(c config.Config) any { return c.TUI.ProgramStatus }),
 		overridden(l, "tui.file_links", cfg.TUI.FileLinksMode(), func(c config.Config) any { return c.TUI.FileLinks }),
 		overridden(l, "history.persistence", first(cfg.History.Persistence, string(history.SaveAll)), func(c config.Config) any { return c.History.Persistence }),
 		overridden(l, "history.max_bytes", historyMaxBytes(cfg.History), func(c config.Config) any { return c.History.MaxBytes }),

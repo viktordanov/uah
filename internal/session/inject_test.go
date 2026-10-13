@@ -98,6 +98,8 @@ func TestSession_InjectSurvivesAFailedStart(t *testing.T) {
 	h := newHarness(t, fakeCaps{LiveInput: true})
 	h.eng.startErr = errors.New("preflight blocked the run")
 	h.s.Inject("note") // its run fails to start, and none is tried again
+	notice := h.until(isType[session.Notice]).(session.Notice)
+	assert.True(t, notice.StartFailed, "it fails no input: the notice is how the TUI hears of it")
 	h.until(isType[session.Idle])
 
 	h.eng.startErr = nil

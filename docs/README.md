@@ -48,6 +48,7 @@ Design:
 30. [File links and the peek overlay](design/file-links.md): what Codex links and how terminals take OSC 8, and how uah links the paths in its transcript, opens one on a click in an overlay, the editor, or the system's opener, and keeps its line renderer correct with hyperlinks.
 31. [Background shells](design/background-shells.md): what `Bash` does with a long command today, what the owner's sessions show about long and detached commands, how Codex and Claude Code run background processes, and the plan: `background` on `Bash`, a notice on exit through `Session.Inject`, `wait_shell`, `kill_shell`, and `/ps`.
 32. [Scripted tool calls](design/tool-bridge.md): the tool bridge: why code mode is built on the shell, how `uah tool` reaches the session's MCP tools through a socket in `$TMPDIR` with the same policy, hooks, and approvals, what the model is told in Bash's description and the prepared context, and the planned A/B test.
+33. [Program status](design/program-status.md): OSC 7501, the program status protocol: what the TUI reports for the session and each subagent (idle, working, blocked on an approval, a question, or a login, done, error), how a report goes out in the frame's write, and what was left out (progress, feature detection, tmux).
 
 Reference:
 

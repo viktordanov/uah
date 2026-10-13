@@ -198,7 +198,7 @@ Listing and search go through the rebuildable SQLite index in [internal/store](.
 | `ApprovalRequested`, `ApprovalResolved` | An approval waiting for `Resolve`, and its answer |
 | `QuestionsAsked`, `QuestionsAnswered` | The agent's questions waiting for `AnswerQuestions`, and the answers, or `Canceled` |
 | `HookRan` | A hook's outcome (`running` as it starts), command, and duration |
-| `Notice` | Text for the user, with a level |
+| `Notice` | Text for the user, with a level; `StartFailed` marks the error of a run that could not start, also one started for injected messages alone, which fails no input |
 | `ShellStarted`, `ShellOutput`, `ShellFinished` | A command the user typed (`RunShell`): its start, its output as it arrives, and its result with the record the agent gets |
 | `ReviewStarted`, `ReviewActivity`, `ReviewFinished` | A `/review` (`Review`): what it looks at, the reviewer's tool events, its failed commands' output, and its model responses (their tokens), and its findings or how it ended, with the limit that stopped it |
 | `MCPStarted` | An interactive session connected its MCP servers: each one's state, after the notices for those that did not start |

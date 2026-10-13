@@ -92,6 +92,9 @@ type Notice struct {
 	At      time.Time
 	Level   string // "info", "warning", or "error"
 	Message string
+	// StartFailed marks the error of a run that could not start, also one
+	// started for injected messages alone, which fails no input.
+	StartFailed bool
 }
 
 // HookRan reports one hook run.

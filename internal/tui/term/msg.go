@@ -43,6 +43,10 @@ type View struct {
 	// WindowTitle is the terminal's title (OSC 2); "" leaves it alone, or
 	// clears the one set before.
 	WindowTitle string
+	// Status is the program's status records (OSC 7501), its own (ID "")
+	// first; sent only with Options.StatusApp. A record left out of a
+	// later view is cleared.
+	Status []Status
 }
 
 // NewView returns a view of content.

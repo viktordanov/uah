@@ -96,8 +96,9 @@ func (c *fakeClock) advance(d time.Duration) {
 type counter struct {
 	n     int
 	mouse bool
-	title string
-	log   *events
+	title  string
+	status []Status
+	log    *events
 	init  Cmd
 }
 
@@ -107,8 +108,9 @@ type countMsg struct{}
 type sameMsg struct{}
 
 type (
-	mouseMsg string
-	titleMsg string
+	mouseMsg  string
+	titleMsg  string
+	statusMsg []Status
 )
 
 func (m counter) Init() Cmd { return m.init }
@@ -122,6 +124,8 @@ func (m counter) Update(msg Msg) (Model, Cmd) {
 		m.mouse = msg == "on"
 	case titleMsg:
 		m.title = string(msg)
+	case statusMsg:
+		m.status = msg
 	case cmdMsg:
 		return m, msg.cmd
 	}
@@ -133,7 +137,7 @@ func (m counter) View() View {
 	m.log.view()
 	v := NewView(fmt.Sprintf("count %d\nsecond row", m.n))
 	v.Cursor = NewCursor(2, 1)
-	v.Mouse, v.WindowTitle = m.mouse, m.title
+	v.Mouse, v.WindowTitle, v.Status = m.mouse, m.title, m.status
 
 	return v
 }
@@ -233,7 +237,7 @@ func startHarness(t *testing.T, m counter, before ...Msg) *harness {
 	inR, inW := io.Pipe()
 	h.in = inW
 	h.p = NewProgram(m, Options{In: inR, Out: h.out, Width: 20, Height: 4, Env: []string{"TERM=xterm-256color"},
-		Profile: colorprofile.TrueColor, clock: h.clock})
+		Profile: colorprofile.TrueColor, StatusApp: "uah", clock: h.clock})
 	for _, msg := range before {
 		h.p.Send(msg)
 	}
@@ -646,13 +650,16 @@ func TestDumbTerminalKeepsControlSequences(t *testing.T) {
 // failing is an output whose writes fail while fail is set.
 type failing struct {
 	output
-	fail atomic.Bool
+	fail   atomic.Bool
+	failed atomic.Int32 // writes that failed
 }
 
 var errBroken = errors.New("broken pipe")
 
 func (f *failing) Write(b []byte) (int, error) {
 	if f.fail.Load() {
+		f.failed.Add(1)
+
 		return 0, errBroken
 	}
 

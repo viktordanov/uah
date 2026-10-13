@@ -76,7 +76,7 @@ func (s *Session) onStarted(m evStarted) bool {
 		if len(ids) > 0 { // a run started for injected messages fails none of the user's
 			s.emit(InputFailed{At: time.Now(), IDs: ids, Reason: m.err.Error()})
 		}
-		s.emit(Notice{At: time.Now(), Level: LevelError, Message: m.err.Error()})
+		s.emit(Notice{At: time.Now(), Level: LevelError, Message: m.err.Error(), StartFailed: true})
 		s.interruptWhenStarted, s.restartAfterStop = false, false
 		s.state = StateIdle
 		if s.closeReply != nil {
