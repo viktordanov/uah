@@ -1,6 +1,6 @@
 # Scripted tool calls: the tool bridge
 
-Status: built 2026-10-12, A/B test planned. Ledger item 143.
+Status: done in v1.11.0, A/B test run. Ledger item 143.
 
 Inside any of a session's commands, `uah tool` calls the session's MCP tools, so the model can write one script that calls them, filters or joins their results with `jq` or Python, and prints only what it needs. This is "code mode" (pi's codemode, Cloudflare's Code Mode, Anthropic's code execution with MCP) built on the shell uah already has, instead of a JavaScript sandbox.
 
@@ -64,3 +64,9 @@ The question is whether models use the bridge, and whether it saves requests and
 - **Metrics:** requests, model time, input tokens (cached and not), output tokens, cost, wall time, pass rate, and how often the model uses `uah tool`.
 - **Bar:** 20% or more fewer input tokens or requests on the MCP and large-output tasks, with the same pass rate; no guard task worse by more than 10% or failing.
 - **First step:** run arm A alone on the MCP tasks, to see whether MCP results do flood the context: `go run ./tools/agentbench -harness uah -tasks '^mcp-' -repeat 5 -uah-env UAH_TOOL_BRIDGE=off -variant nobridge`.
+
+**Results** (2026-10-12/13, gpt-6.1-sol at high effort; arm C was not needed, as the model used the bridge on every MCP task):
+
+- **MCP tasks**, 5 runs per arm and task: input tokens 9.33M → 1.94M (−79%), cost $3.27 → $0.86 (−74%), median wall time 128 s → 58 s. One bridge run failed: 21 parallel lookups each asked the auto-reviewer, and one missed its deadline; after one approval per command and tool, 5 of 5 passed.
+- **Guard tasks**, six ordinary coding tasks, 3 runs per arm: 36 of 36 passed, cost $1.96 → $2.07, input tokens 5.91M → 6.10M, within noise; no run called `uah tool`. `go-rename-refactor` looked slower with the bridge on, but with 8 runs per arm, interleaved, both medians are 64 s.
+- **Not run:** the large-output tasks, and repeats past 5.
