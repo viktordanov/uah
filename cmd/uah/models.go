@@ -76,6 +76,7 @@ func errText(err error) string {
 // printCatalog marks the model a session with the same flags would use
 // (on openai-codex without -m, gpt-6.1-sol when listed, else gpt-6-sol).
 func printCatalog(w io.Writer, c models.Catalog, model string) {
+	w = colorOut(w)
 	fmt.Fprintf(w, "%d models from %s (%s list)\n", len(c.Models), c.Provider, c.Origin)
 	if c.Err != nil {
 		fmt.Fprintf(w, "the provider did not answer: %v\n", c.Err)
@@ -83,7 +84,7 @@ func printCatalog(w io.Writer, c models.Catalog, model string) {
 	for _, m := range c.Models {
 		line := app.ModelLine(m)
 		if m.ID == model {
-			line += " · default"
+			line = cliStyles.bold.Render(line) + cliStyles.ok.Render(" · default")
 		}
 		fmt.Fprintln(w, line)
 	}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"charm.land/lipgloss/v2"
 	"github.com/urfave/cli/v3"
 
 	"github.com/viktordanov/uah/internal/app"
@@ -50,11 +51,16 @@ func doctorAction(ctx context.Context, cmd *cli.Command) error {
 
 var checkMarks = map[app.CheckStatus]string{app.CheckOK: "✓", app.CheckWarn: "!", app.CheckFail: "✗"}
 
+// checkStyles color a check's mark and name: green, yellow, red.
+var checkStyles = map[app.CheckStatus]lipgloss.Style{app.CheckOK: cliStyles.ok, app.CheckWarn: cliStyles.warn, app.CheckFail: cliStyles.bad}
+
 func printChecks(w io.Writer, checks []app.Check) {
+	w = colorOut(w)
 	for _, c := range checks {
-		fmt.Fprintf(w, "%s %s: %s\n", checkMarks[c.Status], c.Name, c.Detail)
+		st := checkStyles[c.Status]
+		fmt.Fprintf(w, "%s %s: %s\n", st.Render(checkMarks[c.Status]), st.Render(c.Name), c.Detail)
 		if c.Fix != "" {
-			fmt.Fprintf(w, "    fix: %s\n", c.Fix)
+			fmt.Fprintf(w, "    %s %s\n", cliStyles.bold.Render("fix:"), c.Fix)
 		}
 	}
 }

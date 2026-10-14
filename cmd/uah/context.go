@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
 
@@ -70,19 +69,30 @@ func contextAction(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// printModules prints one line per module.
+// printModules prints one line per module: one that applies plain, with
+// its state in green, one that does not dim.
 func printModules(w io.Writer, modules []contextprep.Status) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "BLOCK\tMODULE\tSOURCE\tSTATE\tAPPLIES\tWHY")
+	st := cliStyles
+	var t table
+	t.header("BLOCK", "MODULE", "SOURCE", "STATE", "APPLIES", "WHY")
 	for _, m := range modules {
-		applies := "no"
+		row, applies := &st.dim, "no"
 		if m.Applies {
-			applies = "yes"
+			row, applies = nil, st.ok.Render("yes")
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", m.Block, m.Path, sourceLabel(m), stateLabel(m), applies, oneLine(m.Reason, 100))
+		state := stateLabel(m)
+		switch {
+		case state == "on" && m.Applies:
+			state = st.ok.Render(state)
+		case state == untrusted:
+			state = st.warn.Render(state)
+		case state == "error":
+			state = st.bad.Render(state)
+		}
+		t.row(row, m.Block, m.Path, sourceLabel(m), state, applies, oneLine(m.Reason, 100))
 	}
 
-	return tw.Flush()
+	return t.write(w)
 }
 
 // sourceLabel names where a module comes from, and its file when it is not
@@ -102,13 +112,16 @@ func sourceLabel(m contextprep.Status) string {
 	return label
 }
 
+// untrusted is the state of a project module or a hook not yet trusted.
+const untrusted = "untrusted"
+
 // stateLabel is a module's STATE column.
 func stateLabel(m contextprep.Status) string {
 	switch {
 	case strings.HasPrefix(m.Reason, "error: "):
 		return "error"
 	case !m.Trusted:
-		return "untrusted"
+		return untrusted
 	case !m.Enabled:
 		return "off"
 	}

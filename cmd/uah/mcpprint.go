@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 
+	"charm.land/lipgloss/v2"
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/mcp"
 )
@@ -23,26 +23,43 @@ func printServers(w io.Writer, entries []app.MCPEntry) error {
 			stdio = append(stdio, e)
 		}
 	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if len(stdio) > 0 {
-		fmt.Fprintln(tw, "Name\tCommand\tArgs\tEnv\tCwd\tStatus\tAuth")
+		var t table
+		t.header("Name", "Command", "Args", "Env", "Cwd", "Status", "Auth")
 		for _, e := range stdio {
 			c := e.Config
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", e.Name, c.Command, dash(strings.Join(c.Args, " ")),
-				dash(masked(c.Env)), dash(c.Cwd), enabled(c), e.Auth.Text())
+			row, status := serverRow(c)
+			t.row(row, e.Name, c.Command, dash(strings.Join(c.Args, " ")), dash(masked(c.Env)), dash(c.Cwd), status, e.Auth.Text())
+		}
+		if err := t.write(w); err != nil {
+			return err
 		}
 	}
 	if len(stdio) > 0 && len(http) > 0 {
-		fmt.Fprintln(tw)
+		fmt.Fprintln(w)
 	}
 	if len(http) > 0 {
-		fmt.Fprintln(tw, "Name\tUrl\tBearer Token Env Var\tStatus\tAuth")
+		var t table
+		t.header("Name", "Url", "Bearer Token Env Var", "Status", "Auth")
 		for _, e := range http {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", e.Name, e.Config.URL, dash(e.Config.BearerTokenEnvVar), enabled(e.Config), e.Auth.Text())
+			row, status := serverRow(e.Config)
+			t.row(row, e.Name, e.Config.URL, dash(e.Config.BearerTokenEnvVar), status, e.Auth.Text())
 		}
+
+		return t.write(w)
 	}
 
-	return tw.Flush() // writing to stdout
+	return nil
+}
+
+// serverRow is a server's row style and Status cell: enabled in green, a
+// disabled server's row dim.
+func serverRow(c mcp.ServerConfig) (*lipgloss.Style, string) {
+	if c.IsEnabled() {
+		return nil, cliStyles.ok.Render(enabled(c))
+	}
+
+	return &cliStyles.dim, enabled(c)
 }
 
 // printServer writes `uah mcp get`: the name, then a line per set value.

@@ -25,7 +25,7 @@ type printer struct {
 }
 
 func newPrinter(w io.Writer, verbose bool) *printer {
-	return &printer{w: w, verbose: verbose, origin: time.Now(), agents: map[string]string{}}
+	return &printer{w: colorOut(w), verbose: verbose, origin: time.Now(), agents: map[string]string{}}
 }
 
 func (p *printer) print(event core.Event) { //nolint:gocyclo // a dispatch switch over a closed set; see docs/documentation/architecture.md
@@ -169,8 +169,16 @@ func (p *printer) print(event core.Event) { //nolint:gocyclo // a dispatch switc
 	}
 }
 
+// say writes a line after its time, dim: an error or a failed tool call
+// in red, a warning in yellow.
 func (p *printer) say(msg string) {
-	fmt.Fprintf(p.w, "[%6.1fs] %s\n", time.Since(p.origin).Seconds(), msg)
+	switch trimmed := strings.TrimLeft(msg, " "); {
+	case strings.HasPrefix(trimmed, "error:"), strings.HasPrefix(trimmed, "✗"), strings.HasPrefix(trimmed, "! failure:"):
+		msg = cliStyles.bad.Render(msg)
+	case strings.HasPrefix(trimmed, "warning:"):
+		msg = cliStyles.warn.Render(msg)
+	}
+	fmt.Fprintf(p.w, "%s %s\n", cliStyles.dim.Render(fmt.Sprintf("[%6.1fs]", time.Since(p.origin).Seconds())), msg)
 }
 
 func short(id string) string { return session.ShortID(id) }

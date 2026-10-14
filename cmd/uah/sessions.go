@@ -8,10 +8,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/urfave/cli/v3"
 
 	"github.com/viktordanov/uagent/core"
@@ -105,27 +106,29 @@ func listSessions(ctx context.Context, cmd *cli.Command) error {
 
 		return nil
 	}
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	var t table
 	if showAll {
-		fmt.Fprintln(tw, "SESSION\tACTIVE\tRUNS\tSTATUS\tMODEL\tFROM\tDIRECTORY\tFIRST PROMPT")
+		t.header("SESSION", "ACTIVE", "RUNS", "STATUS", "MODEL", "FROM", "DIRECTORY", "FIRST PROMPT")
 	} else {
-		fmt.Fprintln(tw, "SESSION\tACTIVE\tRUNS\tSTATUS\tMODEL\tFROM\tFIRST PROMPT")
+		t.header("SESSION", "ACTIVE", "RUNS", "STATUS", "MODEL", "FROM", "FIRST PROMPT")
 	}
-	// Subagents follow their parent, indented.
+	// Subagents follow their parent, indented and dim.
 	for _, in := range session.Tree(infos) {
-		dir := ""
-		if showAll {
-			dir = homeShort(in.Workspace) + "\t"
-		}
-		from, status := cmp.Or(in.Source, "-"), cmp.Or(string(in.Status), "-") // "-": no sidecar, or never ran
+		from := cmp.Or(in.Source, "-") // "-": no sidecar, or never ran
 		id := short(in.ID)
+		var row *lipgloss.Style
 		if in.Depth > 0 {
 			id = strings.Repeat("  ", in.Depth-1) + "└ " + id
+			row = &cliStyles.dim
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s%s\n", id, ago(in.LastActivity), in.Runs, status, modelLabel(in.Model), from, dir, oneLine(in.FirstPrompt, 60))
+		cells := []string{id, ago(in.LastActivity), strconv.Itoa(in.Runs), sessionStatus(in.Status), modelLabel(in.Model), from}
+		if showAll {
+			cells = append(cells, homeShort(in.Workspace))
+		}
+		t.row(row, append(cells, oneLine(in.FirstPrompt, 60))...)
 	}
 
-	return tw.Flush()
+	return t.write(os.Stdout)
 }
 
 // flagSince is `uah sessions --since`.
@@ -354,4 +357,19 @@ func developerLabel(text string) string {
 	}
 
 	return "developer message"
+}
+
+// sessionStatus is a session's STATUS: ok in green, interrupted in yellow,
+// a failure in red, and "-" (no sidecar, or never ran) dim.
+func sessionStatus(status core.Status) string {
+	switch status {
+	case "":
+		return cliStyles.dim.Render("-")
+	case core.StatusOK:
+		return cliStyles.ok.Render(string(status))
+	case core.StatusInterrupted:
+		return cliStyles.warn.Render(string(status))
+	}
+
+	return cliStyles.bad.Render(string(status))
 }

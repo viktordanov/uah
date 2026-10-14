@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/urfave/cli/v3"
 
 	"github.com/viktordanov/uah/internal/app"
@@ -82,6 +84,7 @@ func usageJSONFor(r app.UsageReport) usageJSON {
 }
 
 func printUsage(w io.Writer, r app.UsageReport, now time.Time) {
+	w = colorOut(w)
 	s := r.Snapshot
 	plan := s.Plan
 	if plan == "" {
@@ -97,7 +100,7 @@ func printUsage(w io.Writer, r app.UsageReport, now time.Time) {
 		width = max(width, len(row.Label))
 	}
 	for _, row := range rows {
-		line := fmt.Sprintf("%-*s  %s %3.0f%% used · %s", width, row.Label, usage.Bar(row.Window.LeftPercent()), row.Window.UsedPercent, row.Left())
+		line := fmt.Sprintf("%-*s  %s %3.0f%% used · %s", width, row.Label, barStyle(row.Window.LeftPercent()).Render(usage.Bar(row.Window.LeftPercent())), row.Window.UsedPercent, row.Left())
 		if at := row.Window.ResetsAt; !at.IsZero() {
 			line += " · resets " + usage.ResetLabel(at, now)
 		}
@@ -108,9 +111,32 @@ func printUsage(w io.Writer, r app.UsageReport, now time.Time) {
 		if c.Unlimited {
 			balance = "unlimited"
 		}
-		fmt.Fprintf(w, "credits: %s\n", balance)
+		fmt.Fprintf(w, "credits: %s\n", trimZeros(balance))
 	}
 	if s.Reached() {
 		fmt.Fprintln(w, "the usage limit is reached")
 	}
+}
+
+// barStyle colors a window's bar by what is left: green, yellow under
+// half, red under a fifth.
+func barStyle(left float64) lipgloss.Style {
+	switch {
+	case left < 20:
+		return cliStyles.bad
+	case left < 50:
+		return cliStyles.warn
+	}
+
+	return cliStyles.ok
+}
+
+// trimZeros drops a decimal balance's trailing zeros: the API sends
+// "62500.0000000000".
+func trimZeros(balance string) string {
+	if !strings.Contains(balance, ".") {
+		return balance
+	}
+
+	return strings.TrimSuffix(strings.TrimRight(balance, "0"), ".")
 }

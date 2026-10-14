@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"text/tabwriter"
+	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/urfave/cli/v3"
 
 	"github.com/viktordanov/uah/internal/app"
@@ -48,8 +49,9 @@ func configAction(ctx context.Context, cmd *cli.Command) error {
 }
 
 // printReport writes the home, the workspace, and the files (the layers
-// after the user file), then one line per key:
-// key, value, and source.
+// after the user file), then one line per key: key, value (in one line,
+// its line breaks and tabs escaped; a long one runs past its column), and
+// source, dim when it is the default.
 func printReport(w io.Writer, rep app.Report) error {
 	fmt.Fprintf(w, "home:         %s\n", rep.Home)
 	fmt.Fprintf(w, "workspace:    %s (%s)\n", rep.Workspace, rep.WorkspaceSource)
@@ -58,11 +60,20 @@ func printReport(w io.Writer, rep app.Report) error {
 		fmt.Fprintf(w, "layer:        %s (%s)\n", f.Path, f.State)
 	}
 	fmt.Fprintf(w, "project file: %s (%s)\n\n", rep.ProjectFile.Path, rep.ProjectFile.State)
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "KEY\tVALUE\tSOURCE")
+	var t table
+	t.capColumn(1, 60)
+	t.header("KEY", "VALUE", "SOURCE")
 	for _, s := range rep.Settings {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", s.Key, s.Text(), s.SourceText())
+		var row *lipgloss.Style
+		if s.SourceText() == string(app.FromDefault) {
+			row = &cliStyles.dim
+		}
+		t.row(row, s.Key, controlEscaper.Replace(s.Text()), s.SourceText())
 	}
 
-	return tw.Flush()
+	return t.write(w)
 }
+
+// controlEscaper writes a value's line breaks and tabs as \n, \r, and \t,
+// so it keeps one line and every other character as it is.
+var controlEscaper = strings.NewReplacer("\n", `\n`, "\r", `\r`, "\t", `\t`)

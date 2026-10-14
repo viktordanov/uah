@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"text/tabwriter"
 
 	"github.com/urfave/cli/v3"
 
@@ -83,13 +82,19 @@ func listHooks(_ context.Context, cmd *cli.Command) error {
 
 		return nil
 	}
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "EVENT\tMATCHER\tSOURCE\tSTATE\tCOMMAND")
+	var t table
+	t.header("EVENT", "MATCHER", "SOURCE", "STATE", "COMMAND")
 	for _, h := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", h.Event, h.Matcher, h.Source, trustLabel(runner, h), oneLine(h.Command, 80))
+		state := trustLabel(runner, h)
+		if ok, _ := runner.TrustState(h); ok {
+			state = cliStyles.ok.Render(state)
+		} else {
+			state = cliStyles.warn.Render(state)
+		}
+		t.row(nil, string(h.Event), h.Matcher, string(h.Source), state, oneLine(h.Command, 80))
 	}
 
-	return tw.Flush()
+	return t.write(os.Stdout)
 }
 
 // trustLabel is a hook's STATE column.
@@ -102,7 +107,7 @@ func trustLabel(runner *hooks.Runner, h hooks.Hook) string {
 	case why == hooks.ReasonScriptNew:
 		return "untrusted (script not recorded)"
 	default:
-		return "untrusted"
+		return untrusted
 	}
 }
 
