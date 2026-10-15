@@ -2,6 +2,7 @@ package state
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -56,13 +57,17 @@ const maxDoneMsg = 300
 // ProgramStatus is the session's status records: its own first, then each
 // subagent's that runs, or that ended since the user last typed.
 func (s State) ProgramStatus() []ProgramStatus {
-	return append([]ProgramStatus{s.ownStatus()}, s.agentStatus()...)
+	agents := s.agentStatus()
+
+	return append([]ProgramStatus{s.ownStatus(agents)}, agents...)
 }
 
 // ownStatus is the session's own record, the most pressing first: an
-// approval or a question waiting for the user, then work, then how the
-// last run ended, until the user types.
-func (s State) ownStatus() ProgramStatus {
+// approval or a question waiting for the user, then work, its own or a
+// subagent's (agents), then how the last run ended, until the user types.
+// A run that failed says so while subagents work; one that finished is not
+// done until they are, since their ends start the agent's next run.
+func (s State) ownStatus(agents []ProgramStatus) ProgramStatus {
 	a, asked := s.PendingApproval()
 	q, questioned := s.PendingQuestions()
 	switch {
@@ -81,11 +86,41 @@ func (s State) ownStatus() ProgramStatus {
 		return ProgramStatus{State: StatusWorking, Msg: "Reviewing"}
 	case s.Busy || s.Live != nil || s.ShellRunning():
 		return ProgramStatus{State: StatusWorking, Msg: s.activity()}
+	case s.ended != nil && s.ended.State != StatusDone:
+		return ProgramStatus{State: s.ended.State, Kind: s.ended.Kind, Msg: s.ended.Msg}
+	case s.waitingFor(agents) != "":
+		return ProgramStatus{State: StatusWorking, Msg: s.waitingFor(agents)}
 	case s.ended != nil:
 		return ProgramStatus{State: s.ended.State, Kind: s.ended.Kind, Msg: s.ended.Msg}
 	}
 
 	return ProgramStatus{State: StatusIdle}
+}
+
+// waitingFor says which subagents run, "Waiting for Ada" or "Waiting for
+// 2 subagents", or "" when none does. A resumed one that waits for its
+// first message (pending_init) has no work to wait for.
+func (s State) waitingFor(agents []ProgramStatus) string {
+	running := map[string]bool{}
+	for _, it := range s.Agents() {
+		if it.Agent != nil && it.Detail == engine.AgentRunning {
+			running[it.Agent.ID] = true
+		}
+	}
+	var names []string
+	for _, a := range agents {
+		if a.State == StatusWorking && running[a.Agent] {
+			names = append(names, strings.TrimPrefix(a.ID, "agent/"))
+		}
+	}
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return "Waiting for " + names[0]
+	}
+
+	return fmt.Sprintf("Waiting for %d subagents", len(names))
 }
 
 // activity is what the live run does, as the wait line says it but with

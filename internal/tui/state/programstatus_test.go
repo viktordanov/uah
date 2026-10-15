@@ -118,6 +118,34 @@ func TestProgramStatus_Subagents(t *testing.T) {
 	assert.Len(t, s.ProgramStatus(), 1, "a subagent shut down while running has no record")
 }
 
+// A run that ends while its subagents work is not done: the session works
+// until they end, and their ends start the agent's next run.
+func TestProgramStatus_WaitsForSubagents(t *testing.T) {
+	s, _ := apply(opened(), core.RunStarted{At: t0, RunID: "r1"},
+		engine.AgentUpdated{At: t0, ID: "a1", Nickname: "Ada", State: engine.AgentRunning},
+		engine.AgentUpdated{At: t0, ID: "a2", Nickname: "Bo", State: engine.AgentRunning})
+	s, _ = apply(s, ran(core.StatusOK, "Started two agents.")[1:]...)
+	assert.Equal(t, state.ProgramStatus{State: state.StatusWorking, Msg: "Waiting for 2 subagents"}, own(s))
+
+	s, _ = apply(s, engine.AgentUpdated{At: t0.Add(1), ID: "a2", Nickname: "Bo", State: engine.AgentCompleted})
+	assert.Equal(t, state.ProgramStatus{State: state.StatusWorking, Msg: "Waiting for Ada"}, own(s))
+
+	s, _ = apply(s, engine.AgentUpdated{At: t0.Add(2), ID: "a1", Nickname: "Ada", State: engine.AgentCompleted})
+	assert.Equal(t, state.ProgramStatus{State: state.StatusDone, Msg: "Started two agents."}, own(s), "done once every subagent is")
+
+	s, _ = apply(s, engine.AgentUpdated{At: t0.Add(3), Started: t0.Add(3), ID: "a1", Nickname: "Ada", State: engine.AgentRunning},
+		state.DraftChanged{Draft: "x"})
+	assert.Equal(t, state.StatusWorking, own(s).State, "typing does not take in work still running")
+
+	s, _ = apply(s, core.RunStarted{At: t0, RunID: "r2"}, core.RunnerError{At: t0, Message: "model request failed: " + codexauth.ErrLoginExpired.Error()})
+	s, _ = apply(s, core.RunFinished{At: t0, Result: core.Result{Request: core.Request{RunID: "r2"}, Status: core.StatusFailed}}, session.Idle{At: t0})
+	assert.Equal(t, state.BlockedAuth, own(s).Kind, "a failure shows while a subagent works")
+
+	s, _ = apply(opened(), engine.AgentUpdated{At: t0, ID: "a1", Nickname: "Ada", State: engine.AgentPendingInit})
+	s, _ = apply(s, ran(core.StatusOK, "Resumed Ada.")...)
+	assert.Equal(t, state.StatusDone, own(s).State, "a resumed subagent with no message has no work to wait for")
+}
+
 // The message says what the run does without what counts, so a stream of
 // bytes, a stall, or a retry's countdown sends no report per frame.
 func TestProgramStatus_ASteadyMessage(t *testing.T) {

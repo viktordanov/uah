@@ -30,7 +30,8 @@ The session's own record, the most pressing state first (`State.ProgramStatus` i
 | A `/review` runs | `working` | `Reviewing` |
 | A `/review` finished while the agent was idle | `done`, until you type, or `error` (`blocked:auth` for an expired login) | `Review: 3 findings (…) · patch is incorrect`, or the error |
 | The agent works, a `!` command runs | `working` | what it does, as the wait line says it but with nothing that counts (bytes, seconds, a retry's countdown), so a report goes out when the run moves on, not on every frame: `Thinking`, `Running 2 commands`, `Writing a patch · main.go`, `Reconnecting` |
-| The last run finished | `done`, until you type | the start of the answer, up to 300 characters |
+| A subagent runs after the agent's run finished (a failed one reports its error; a resumed subagent with no message yet does not count) | `working` | `Waiting for Ada`, or `Waiting for 2 subagents`: the run is not done, since a subagent's end starts the agent's next run |
+| The last run finished, and no subagent works | `done`, until you type | the start of the answer, up to 300 characters |
 | The last run failed | `error`, until you type | the run's first error from the runner or the model |
 | The ChatGPT login expired, during a run or before it could start | `blocked`, `kind=auth`, until you type | the error, which says to sign in |
 | A message was not delivered: a hook blocked it, or its run failed to start | `error`, until you type | `not delivered: <reason>` |
