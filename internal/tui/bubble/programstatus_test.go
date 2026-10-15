@@ -47,7 +47,10 @@ func TestTUI_StatusWhileWorkingAndInterrupted(t *testing.T) {
 	deps.Prompt = "start the long job"
 	d := start(t, deps)
 	d.waitFor("sleep 300")
-	assert.Equal(t, term.Status{State: term.StateWorking, Msg: "Running 1 command"}, d.status())
+	// The line shows once the call is announced, "Preparing Bash" until
+	// it starts.
+	running := term.Status{State: term.StateWorking, Msg: "Running 1 command"}
+	d.until("the command running", func() bool { return d.status() == running })
 
 	d.key(term.KeyEscape, 0)
 	d.key(term.KeyEscape, 0)
