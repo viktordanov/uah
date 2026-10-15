@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/viktordanov/uah/internal/contextusage"
 	"github.com/viktordanov/uah/internal/engine"
@@ -47,7 +48,16 @@ type Config struct {
 	// the model against its catalog (internal/models.Validate); nil
 	// accepts any.
 	Validate func(ctx context.Context, model string) error
+	// StallAfter is how long a running child may go without an event
+	// before it is stopped as stalled (0: DefaultStallAfter).
+	StallAfter time.Duration
 }
+
+// DefaultStallAfter is twice the runner's tool heartbeat (10 minutes),
+// which wakes a child's model while its calls run, as its model stream
+// errors after 5 minutes without data: a child that works sends events
+// well within it. One that waits on an approval is not stalled.
+const DefaultStallAfter = 20 * time.Minute
 
 // Manager implements engine.Subagents. Children are ordinary sessions on the
 // parent's engine, recorded with SourceSubagent and their parent's ID.
@@ -80,6 +90,9 @@ func New(cfg Config) *Manager {
 		cfg.MaxThreads = DefaultMaxThreads
 	}
 	cfg.MaxDepth = min(cfg.MaxDepth, MaxDepth)
+	if cfg.StallAfter <= 0 {
+		cfg.StallAfter = DefaultStallAfter
+	}
 
 	return &Manager{
 		cfg:     cfg,

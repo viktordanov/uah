@@ -74,6 +74,21 @@ type child struct {
 	noteDue string
 	// stopStreak counts SubagentStop hooks that kept the child going.
 	stopStreak int
+	// asking counts its approvals open in the parent, which keep a quiet
+	// child from being stalled; stalled is why a stalled child was
+	// stopped, its error until it is sent work again.
+	asking  int
+	stalled string
+	// unstalled is closed once a stall's interrupt is in: the next message
+	// waits for it (a session that cannot take the interrupt cannot take
+	// the message either), so the interrupt cannot stop the message's run,
+	// and is steered, since the session leaves a message queued behind an
+	// interrupted run; it is cleared then.
+	unstalled chan struct{}
+	// quiet fires when the child sent no event for cfg.StallAfter, counted
+	// from active: its last event, or its last approval opened or answered.
+	quiet  *time.Timer
+	active time.Time
 	// review marks a /review's reviewer (reviewagent.go), and stopReview
 	// stops its review.
 	// stopCheck is the generation whose SubagentStop hooks run (0: none).
@@ -149,12 +164,20 @@ func (m *Manager) nickname(parentID string, role Role, preferred string) string 
 // (session.Session.Send), and marks it running. It returns the message's ID.
 func (m *Manager) submit(c *child, message string, when session.When) (string, error) {
 	m.mu.Lock()
+	if ch := c.unstalled; ch != nil {
+		m.mu.Unlock()
+		<-ch
+		m.mu.Lock()
+		if c.unstalled == ch { // the first message after the stall replaces its run; the next queue as usual
+			c.unstalled, when = nil, session.SendNow
+		}
+	}
 	c.gen++
 	c.sending++
 	if c.status.Final() {
 		c.started = time.Now()
 	}
-	c.status = Status{State: engine.AgentRunning}
+	c.run(m.cfg.StallAfter)
 	if c.noteDue != "" {
 		message, c.noteDue = message+"\n\n"+c.noteDue, ""
 	}
@@ -194,7 +217,7 @@ func (m *Manager) steerQueued(c *child) error {
 	if resumed {
 		c.gen++
 		c.started = time.Now()
-		c.status = Status{State: engine.AgentRunning}
+		c.run(m.cfg.StallAfter)
 	}
 	m.mu.Unlock()
 	if err != nil {
@@ -224,10 +247,19 @@ func (m *Manager) settle(c *child) {
 	}
 }
 
-// watch follows a child's events until its session closes.
+// watch follows a child's events until its session closes, and stops it
+// as stalled when it runs with none for cfg.StallAfter.
 func (m *Manager) watch(c *child) {
+	m.mu.Lock()
+	c.active = time.Now()
+	c.quiet = time.AfterFunc(m.cfg.StallAfter, func() { m.stall(c) })
+	quiet := c.quiet
+	m.mu.Unlock()
+	defer quiet.Stop()
 	for e := range c.s.Events() {
+		quiet.Reset(m.cfg.StallAfter)
 		m.mu.Lock()
+		c.active = time.Now()
 		changed, check := m.observe(c, e)
 		c.record(e)
 		m.mu.Unlock()
@@ -266,7 +298,7 @@ func (c *child) woken() bool {
 	}
 	c.gen++
 	c.started = time.Now()
-	c.status = Status{State: engine.AgentRunning}
+	c.status, c.stalled = Status{State: engine.AgentRunning}, "" // on an event, which restarted the stall clock
 
 	return true
 }
@@ -326,6 +358,8 @@ func (m *Manager) observe(c *child, e core.Event) (bool, *stopCheck) {
 // final is the status an idle child reports. It holds m.mu.
 func (c *child) final() Status {
 	switch {
+	case c.stalled != "":
+		return Status{State: engine.AgentErrored, Message: c.stalled}
 	case c.last != nil && c.last.Status == core.StatusOK:
 		return Status{State: engine.AgentCompleted, Message: strings.Join(c.answers, "\n\n")}
 	case c.last != nil && c.last.Status == core.StatusInterrupted:
@@ -453,5 +487,65 @@ func (m *Manager) forward(c *child, e core.Event) {
 	if emit := m.parents[c.parent].Emit; emit != nil {
 		activity := engine.AgentActivity{At: e.OccurredAt(), ID: c.id, Event: e}
 		m.outboxOf(c.parent).push(func() { emit(activity) })
+	}
+}
+
+// stall stops a child that runs and sent no event for cfg.StallAfter, with
+// no approval open: its work ends as an error, so its parent's waits and
+// the parent's status stop waiting for it, and it is interrupted, which
+// waits on its loop in a goroutine of its own, since a stalled loop may
+// never answer. A child that is not running, waits on an approval, or
+// runs its SubagentStop hooks (which time out on their own, and whose
+// result would race the stall) is checked again later, as is one whose clock an event or an approval
+// restarted while the timer fired.
+func (m *Manager) stall(c *child) {
+	m.mu.Lock()
+	if c.closed {
+		m.mu.Unlock()
+
+		return
+	}
+	if quiet := time.Since(c.active); quiet < m.cfg.StallAfter { // an event or an answer came as it fired
+		c.quiet.Reset(m.cfg.StallAfter - quiet)
+		m.mu.Unlock()
+
+		return
+	}
+	if c.status.State != engine.AgentRunning || c.review || c.asking > 0 || c.stopCheck != 0 || c.s == nil {
+		c.quiet.Reset(m.cfg.StallAfter)
+		m.mu.Unlock()
+
+		return
+	}
+	c.stalled = "stopped: no activity for " + minutes(m.cfg.StallAfter)
+	c.status = Status{State: engine.AgentErrored, Message: c.stalled}
+	s := c.s
+	unstalled := make(chan struct{})
+	c.unstalled = unstalled
+	m.mu.Unlock()
+	m.notify(c)
+	go func() {
+		_ = s.Interrupt()
+		close(unstalled)
+	}()
+}
+
+// minutes is "20 minutes" for a whole number of them, else d as Go
+// writes it.
+func minutes(d time.Duration) string {
+	if d%time.Minute != 0 {
+		return d.String()
+	}
+
+	return fmt.Sprintf("%d minutes", d/time.Minute)
+}
+
+// run marks the child running with new work: no stall's error, and its
+// stall clock restarted, since a session that stalled may send no event to
+// restart it. It holds m.mu.
+func (c *child) run(stallAfter time.Duration) {
+	c.status, c.stalled, c.active = Status{State: engine.AgentRunning}, "", time.Now()
+	if c.quiet != nil {
+		c.quiet.Reset(stallAfter)
 	}
 }

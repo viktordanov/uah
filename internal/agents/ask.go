@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/viktordanov/uah/internal/approval"
 )
@@ -24,7 +25,21 @@ func (m *Manager) askFor(c *child) approval.Ask {
 		stop := context.AfterFunc(asks, cancel) //nolint:contextcheck // the child's interrupt or close also ends the prompt
 		defer stop()
 		p.Justification = strings.TrimSpace("agent " + c.nickname + ": " + p.Justification)
+		m.asking(c, 1)
+		defer m.asking(c, -1)
 
 		return ask(ctx, p)
+	}
+}
+
+// asking counts a child's open approval in or out, and restarts its stall
+// clock: the time the user takes is not the child's.
+func (m *Manager) asking(c *child, n int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c.asking += n
+	c.active = time.Now()
+	if c.quiet != nil {
+		c.quiet.Reset(m.cfg.StallAfter)
 	}
 }
