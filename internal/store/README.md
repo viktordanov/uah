@@ -23,6 +23,7 @@ The [state storage record](../../docs/design/state.md) explains why the files st
 | `List` | `uah sessions`, `uah resume`, the TUI picker, `--last`, shell completion. Falls back to the file scan |
 | `SearchIn` | `uah sessions --search`. Each word is quoted, so user text is never FTS syntax |
 | `ActivityIn` | `/status`'s 12-week heatmap |
+| `TokensIn` | `uah stats`: every run's start, model, workspace, and tokens, oldest first |
 | `ForgetIn` | `uah sessions rm`: deletes the removed sessions' rows at once, which the next `Reconcile` would also do |
 
 `CopyIndex` copies an index into another state directory for the one-time move to `~/.uah` (`internal/home/migrate`). SQLite writes a consistent snapshot with `VACUUM INTO`, so another uah may hold it open; the old directory is only read (opened immutable when no WAL exists, so no `-wal` or `-shm` file appears next to it). The copy's `dir` column is repointed at the new `runs/`.

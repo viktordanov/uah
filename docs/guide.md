@@ -36,6 +36,7 @@ Task guides for uah, one section per task, grouped by area. Each section says wh
    - [5.5 Select and copy text](#55-select-and-copy-text)
    - [5.6 File links and the terminal title](#56-file-links-and-the-terminal-title)
    - [5.7 Status for the terminal](#57-status-for-the-terminal)
+   - [5.8 Token statistics](#58-token-statistics)
 6. [Headless: `uah exec`](#6-headless-uah-exec)
    - [6.1 Running it](#61-running-it)
    - [6.2 JSON events](#62-json-events)
@@ -559,6 +560,24 @@ The TUI tells the terminal what the session is doing with OSC 7501, the [program
 - **tmux** drops the reports.
 
 The [program status design](design/program-status.md) has the protocol and how uah sends it.
+
+<sub>[↑ Back to top](#using-uah)</sub>
+
+### 5.8 Token statistics
+
+`uah stats` adds up the tokens of every session, in every workspace: each finished run's, including subagents' and /review's reviewers', and each compaction call's.
+
+```sh
+uah stats                                  # the last 7 days by day, their sum, and all time
+uah stats --by week                        # day, week, month, model, workspace, or source
+uah stats --since 2026-10-01 --until 2026-10-15   # dates (both included) or RFC 3339 times
+uah stats -C ~/src/app --by model          # one workspace
+uah stats --json                           # exact counts for scripts
+```
+
+- **Columns:** runs, sessions, input, cached input, output, reasoning, total, and the cache hit rate. Cached input is part of input and reasoning part of output; total is the input not served from the cache plus the output, as the exit summary counts it.
+- **Under the table:** of the range's days, how many were active and the streak up to today; per active day, the mean, median, 90th percentile, and maximum with its day; the total per run and per session; each model's share.
+- **Days** are local and weeks start on Monday. A run counts on the day it started. Auto-review calls are not recorded yet, so they are missing ([design](design/token-stats.md#gaps)).
 
 <sub>[↑ Back to top](#using-uah)</sub>
 

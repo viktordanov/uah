@@ -30,12 +30,17 @@ import (
 	"github.com/viktordanov/uah/internal/usage/cachestats"
 )
 
-// sessionsCommand is `uah sessions`: list sessions, or show one.
-func sessionsCommand() *cli.Command {
-	stateDir := &cli.StringFlag{
+// stateDirFlag is --state-dir for the commands that read the sessions.
+func stateDirFlag() *cli.StringFlag {
+	return &cli.StringFlag{
 		Name: "state-dir", Usage: "sessions, logs, and run records",
 		Value: defaultStateDir(), Sources: cli.EnvVars(home.EnvStateDir), TakesFile: true,
 	}
+}
+
+// sessionsCommand is `uah sessions`: list sessions, or show one.
+func sessionsCommand() *cli.Command {
+	stateDir := stateDirFlag()
 	jsonFlag := &cli.BoolFlag{Name: flagJSON, Usage: "print JSON"}
 	all := &cli.BoolFlag{Name: flagAll, Usage: "list sessions from every directory"}
 	search := &cli.StringFlag{Name: "search", Usage: "only sessions whose prompts or answers contain these words (any directory)"}

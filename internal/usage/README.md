@@ -118,12 +118,24 @@ cache 86% · missed 119k: effort switches 72k, cold start 9k, other 38k · ≈20
 `uah sessions show --json` adds `cache`: the summary (`requests`, `input`, `cached`, `output`, `missed` by cause, `missed_share`, `idle_gaps`, `longest_idle_gap_ms`) and `by_request`, each request with its model, effort, tokens, `expected`, `gap_ms`, and `misses`.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="development" files="parse_test.go headers_test.go fetch_test.go reader_test.go rows_test.go probe_test.go testdata/pro_weekly_only.json testdata/plus_two_windows.json cachestats/attribute_test.go" -->
+<!-- memoria:section id="tokstats" files="tokstats/collect.go tokstats/stats.go" -->
+## Token statistics
+
+`tokstats` adds up the tokens of every session in a state directory for `uah stats` ([design](../../docs/design/token-stats.md)). Unlike the rest of this package it reads no backend: only what uah recorded.
+
+- **Collect** reads each finished run's tokens from the session index (`store.TokensIn`: start, model, workspace, `core.Tokens`), with the session's source from its sidecar (`tui`, `exec` for `uah exec`, `subagent`, `review` for a /review's reviewer, `unknown` without one), and each compaction call's from the sessions' `compaction.jsonl` (source `compaction`, not a run), since no run's totals hold them. A compaction that made no call (elide, clear) has none. A forked subagent's log starts with copies of its parent's records, so a call counts once (by its hash and time), as the parent's: the logs are read by depth in the sidecars' parents, so a session's parents come before it (a subagent ID without a sidecar's parent counts as one level down). A sidecar without a workspace (from before uah kept it) takes the workspace of the session's runs.
+- **Build** keeps the entries in the range (`Since`, `Until` excluded) and, with `Workspace`, one workspace's, compared as `session.NormalDir` makes them. It groups the rows by day, ISO week, or month, every one from the range's first day (`Since`, or the first entry's) to its last (`Until`, or today) with an empty one too, or by model, workspace, or source, the largest total first. A row has the runs, the sessions with any entry, and the tokens; `Total` is Codex's, input not served from the cache plus output, since cached input is part of input and reasoning part of output.
+- **Days** are the range's days in `Now`'s location, stepped at local noon, since where a clock change skips midnight, midnight plus a day can land on the same date: the active ones (with any entry), their totals' mean, median, nearest-rank 90th percentile, and maximum with its day, and the streak of active days up to today, or up to yesterday while today has none yet. A run counts on the day it started. The report also has the total per run and per session and each model's share.
+<!-- /memoria:section -->
+
+<!-- memoria:section id="development" files="parse_test.go headers_test.go fetch_test.go reader_test.go rows_test.go probe_test.go testdata/pro_weekly_only.json testdata/plus_two_windows.json cachestats/attribute_test.go tokstats/stats_test.go tokstats/collect_test.go" -->
 ## Tests and the probe
 
 `testdata/pro_weekly_only.json` is the response that a Pro login received on 2026-09-24, with the identifiers replaced. `plus_two_windows.json` is synthetic and has two windows, an additional limit, and a reached limit. The header tests use the header names that a real `/responses` call returned. `Fetch` is tested against a loopback server, for the headers, the path, and errors that contain no secrets. The reader is tested against a loopback server with a test clock: the cache, one request for many callers, the context, errors that keep the last snapshot, and unsupported providers. `uah usage`, `uah doctor`, and the TUI are tested against loopback servers too; no test calls the real backend.
 
 `cachestats/attribute_test.go` attributes synthetic request sequences: one effort (new content is no miss), an effort switch each way, a pause past the TTL and one within it, an effort whose cache expired while the other served, a model change, a compaction, and misses under the noise floor. It also checks the summary line and the share at API prices. `internal/session/cachestats_test.go` reads requests from run events and a `stderr.log` with attempt lines.
+
+`tokstats/stats_test.go` builds reports from synthetic entries: days with an empty one, the range with `Until` excluded, weeks from Monday, the groupings' order, a workspace, the days' statistics and the streak, the models' shares, and the dates across Santiago's midnight clock change. `tokstats/collect_test.go` collects a real run record, its sidecar's source, a compaction log with a call and an elision, a fork's copy of it counted once, and a workspace from the runs when the sidecar has none.
 
 `probe_test.go` needs the `probe` build tag and a Codex login. It sends one real GET to the usage endpoint and makes one small model call through `Transport`:
 

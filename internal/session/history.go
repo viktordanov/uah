@@ -208,6 +208,10 @@ func ActiveSince(infos []Info, t time.Time) []Info {
 
 // normalizeDir makes p absolute and clean and resolves symlinks, the way
 // Codex matches a session's working directory.
+// NormalDir is a directory as InDir compares it: absolute, with its
+// symbolic links resolved.
+func NormalDir(p string) string { return normalizeDir(p) }
+
 func normalizeDir(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {

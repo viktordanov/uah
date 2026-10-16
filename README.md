@@ -46,7 +46,7 @@ Contents:
 - **[Hooks](docs/guide.md#13-hooks):** Claude Code's contract (JSON on stdin, exit 2 blocks) for ten events, from `SessionStart` to `PermissionRequest`; project hooks run only after `uah hooks trust`.
 - **[Headless](docs/guide.md#6-headless-uah-exec):** `uah exec` with JSONL events, `-o` for the final answer, `--ephemeral`, and a tool policy (`--tools`, `--deny-tools`); [`uah review`](docs/guide.md#37-diff-and-review) runs `/review`'s read-only reviewer.
 - **[Program status](docs/guide.md#57-status-for-the-terminal):** the TUI reports idle, working, blocked on an approval, a question, or a login, done, or failed, and each subagent's, as OSC 7501, for a terminal or a tool hosting it to show in a tab or a session list.
-- **[Usage](docs/guide.md#23-plan-usage):** the ChatGPT plan's rate limits in the footer and `uah usage`, and how much of each session's input the prompt cache served.
+- **[Usage](docs/guide.md#23-plan-usage):** the ChatGPT plan's rate limits in the footer and `uah usage`, how much of each session's input the prompt cache served, and [`uah stats`](docs/guide.md#58-token-statistics): every session's tokens by day, week, month, model, workspace, or source.
 
 > [!NOTE]
 > The docs are kept in sync with the code by [Memoria](https://github.com/viktordanov/rs-memoria): CI fails when code changes and its README hasn't been reviewed.

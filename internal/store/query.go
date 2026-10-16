@@ -48,6 +48,50 @@ func (ix *Index) Activity(ctx context.Context, now time.Time, days int) (map[str
 	return counts, rows.Err()
 }
 
+// RunTokens is one run's tokens, with when it started and what ran it.
+type RunTokens struct {
+	Session, Provider, Model, Workspace string
+	Started                             time.Time
+	Tokens                              core.Tokens
+}
+
+// Tokens lists every indexed run's tokens, oldest first: a finished run's,
+// since a run's tokens are indexed from its summary.
+func (ix *Index) Tokens(ctx context.Context) ([]RunTokens, error) {
+	rows, err := ix.db.QueryContext(ctx, `SELECT session_id, started_ns, provider, model, workspace, tokens FROM runs ORDER BY started_ns`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the runs' tokens: %w", err)
+	}
+	defer rows.Close()
+	var out []RunTokens
+	for rows.Next() {
+		var (
+			r      RunTokens
+			ns     int64
+			tokens string
+		)
+		if err := rows.Scan(&r.Session, &ns, &r.Provider, &r.Model, &r.Workspace, &tokens); err != nil {
+			return nil, fmt.Errorf("failed to read the runs' tokens: %w", err)
+		}
+		r.Started = time.Unix(0, ns)
+		_ = json.Unmarshal([]byte(tokens), &r.Tokens) // a run without a total counts as none
+		out = append(out, r)
+	}
+
+	return out, rows.Err()
+}
+
+// TokensIn is Tokens for a state directory.
+func TokensIn(ctx context.Context, stateDir string) ([]RunTokens, error) {
+	ix, err := Open(ctx, stateDir)
+	if err != nil {
+		return nil, err
+	}
+	defer ix.Close()
+
+	return ix.Tokens(ctx)
+}
+
 // sessions folds run rows, grouped by session and newest first, into Infos.
 func (ix *Index) sessions(ctx context.Context, query string, args ...any) ([]session.Info, error) {
 	rows, err := ix.db.QueryContext(ctx, query, args...)

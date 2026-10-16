@@ -104,6 +104,18 @@ func TestSearchAndActivity(t *testing.T) {
 	assert.Equal(t, 2, activity[time.Now().Format(time.DateOnly)])
 }
 
+func TestTokens(t *testing.T) {
+	env := harnesstest.NewEnv(t)
+	runs(t, env, "", "one", "two")
+	got, err := store.TokensIn(context.Background(), env.StateDir)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.False(t, got[1].Started.Before(got[0].Started), "oldest first")
+	assert.Equal(t, "gpt-6-sol", got[0].Model)
+	assert.Equal(t, env.Workspace, got[0].Workspace)
+	assert.Positive(t, got[0].Tokens.InputTokens, "the run's tokens, from its summary")
+}
+
 // utc drops time zones and monotonic readings, which differ between JSON and
 // SQLite but name the same instants.
 func utc(infos []session.Info) []session.Info {

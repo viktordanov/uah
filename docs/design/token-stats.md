@@ -1,6 +1,6 @@
 # Token statistics: `uah stats`
 
-Status: scoped 2026-10-16, not built. Ledger item 147. TokScale facts are from its README ([junhoyeo/tokscale](https://github.com/junhoyeo/tokscale), October 2026).
+Status: scoped and built 2026-10-16 (v1; phase 2 is in [Gaps](#gaps)). Ledger item 147. TokScale facts are from its README ([junhoyeo/tokscale](https://github.com/junhoyeo/tokscale), October 2026).
 
 A command that adds up the tokens of every uah session by day, week, month, model, workspace, or source, with a few descriptive statistics, for tracking use over time. It prints tables and JSON; it is not a TUI.
 
@@ -44,16 +44,16 @@ Taken: the flags' shape (`--since`, `--until`, grouping, `--json`), the token bu
 ## The command
 
 ```
-uah stats                       # all time, then the last 7 days by day
+uah stats                       # the last 7 days by day, their sum, then all time
 uah stats --by day|week|month|model|workspace|source
 uah stats --since 2026-10-01 --until 2026-10-15
 uah stats -C .                  # one workspace
 uah stats --json
 ```
 
-- **Range:** `--since` and `--until` take a date (`2026-10-01`, local midnight) or an RFC 3339 time; `--until` is inclusive. All time by default.
+- **Range:** `--since` and `--until` take a date (`2026-10-01`, local midnight) or an RFC 3339 time; `--until` is inclusive. All time by default; with no `--by`, `--since`, or `--until`, the rows are the last 7 days, with all time's sum under theirs and the statistics of all time. Time rows include the empty days, weeks, or months.
 - **Workspaces:** all by default; `-C` (or `--workspace`) limits to one, as `uah sessions` does.
-- **Columns per row:** runs, sessions, model responses, input, cached, output, reasoning, total, and the cache hit rate (cached ÷ input). Cached and reasoning are shown as parts, never added again.
+- **Columns per row:** runs, sessions, input, cached, output, reasoning, total, and the cache hit rate (cached ÷ input). Cached and reasoning are shown as parts, never added again. Model responses are not a column: the index has no count of them, and adding one changes its schema, which would rebuild it whenever an older uah opens it.
 - **Statistics over the range,** under the table:
   - active days of the days in the range;
   - tokens per active day: mean, median, p90, and maximum, with the peak day;
@@ -65,7 +65,7 @@ uah stats --json
 
 ## Data
 
-- **Runs:** a store query next to `Activity` returns each run's start, model, provider, workspace, session ID, and tokens in the range; `internal/usage/tokstats` (or similar) adds them up in Go. No schema change.
+- **Runs:** `store.TokensIn`, next to `Activity`, returns each run's start, model, provider, workspace, session ID, and tokens; `internal/usage/tokstats` adds them up in Go. No schema change.
 - **Source:** from the sessions' sidecars (`session.ApplySidecar`): `tui`, `exec`, `subagent`, `review`.
 - **Compaction:** read from the `compaction.jsonl` files (few and small) and counted as their own source, `compaction`.
 
