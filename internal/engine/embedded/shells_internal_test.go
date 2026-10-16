@@ -69,7 +69,9 @@ func TestShells_StopKillsTheWholeGroup(t *testing.T) {
 	end, err := s.stop("s1", sh.id, true)
 	require.NoError(t, err)
 	assert.Equal(t, "killed", end.State)
-	assert.True(t, errors.Is(syscall.Kill(-sh.group, 0), syscall.ESRCH), "no member of the group is left")
+	// A killed child whose shell exited is init's to reap, so it may stay
+	// a zombie, still in the group, a moment after the SIGKILL.
+	assert.Eventually(t, func() bool { return errors.Is(syscall.Kill(-sh.group, 0), syscall.ESRCH) }, 2*time.Second, 10*time.Millisecond, "no member of the group is left")
 }
 
 // TestShells_CloseStopsLeftChildren: a shell that ended while a child it
