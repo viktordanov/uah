@@ -52,7 +52,7 @@ func listAll(t *testing.T, env []string) []listed {
 
 // TestConvertedSession: a session file with history and no run record is
 // listed, shown from its session file, resumed, listed once from its run
-// after that, and removed, as WebTTY checks a converted session.
+// after that, and removed, as a terminal host checks a session it converted.
 func TestConvertedSession(t *testing.T) {
 	t.Parallel()
 	llm := fakellm.New(t, fakellm.Reply{Text: "carried on"})

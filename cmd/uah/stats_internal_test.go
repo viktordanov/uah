@@ -96,11 +96,11 @@ func TestWorkspaceShares(t *testing.T) {
 		return tokstats.Row{Key: ws, Tokens: core.Tokens{InputTokens: total}}
 	}
 	got := workspaceShares([]tokstats.Row{
-		row("/src/web-tty", 50), row("/tmp/bench.1", 30), row("/a/uah", 20), row("/b/uah", 10), row(filepath.Join(os.TempDir(), "x"), 15),
+		row("/src/app", 50), row("/tmp/bench.1", 30), row("/a/uah", 20), row("/b/uah", 10), row(filepath.Join(os.TempDir(), "x"), 15),
 	})
-	assert.Equal(t, []share{{"web-tty", 50}, {"temporary", 45}, {"/a/uah", 20}, {"/b/uah", 10}}, got)
-	assert.Equal(t, "web-tty 40% · temporary 36% · /a/uah 16% · 1 other 8%", topShares(got, 125, 3))
-	assert.Equal(t, "web-tty 99% · 1 other 0.8%", topShares([]share{{"web-tty", 990}, {"x", 8}}, 998, 3), "under 1% goes to the others")
+	assert.Equal(t, []share{{"app", 50}, {"temporary", 45}, {"/a/uah", 20}, {"/b/uah", 10}}, got)
+	assert.Equal(t, "app 40% · temporary 36% · /a/uah 16% · 1 other 8%", topShares(got, 125, 3))
+	assert.Equal(t, "app 99% · 1 other 0.8%", topShares([]share{{"app", 990}, {"x", 8}}, 998, 3), "under 1% goes to the others")
 }
 
 // The heatmap has a column for every week, Monday to Sunday, that the

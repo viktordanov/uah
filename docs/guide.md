@@ -587,7 +587,7 @@ Fri Oct 16   104        76    4.9M    87%  █████▎        today
   streak      18 days · 21 of 24 days active
   average     48.6k a run · 108.2k a session
   models      gpt-6-astra 89% · gpt-6.1-sol 7% · gpt-6-sol 3% · 5 others 0.5%
-  workspaces  temporary 33% · web-tty 11% · lilly-perspective 7% · 101 others 49%
+  workspaces  temporary 33% · app 11% · api 7% · 101 others 49%
 ```
 
 ```sh
