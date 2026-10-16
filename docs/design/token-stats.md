@@ -61,7 +61,7 @@ uah stats --json
   - mean tokens per run and per session;
   - each model's share of the total.
 - **Time:** local days; weeks start on Monday (ISO weeks); months are calendar months.
-- **Output:** the `table` in `cmd/uah/style.go`, so the CLI's colors apply on a terminal. `--json` prints one object: the range, the rows, and the statistics, with snake_case keys.
+- **Output** (`cmd/uah/statsview.go`, after the owner asked for a friendlier summary): a headline with the range's tokens, runs, sessions, and cache share, how it compares with the range of the same length before it, and the busiest day; the rows with dates as people read them (`Mon Oct 12`, `Oct 12 – 18`, `October 2026`), numbers aligned right, a bar of each total against the largest, and today, this week, or this month marked; then a labelled summary, with the largest models and workspaces (by their last path element, the temporary directories together). `--wide` adds the four token buckets and a note on what total counts; `--heatmap` shows the tokens per day as a grid of weeks (`state.HeatGrid`, which `/status`'s heatmap of runs draws too) in place of the table. The `table` in `cmd/uah/style.go` keeps colors off pipes. `--json` prints one object: the range, the rows, and the statistics, with snake_case keys.
 
 ## Data
 
@@ -86,4 +86,4 @@ Open, with a recommendation each:
 
 ## Out of scope
 
-A TUI or graph, live prices, other clients' logs, a leaderboard, and a pinned time zone.
+A TUI or a graph beyond the heatmap, live prices, other clients' logs, a leaderboard, and a pinned time zone.

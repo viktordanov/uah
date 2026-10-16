@@ -1,17 +1,16 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
-	"charm.land/lipgloss/v2"
 	"github.com/urfave/cli/v3"
 
 	"github.com/viktordanov/uah/internal/session"
@@ -19,8 +18,10 @@ import (
 )
 
 const (
-	flagBy    = "by"
-	flagUntil = "until"
+	flagBy      = "by"
+	flagUntil   = "until"
+	flagWide    = "wide"
+	flagHeatmap = "heatmap"
 )
 
 // statsCommand is `uah stats`: the tokens of every session, by day, week,
@@ -35,10 +36,10 @@ func statsCommand() *cli.Command {
 		Name:  "stats",
 		Usage: "add up the tokens of every session by day, week, month, model, workspace, or source",
 		Description: "Adds up each finished run's tokens, and each compaction call's, from every workspace\n" +
-			"unless -C names one. Without --by, --since, or --until it shows the last 7 days by day\n" +
-			"and all time under them. Days are local; weeks start on Monday. total is input not\n" +
-			"served from the cache plus output (cached is part of input, reasoning part of output).\n" +
-			"A run counts on the day it started.",
+			"unless -C names one. Without --by, --since, or --until it shows the last 7 days by day,\n" +
+			"compared with the 7 before, and all time under them. Days are local; weeks start on\n" +
+			"Monday. total is input not served from the cache plus output (cached is part of input,\n" +
+			"reasoning part of output). A run counts on the day it started.",
 		Flags: []cli.Flag{
 			stateDirFlag(),
 			&cli.StringFlag{Name: flagBy, Usage: "group the rows by " + strings.Join(bys, ", "), Value: string(tokstats.ByDay), Validator: func(v string) error {
@@ -51,6 +52,8 @@ func statsCommand() *cli.Command {
 			&cli.StringFlag{Name: flagSince, Usage: "from this date (2026-10-01) or RFC 3339 time", Validator: validDate(flagSince)},
 			&cli.StringFlag{Name: flagUntil, Usage: "to this date or RFC 3339 time, included", Validator: validDate(flagUntil)},
 			&cli.StringFlag{Name: flagWorkspace, Aliases: []string{"C"}, Usage: "only this directory's sessions", DefaultText: "every directory", TakesFile: true},
+			&cli.BoolFlag{Name: flagWide, Usage: "show input, cached, output, and reasoning tokens"},
+			&cli.BoolFlag{Name: flagHeatmap, Usage: "show a heatmap of the tokens per day in place of the table (26 weeks, or since --since)"},
 			&cli.BoolFlag{Name: flagJSON, Usage: "print the report as JSON"},
 		},
 		OnUsageError: onUsageError,
@@ -71,111 +74,63 @@ func statsAction(ctx context.Context, cmd *cli.Command) error {
 	o := tokstats.Options{By: tokstats.By(cmd.String(flagBy)), Now: now, Normal: session.NormalDir}
 	o.Since, _ = parseDate(cmd.String(flagSince), false, now.Location()) // the validators checked them
 	o.Until, _ = parseDate(cmd.String(flagUntil), true, now.Location())
+	v := statsView{now: now, by: o.By, wide: cmd.Bool(flagWide)}
 	if cmd.IsSet(flagWorkspace) {
 		dir, err := currentDir(cmd)
 		if err != nil {
 			return err
 		}
-		o.Workspace = session.NormalDir(dir)
+		o.Workspace, v.workspace = session.NormalDir(dir), dir
 	}
 	full := tokstats.Build(entries, o)
 	if cmd.Bool(flagJSON) {
 		return writeJSON(os.Stdout, statsJSONFor(full, o.By))
 	}
-	shown, allTime := full, (*tokstats.Report)(nil)
-	if !cmd.IsSet(flagBy) && !cmd.IsSet(flagSince) && !cmd.IsSet(flagUntil) {
-		week := o
-		week.Since = startOfDay(now.Year(), now.Month(), now.Day()-6, now.Location())
-		shown, allTime = tokstats.Build(entries, week), &full
+	build := func(since, until time.Time, by tokstats.By) tokstats.Report {
+		x := o
+		x.Since, x.Until, x.By = since, until, by
+
+		return tokstats.Build(entries, x)
 	}
-
-	return printStats(os.Stdout, shown, allTime, o.By)
-}
-
-// printStats writes the rows and their sum, all time's sum under them when
-// the rows are the last 7 days, and the statistics of the range.
-func printStats(w io.Writer, r tokstats.Report, allTime *tokstats.Report, by tokstats.By) error {
-	var t table
-	t.capColumn(0, 40) // a long workspace runs past it in its own row
-	t.header(strings.ToUpper(string(by)), "RUNS", "SESSIONS", "INPUT", "CACHED", "OUTPUT", "REASONING", "TOTAL", "CACHE HIT")
-	for _, row := range r.Rows {
-		var style *lipgloss.Style
-		if row.Runs == 0 && row.Total() == 0 {
-			style = &cliStyles.dim
+	v.shown, v.stats = full, full
+	switch {
+	case !cmd.IsSet(flagBy) && !cmd.IsSet(flagSince) && !cmd.IsSet(flagUntil):
+		// The last 7 days by day, all time under them.
+		since := startOfDay(now.Year(), now.Month(), now.Day()-6, now.Location())
+		v.shown, v.allTime, v.label = build(since, time.Time{}, tokstats.ByDay), &full, "last 7 days"
+		prev := build(startOfDay(now.Year(), now.Month(), now.Day()-13, now.Location()), since, tokstats.ByDay)
+		v.prev = &prev
+	case !o.Since.IsZero() && isDate(cmd.String(flagSince)) && (o.Until.IsZero() || isDate(cmd.String(flagUntil))):
+		// Whole days: the same number of days before.
+		n := v.shown.Days.Days
+		f := v.shown.First
+		prev := build(startOfDay(f.Year(), f.Month(), f.Day()-n, f.Location()), o.Since, tokstats.ByDay)
+		v.prev = &prev
+	case !o.Since.IsZero():
+		// A time: the span of the same length before.
+		end := cmp.Or(o.Until, now)
+		prev := build(o.Since.Add(-end.Sub(o.Since)), o.Since, tokstats.ByDay)
+		v.prev, v.span = &prev, true
+	}
+	if v.allTime != nil {
+		v.stats = *v.allTime
+	}
+	if o.Workspace == "" && o.By != tokstats.ByWorkspace {
+		v.places = build(o.Since, o.Until, tokstats.ByWorkspace).Rows // the statistics' range: all time in the default view
+	}
+	if cmd.Bool(flagHeatmap) {
+		// Every week the range touches, ending with its last day's, at most
+		// a year's; 26 weeks without --since.
+		last := v.shown.Last
+		weeks := heatmapWeeks
+		if !o.Since.IsZero() {
+			weeks = weeksBetween(v.shown.First, last)
 		}
-		t.row(style, statsCells(row, homeShort)...)
-	}
-	sum := statsCells(r.Sum, homeShort)
-	sum[0] = rangeLabel(r)
-	t.row(&cliStyles.bold, sum...)
-	if allTime != nil {
-		all := statsCells(allTime.Sum, homeShort)
-		all[0] = "all time"
-		t.row(&cliStyles.bold, all...)
-		r = *allTime
-	}
-	if err := t.write(w); err != nil {
-		return err
-	}
-	out := colorOut(w)
-	d := r.Days
-	fmt.Fprintln(out)
-	fmt.Fprintf(out, "%s %s: %d of %d days active, a streak of %s\n", cliStyles.bold.Render("days"), rangeLabel(r), d.Active, d.Days, plural(d.Streak, "day"))
-	if d.Active > 0 {
-		fmt.Fprintf(out, "%s mean %s · median %s · p90 %s · max %s on %s\n", cliStyles.bold.Render("per active day"),
-			compactTokens(d.Mean), compactTokens(d.Median), compactTokens(d.P90), compactTokens(d.Max), d.Peak)
-		fmt.Fprintf(out, "%s %s per run · %s per session\n", cliStyles.bold.Render("average"), compactTokens(r.PerRun), compactTokens(r.PerSession))
-	}
-	if len(r.Models) > 0 {
-		var parts []string
-		var rest float64
-		others := 0
-		for _, m := range r.Models {
-			if m.Percent < 1 && len(parts) > 0 { // a model under 1% is noise here; --by model lists it
-				rest += m.Percent
-				others++
-
-				continue
-			}
-			parts = append(parts, fmt.Sprintf("%s %.0f%%", m.Model, m.Percent))
-		}
-		if others > 0 {
-			parts = append(parts, fmt.Sprintf("%s %.1f%%", plural(others, "other"), rest))
-		}
-		fmt.Fprintf(out, "%s %s\n", cliStyles.bold.Render("models"), strings.Join(parts, " · "))
+		v.heatWeeks, v.heatEnd = min(weeks, maxHeatmapWeeks), last
+		v.heat = build(o.Since, o.Until, tokstats.ByDay).Rows
 	}
 
-	return nil
-}
-
-func statsCells(r tokstats.Row, short func(string) string) []string {
-	hit := "-"
-	if r.Tokens.InputTokens > 0 {
-		hit = fmt.Sprintf("%.0f%%", 100*float64(r.Tokens.CachedInputTokens)/float64(r.Tokens.InputTokens))
-	}
-
-	return []string{
-		short(r.Key), strconv.Itoa(r.Runs), strconv.Itoa(r.Sessions),
-		compactTokens(r.Tokens.InputTokens), compactTokens(r.Tokens.CachedInputTokens), compactTokens(r.Tokens.OutputTokens),
-		compactTokens(r.Tokens.ReasoningTokens), compactTokens(r.Total()), hit,
-	}
-}
-
-func rangeLabel(r tokstats.Report) string {
-	first, last := r.First.Format(time.DateOnly), r.Last.Format(time.DateOnly)
-	if first == last {
-		return first
-	}
-
-	return first + " – " + last
-}
-
-func plural(n int, word string) string {
-	if n == 1 {
-		return "1 " + word
-	}
-
-	return strconv.Itoa(n) + " " + word + "s"
+	return v.print(os.Stdout)
 }
 
 // parseDate reads --since or --until: a date is the start of that local
@@ -215,6 +170,22 @@ func startOfDay(y int, m time.Month, d int, loc *time.Location) time.Time {
 	}
 
 	return t
+}
+
+// isDate reports whether a --since or --until value is a date, not a time.
+func isDate(v string) bool {
+	_, err := time.Parse(time.DateOnly, v)
+
+	return err == nil
+}
+
+// weeksBetween counts the weeks, Monday to Sunday, that the days from first
+// to last touch.
+func weeksBetween(first, last time.Time) int {
+	monday := func(t time.Time) time.Time { return t.AddDate(0, 0, -((int(t.Weekday()) + 6) % 7)) }
+	days := int(math.Round(monday(last).Sub(monday(first)).Hours() / 24))
+
+	return days/7 + 1
 }
 
 func validDate(flag string) func(string) error {

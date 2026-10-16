@@ -567,16 +567,40 @@ The [program status design](design/program-status.md) has the protocol and how u
 
 `uah stats` adds up the tokens of every session, in every workspace: each finished run's, including subagents' and /review's reviewers', and each compaction call's.
 
+```console
+$ uah stats
+uah stats · last 7 days, Oct 10 – 16
+
+  39.2M tokens · 776 runs · 488 sessions · 91% from the cache
+  1.7× the 7 days before (22.9M) · busiest Mon Oct 12, 11.0M
+
+DAY         RUNS  SESSIONS   TOTAL  CACHE
+Sat Oct 10    52        14    2.7M    94%  ██▉
+Sun Oct 11    21         8  896.7k    95%  ▉
+Mon Oct 12   179       138   11.0M    88%  ████████████
+…
+Fri Oct 16   104        76    4.9M    87%  █████▎        today
+
+  all time    78.2M since Sep 23 · 1,610 runs · 723 sessions
+  per day     median 3.0M · mean 3.7M · p90 7.3M, of 21 active days
+  streak      18 days · 21 of 24 days active
+  average     48.6k a run · 108.2k a session
+  models      gpt-6-astra 89% · gpt-6.1-sol 7% · gpt-6-sol 3% · 5 others 0.5%
+  workspaces  temporary 33% · web-tty 11% · lilly-perspective 7% · 101 others 49%
+```
+
 ```sh
-uah stats                                  # the last 7 days by day, their sum, and all time
 uah stats --by week                        # day, week, month, model, workspace, or source
 uah stats --since 2026-10-01 --until 2026-10-15   # dates (both included) or RFC 3339 times
 uah stats -C ~/src/app --by model          # one workspace
+uah stats --wide                           # input, cached, output, and reasoning too
+uah stats --heatmap                        # tokens per day: 26 weeks, or the weeks --since and --until touch
 uah stats --json                           # exact counts for scripts
 ```
 
-- **Columns:** runs, sessions, input, cached input, output, reasoning, total, and the cache hit rate. Cached input is part of input and reasoning part of output; total is the input not served from the cache plus the output, as the exit summary counts it.
-- **Under the table:** of the range's days, how many were active and the streak up to today; per active day, the mean, median, 90th percentile, and maximum with its day; the total per run and per session; each model's share.
+- **The headline:** the range's tokens, runs, sessions, and the share of input served from the cache; how it compares with the range before it (the same number of days for dates, the same span for RFC 3339 times; with `--since`, or the default 7 days); and its busiest day.
+- **The rows:** runs, sessions, total, the cache share, and a bar of the total against the largest row, with today, this week, or this month marked. `--wide` adds input, cached input, output, and reasoning: cached input is part of input and reasoning part of output; total is the input not served from the cache plus the output, as the exit summary counts it.
+- **The summary:** all time under the last 7 days; per active day, the median, mean, and 90th percentile; the streak up to today; the tokens per run and per session; the largest models and workspaces (by their last path element, the temporary ones together, such as benchmarks').
 - **Days** are local and weeks start on Monday. A run counts on the day it started. Auto-review calls are not recorded yet, so they are missing ([design](design/token-stats.md#gaps)).
 
 <sub>[↑ Back to top](#using-uah)</sub>

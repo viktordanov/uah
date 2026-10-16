@@ -31,6 +31,8 @@ type table struct {
 	// caps limit a column's width: a wider cell runs past it in its own
 	// row, rather than pushing every row's next column out.
 	caps map[int]int
+	// right are the columns aligned right, as numbers read.
+	right map[int]bool
 }
 
 type tableRow struct {
@@ -53,6 +55,16 @@ func (t *table) capColumn(i, n int) {
 	t.caps[i] = n
 }
 
+// alignRight aligns the columns right.
+func (t *table) alignRight(cols ...int) {
+	if t.right == nil {
+		t.right = map[int]bool{}
+	}
+	for _, i := range cols {
+		t.right[i] = true
+	}
+}
+
 // write prints the table to w through colorOut. The last cell of a row is
 // not padded.
 func (t *table) write(w io.Writer) error {
@@ -69,17 +81,24 @@ func (t *table) write(w io.Writer) error {
 	}
 	var b strings.Builder
 	for _, r := range t.rows {
+		var line strings.Builder
 		for i, c := range r.cells {
-			pad := ""
-			if i < len(r.cells)-1 {
-				pad = strings.Repeat(" ", max(widths[i]-ansi.StringWidth(c), 0)+2)
-			}
+			fill := strings.Repeat(" ", max(widths[i]-ansi.StringWidth(c), 0))
 			if r.style != nil && c != "" && !strings.Contains(c, "\x1b") {
 				c = r.style.Render(c)
 			}
-			b.WriteString(c + pad)
+			switch {
+			case t.right[i]:
+				c = fill + c
+			case i < len(r.cells)-1:
+				c += fill
+			}
+			if i < len(r.cells)-1 {
+				c += "  "
+			}
+			line.WriteString(c)
 		}
-		b.WriteString("\n")
+		b.WriteString(strings.TrimRight(line.String(), " ") + "\n") // empty last cells leave no spaces
 	}
 	_, err := io.WriteString(colorOut(w), b.String())
 
