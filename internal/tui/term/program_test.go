@@ -382,7 +382,7 @@ func TestLoopEchoesAtOnceAfterAPauseAndKeepsTheBudget(t *testing.T) {
 	assert.Equal(t, 2, h.log.viewCount(), "not before the budget")
 	h.clock.advance(time.Millisecond)
 	h.waitFor("the frame", func() bool { return h.log.viewCount() == 3 })
-	assert.Equal(t, "count 3", h.row(0))
+	h.waitFor("the frame on the screen", func() bool { return h.row(0) == "count 3" }) // written after View
 	h.settle()
 	assert.Equal(t, 0, h.clock.pending())
 	require.NoError(t, h.stop())
