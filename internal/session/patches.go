@@ -30,6 +30,14 @@ func loadEvents(br *bufio.Reader, runDir string) ([]core.Event, error) {
 	}
 	defer f.Close()
 	br.Reset(f)
+
+	return decodeEvents(br)
+}
+
+// decodeEvents decodes item lines, as a run's events file holds them, with
+// each applied patch's diff, failed call's output, and answered question
+// after its call.
+func decodeEvents(br *bufio.Reader) ([]core.Event, error) {
 	decoder := harness.NewDecoder()
 	var events []core.Event
 	var calls []callEvent

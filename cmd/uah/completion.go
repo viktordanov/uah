@@ -140,6 +140,9 @@ func sessionIDs(ctx context.Context, cmd *cli.Command) []string {
 		return []string{}
 	}
 	infos, err := store.List(ctx, abs)
+	if err == nil {
+		infos, err = session.WithHistory(abs, infos)
+	}
 	if err != nil {
 		return []string{}
 	}

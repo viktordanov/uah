@@ -167,11 +167,18 @@ func showSession(ctx context.Context, cmd *cli.Command) error {
 	}
 	reqs := cachestats.Attribute(session.CacheRequests(runs), cachestats.TTL)
 	if cmd.Bool(flagJSON) {
+		var history *runView // before the first run, such as a converted session's
+		if len(runs) > 0 && runs[0].IsPrior() {
+			history = &runViews(runs[:1])[0]
+			runs = runs[1:]
+		}
+
 		return writeJSON(os.Stdout, struct {
 			Session session.Info `json:"session"`
 			Runs    []runView    `json:"runs"`
+			History *runView     `json:"history,omitempty"`
 			Cache   cacheView    `json:"cache"`
-		}{info, runViews(runs), cacheViewOf(reqs)})
+		}{info, runViews(runs), history, cacheViewOf(reqs)})
 	}
 	printTranscript(os.Stdout, info, runs)
 	fmt.Fprintln(os.Stdout, "\nprompt "+cachestats.Summarize(reqs, cachestats.APIPrice).Line())
@@ -247,12 +254,36 @@ func runViews(runs []session.LoadedRun) []runView {
 	return views
 }
 
+// transcriptHead is the session's line: its ID, provider and model, and
+// workspace, each when known (a converted session may say neither).
+func transcriptHead(info session.Info) string {
+	head := "session " + info.ID
+	if info.Provider != "" || info.Model != "" {
+		head += " · " + info.Provider + "/" + modelLabel(info.Model)
+	}
+	if info.Workspace != "" {
+		head += " · " + info.Workspace
+	}
+
+	return head
+}
+
+// runHead is a run's line, or the history before the first run's.
+func runHead(r session.LoadedRun) string {
+	res := r.Record.Result
+	at := res.StartedAt.Local().Format("2006-01-02 15:04")
+	if r.IsPrior() {
+		return "── history from before uah ran it · " + at
+	}
+
+	return fmt.Sprintf("── run %s · %s · %s", res.Request.RunID, res.Status, at)
+}
+
 func printTranscript(w io.Writer, info session.Info, runs []session.LoadedRun) {
-	fmt.Fprintf(w, "session %s · %s/%s · %s\n", info.ID, info.Provider, modelLabel(info.Model), info.Workspace)
+	fmt.Fprintln(w, transcriptHead(info))
 	said := map[string]string{} // messages by ID, for a rewind
 	for _, r := range runs {
-		res := r.Record.Result
-		fmt.Fprintf(w, "\n── run %s · %s · %s\n", res.Request.RunID, res.Status, res.StartedAt.Local().Format("2006-01-02 15:04"))
+		fmt.Fprintln(w, "\n"+runHead(r))
 		for _, e := range r.Events {
 			switch m := e.(type) {
 			case core.DeveloperMessage:

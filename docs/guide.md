@@ -515,6 +515,7 @@ uah sessions rm 3f2a                   # delete a session with its runs and suba
 
 - **`uah sessions rm`** removes the session's files, its tool output, its run records, its rows in the index, and the same for each subagent it started. It refuses while a run holds the session's lock; `--force` removes the session anyway.
 - **For programs:** each session's sidecar, `~/.uah/sessions/<id>.uah.json`, has its `workspace`, its `first_prompt` (200 characters), its `last_activity`, and its `last_sequence`, so a program can find a session and see that it changed from that file alone. `last_sequence` is the `Sequence` of the last item in the [session file](../internal/sessionfile/README.md) when the last turn ended.
+- **A session another program wrote**, such as a conversation converted from another harness into a [session file](../internal/sessionfile/README.md#history-another-program-wrote), is listed, shown, and resumed like any other, with 0 runs until uah runs it; `--search` finds it once it has a run.
 - **A session that never ran** has a sidecar and no session file: `uah sessions` lists it with 0 runs and no first prompt, and it resumes under its ID ([a session that never ran](../internal/sessionfile/README.md#a-session-that-never-ran)).
 
 <sub>[↑ Back to top](#using-uah)</sub>

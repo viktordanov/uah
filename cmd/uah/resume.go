@@ -70,6 +70,9 @@ func latestSession(ctx context.Context, cmd *cli.Command, interactiveOnly bool) 
 		return session.Info{}, fmt.Errorf("failed to resolve state dir: %w", err)
 	}
 	infos, err := store.List(ctx, stateDir)
+	if err == nil {
+		infos, err = session.WithHistory(stateDir, infos) // history with no run yet, such as a converted session's
+	}
 	if err != nil {
 		return session.Info{}, err
 	}

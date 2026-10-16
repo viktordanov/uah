@@ -20,12 +20,16 @@ import (
 // runs recorded, so it works for any past session: the tokens and times
 // from each response, the model from the run's request, and the effort
 // from the request's attempt line in the run's stderr.log (with adaptive
-// effort a request's own), else the run's latest settings. A compaction
+// effort a request's own), else the run's latest settings; the history
+// before the first run (IsPrior) is not uah's and is left out. A compaction
 // that succeeded and a rewind mark the next request Rewritten.
 func CacheRequests(runs []LoadedRun) []cachestats.Request {
 	var out []cachestats.Request
 	rewritten := false
 	for _, run := range runs {
+		if run.IsPrior() {
+			continue // history from before uah ran it, such as another harness's: not uah's requests
+		}
 		req := run.Record.Result.Request
 		effort, attempts := req.Effort, readAttempts(filepath.Join(run.Record.Dir, harness.StderrFile))
 		var start time.Time

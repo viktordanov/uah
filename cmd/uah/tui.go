@@ -143,6 +143,9 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		Cache:    func(id string) ([]cachestats.Attributed, error) { return session.CacheStats(st.StateDir, id) },
 		Sessions: func() ([]session.Info, error) {
 			infos, err := store.List(ctx, st.StateDir)
+			if err == nil {
+				infos, err = session.WithHistory(st.StateDir, infos) // history with no run yet, such as a converted session's
+			}
 
 			return session.Interactive(infos), err
 		},

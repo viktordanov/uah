@@ -149,7 +149,8 @@ func firstPrompt(req core.Request) string {
 
 // Load reads every run of a session in start order, with its events. The
 // runner writes only the items each run appended, so the runs together are
-// the whole transcript. Saved compactions join the events they happened
+// the whole transcript, after any history another program wrote before
+// the first run (withPrior). Saved compactions join the events they happened
 // among, as engine.Compacted, applied patches their calls, as
 // engine.PatchApplied, failed commands and MCP calls their output, as
 // engine.ToolOutput, and rewinds the run before them, as engine.Rewound.
@@ -173,6 +174,7 @@ func Load(stateDir, id string) ([]LoadedRun, error) {
 		runs = append(runs, LoadedRun{Record: r, Events: events})
 	}
 
+	runs = withPrior(br, stateDir, id, runs)
 	runs, err = withCompactions(stateDir, id, runs)
 	if err != nil {
 		return nil, err
@@ -206,12 +208,12 @@ func ActiveSince(infos []Info, t time.Time) []Info {
 	return out
 }
 
-// normalizeDir makes p absolute and clean and resolves symlinks, the way
-// Codex matches a session's working directory.
 // NormalDir is a directory as InDir compares it: absolute, with its
 // symbolic links resolved.
 func NormalDir(p string) string { return normalizeDir(p) }
 
+// normalizeDir makes p absolute and clean and resolves symlinks, the way
+// Codex matches a session's working directory.
 func normalizeDir(p string) string {
 	abs, err := filepath.Abs(p)
 	if err != nil {

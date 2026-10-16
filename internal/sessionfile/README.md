@@ -13,9 +13,10 @@ The rules were checked against unreal-agent-runner v0.1.1; uah-core, the runtime
 2. [Items](#items)
 3. [Paging with Sequence](#paging-with-sequence)
 4. [A session that never ran](#a-session-that-never-ran)
-5. [Files beside the session file](#files-beside-the-session-file)
-6. [Reading it from Go](#reading-it-from-go)
-7. [Tests](#tests)
+5. [History another program wrote](#history-another-program-wrote)
+6. [Files beside the session file](#files-beside-the-session-file)
+7. [Reading it from Go](#reading-it-from-go)
+8. [Tests](#tests)
 <!-- /memoria:section -->
 
 <!-- memoria:section id="format" files="sessionfile.go data.go" -->
@@ -63,7 +64,17 @@ To find out whether a session changed, compare the last `Sequence`. uah also wri
 
 The runner creates the session file when the session's first run starts. uah writes the sidecar, `sessions/<id>.uah.json`, earlier, when the session opens. So a session that opened and never ran, such as a launch that was stopped before its first message, has a sidecar and no session file. A reader treats a missing session file, or one with a header and no item, as an empty history: no first prompt, and `last_sequence` 0 or absent.
 
-uah keeps the ID of such a session usable. `uah resume <id>` and `--session <id>` resume it, and its history then starts with the first message. `--session-id <id>` starts a new session under the ID again, because nothing is recorded under it. When the session has history, meaning an item in the session file or a run record, `--session-id` refuses the ID. No command of uah removes or replaces a session file with items, except `uah sessions rm`. `uah sessions` and `uah sessions --json` list a session that never ran, with 0 runs, no first prompt, and its creation time as its last activity. The resume picker and `--last` skip it.
+uah keeps the ID of such a session usable. `uah resume <id>` and `--session <id>` resume it, and its history then starts with the first message. `--session-id <id>` starts a new session under the ID again, because nothing is recorded under it. When the session has history, meaning an item in the session file or a run record, `--session-id` refuses the ID. No command of uah removes or replaces a session file with items, except `uah sessions rm`. `uah sessions` and `uah sessions --json` list a session that never ran, with 0 runs, no first prompt, and its creation time as its last activity. The resume picker and `--last` skip it. A session file with items and no run record is history, not a session that never ran ([history another program wrote](#history-another-program-wrote)).
+
+## History another program wrote
+
+A program may write a session for uah to continue, such as a conversation converted from another harness: a session file in this format, and a sidecar, before uah ever runs it. No run record holds such history, so uah reads it from the session file:
+
+- `uah sessions` and `uah sessions --json` list it, with 0 runs: `Started` is the sidecar's `created`, else the header's `CreatedAt`; `LastActivity` and `LastSequence` are the last item's `RecordedAt` and `Sequence`; the first prompt is the sidecar's `first_prompt`, else the first external input's. Without a sidecar it is listed with no workspace; resuming it writes one. The times are the items' and the sidecar's, never the files'.
+- The resume picker and `--last` offer it, since it has history; a session with no item stays out of them, as before, and so does a subagent's (`subagent-` ID, or `source: subagent`).
+- `uah sessions show` prints it, as the history from before uah ran it, and `--json` has it under `history` with `runs` empty. Once uah runs it, the items before the first run's first item still show first, there and in a resumed TUI's transcript; a copy of a parent's items, a subagent's or a runner fork's up to its last `fork` item, is the parent's and is not shown.
+- `uah resume <id>` and `--session <id>` continue it: the runner reads the whole file, so the model sees the history, and the next message starts the first run. From then on its runs list it, once.
+- `uah sessions rm` removes it. `--session-id` refuses its ID, since it has items. `uah sessions --search` finds it only once it has a run, since the index holds runs.
 
 ## Files beside the session file
 
