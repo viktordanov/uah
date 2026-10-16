@@ -1,6 +1,6 @@
 # Token statistics: `uah stats`
 
-Status: scoped and built 2026-10-16 (v1; phase 2 is in [Gaps](#gaps)). Ledger item 147. TokScale facts are from its README ([junhoyeo/tokscale](https://github.com/junhoyeo/tokscale), October 2026).
+Status: scoped 2026-10-16 and done in v1.13.0; phase 2 is in [Gaps](#gaps). Ledger item 147. TokScale facts are from its README ([junhoyeo/tokscale](https://github.com/junhoyeo/tokscale), October 2026).
 
 A command that adds up the tokens of every uah session by day, week, month, model, workspace, or source, with a few descriptive statistics, for tracking use over time. It prints tables and JSON; it is not a TUI.
 
