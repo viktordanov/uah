@@ -75,7 +75,7 @@ Contents:
    ```sh
    brew install viktordanov/tap/uah                                 # macOS and Linux
    yay -S uah-bin                                                   # Arch Linux (AUR)
-   go install github.com/viktordanov/uah/cmd/uah@latest  # from source, Go 1.27.1 or later
+   go install github.com/viktordanov/uah/cmd/uah@latest  # from source, Go 1.27.3 or later
    ```
 
    Or grab an archive from the [releases](https://github.com/viktordanov/uah/releases).
