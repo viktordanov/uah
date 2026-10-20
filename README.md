@@ -257,7 +257,7 @@ Tests need no model or tokens: the engine runs against `testing/fakellm`, a scri
 go run ./cmd/uah --version   # build and run
 go test -race ./...          # unit and end-to-end tests
 go test -race -short ./...   # the same without the slow ones (backoff waits, built runners, the bench dry run)
-golangci-lint run ./...      # lint (golangci-lint v2.13.2)
+golangci-lint run ./...      # lint (golangci-lint v2.15.0)
 ```
 
 The title image is [docs/assets/title.html](docs/assets/title.html), drawn in the TUI's colors and captured with headless Chrome: `chrome --headless=new --force-device-scale-factor=2 --default-background-color=00000000 --window-size=1130,1400 --screenshot=uah.png title.html`, then `magick uah.png -trim +repage uah.png`.
