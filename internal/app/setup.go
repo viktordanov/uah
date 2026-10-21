@@ -55,6 +55,7 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	if err != nil {
 		return Result{}, fmt.Errorf("failed to resolve state dir: %w", err)
 	}
+	_ = writeStateIgnore(stateDir) // best effort: searches from ~ skip the sessions
 	var resumed session.Info
 	opts := session.Options{}
 	if in.SessionRef != "" {

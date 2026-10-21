@@ -128,6 +128,7 @@ uah context --show         # lists the context modules for this workspace and pr
 - **Saving:** each change is saved to your user file, keeping its comments, and applies to the running session where it can; compaction settings apply from the next session.
 - **Precedence:** a flag, a configuration layer, or a trusted project file that sets the same key still wins, and `/config` says so.
 - **`uah config`** shows each setting's value and where it came from, and `uah doctor` checks that everything works.
+- **In your home directory:** uah runs in `~`, and in `~/.uah` itself, though its state lies inside, with a warning. The state directory's `.ignore`, which uah writes, keeps `rg`, `fd`, and `ag` out of its sessions; `block_state_in_workspace = true` refuses such a session instead, as earlier versions did.
 - **Colors:** on a terminal the listings (`uah config`, `uah context`, `uah sessions`, `uah hooks`, `uah mcp list`, `uah doctor`, `uah models`, `uah usage`) use the TUI's colors: what is on or applies plain or green, what is off, a default, or does not apply dim, what needs a look yellow, what is broken red. A pipe, a file, or `NO_COLOR` gets plain text.
 
 <sub>[↑ Back to top](#using-uah)</sub>
@@ -272,7 +273,7 @@ Review only; do not edit files. List each finding with its file and line.
 - **The body** is the subagent's instructions. `tools` limits the tools it is offered (Claude Code's `Edit` and `Write` are `apply_patch`; omit `tools` for all of them). `approve` lists commands and MCP tools it runs without asking, within the session's permission mode: read only stays read only, and a `forbid` rule still wins.
 - **Model and effort:** a subagent runs on the parent's provider. Ask for another model or effort ("use a subagent on gpt-6-luna with low effort"), set `model`, `effort`, and `fast: true` in its agent file, or set defaults in `[agents]`. See [agent files](configuration.md#82-agent-role-files).
 - **Forking:** ask for a forked subagent ("fork a subagent to write the tests for what we just discussed") to hand it the conversation so far through `fork_context`.
-- **Watching:** `/agents <name>`, or alt+← and alt+→, shows a subagent's transcript, and what you type goes to it. `uah sessions show subagent-1a2b3c4d` prints a finished one's transcript.
+- **Watching:** `/agents <name>`, or alt+← and alt+→ on an empty composer (with a draft they move by a word), shows a subagent's transcript, and what you type goes to it. `uah sessions show subagent-1a2b3c4d` prints a finished one's transcript.
 - **Results:** when a subagent finishes or is interrupted, the main agent gets its final answer: at its next model request while it works; when it is idle, the answer starts a turn of its own, unless you stopped the last turn with esc esc, in which case it waits for your next message. The main agent is told to leave a running subagent alone and wait for it, and to message it only with something new from you, an answer to its question, or to stop a clear failure.
 
 <sub>[↑ Back to top](#using-uah)</sub>

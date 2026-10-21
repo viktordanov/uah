@@ -9,6 +9,7 @@ model                                             gpt-6-luna                    
 effort                                            medium                        project file
 request_max_attempts                              10                            default
 max_disk                                          1G                            flag
+block_state_in_workspace                          false                         default
 fast                                              true                          user file
 adaptive_effort                                   off                           default
 context_preparation                               true                          default

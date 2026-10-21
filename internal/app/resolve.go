@@ -183,6 +183,8 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 		Workspace:   workspaceFor(in, resumed),
 		BaseURL:     in.BaseURL,
 		AllowDotenv: in.AllowDotenv,
+		// Off unless block_state_in_workspace turns uagent's guard on.
+		AllowStateInWorkspace: !cfg.BlockStateInWorkspaceOn(),
 		// The flag, the resumed session's, or the configured default.
 		AdaptiveEffort: first(in.AdaptiveEffort, resumed.AdaptiveEffort, cfg.AdaptiveEffort, session.AdaptiveOff),
 	}

@@ -50,7 +50,7 @@ func checkCredentials(r Resolved, stateDir string, getenv func(string) string) [
 		auth = withoutExpiry(auth)
 	}
 	name := "credentials"
-	checks := []Check{workspaceCheck(other, s.Workspace, s.AllowDotenv)}
+	checks := []Check{workspaceCheck(other, s.Workspace, core.Request{AllowDotenv: s.AllowDotenv, AllowStateInWorkspace: s.AllowStateInWorkspace})}
 	switch {
 	case len(auth) > 0 && auth[0].Severity == core.SeverityWarning:
 		return append(checks, warn(name, withLogin(auth[0].Message, login), "run `codex login`"))
@@ -88,11 +88,11 @@ func credentialFix(provider string) string {
 
 // workspaceCheck reports preflight's other findings: the workspace, the
 // state directory's place, a risky .env, and a missing model.
-func workspaceCheck(findings []core.Finding, workspace string, allowDotenv bool) Check {
-	blocking, warnings := core.Triage(findings, allowDotenv)
+func workspaceCheck(findings []core.Finding, workspace string, allow core.Request) Check {
+	blocking, warnings := core.TriageRequest(findings, allow)
 	fixes := map[string]string{
 		core.FindingWorkspaceMissing: "pass an existing directory with --workspace",
-		core.FindingStateInWorkspace: "use a --state-dir outside the workspace",
+		core.FindingStateInWorkspace: "use a --state-dir outside the workspace, or leave block_state_in_workspace off",
 		core.FindingDotenvRisky:      "remove those variables from the workspace .env, or pass --allow-dotenv",
 		core.FindingModelMissing:     "pass --model or set model in config.toml",
 	}

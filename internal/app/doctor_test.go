@@ -104,6 +104,13 @@ func TestDoctor_Problems(t *testing.T) {
 			prepare: func(_ *testing.T, e *harnesstest.Env, in *app.Inputs, _ *app.DoctorOptions) {
 				in.StateDir = filepath.Join(e.Workspace, "state")
 			},
+			check: "workspace", status: app.CheckWarn, detail: "inside the workspace",
+		},
+		"state inside the workspace, blocked": {
+			prepare: func(t *testing.T, e *harnesstest.Env, in *app.Inputs, _ *app.DoctorOptions) {
+				in.StateDir = filepath.Join(e.Workspace, "state")
+				writeConfig(t, in, "block_state_in_workspace = true\n")
+			},
 			check: "workspace", status: app.CheckFail, detail: "inside the workspace",
 		},
 		"no sandbox": {

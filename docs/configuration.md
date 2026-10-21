@@ -169,6 +169,7 @@ These keys bound a run: how often a model request is retried, and how much tool 
 | --- | --- | --- | --- | --- | --- |
 | `request_max_attempts` | integer | 10 | `--max-attempts`, `UAH_LLM_MAX_ATTEMPTS` | override | How many times a model request is sent before the run fails. A lost connection, a timeout, a 429, or most 5xx statuses are retried after 2 s, then 4, 8, and 16 s, and then every 30 s (less up to a fifth of jitter, or the server's `Retry-After` up to 30 s): 10 attempts wait about 3 minutes in all. The runner's own default is 5 |
 | `max_disk` | size | `5G` | `--max-disk` | override | Stop a run when tool output exceeds this size (`500M`, `5G`, bytes without a suffix); `0` disables it |
+| `block_state_in_workspace` | bool | `false` | | override | Refuse a session whose workspace holds the state directory, such as one in `~` with `~/.uah` under it. Off, such a session runs with a warning; the state directory's `.ignore`, which uah writes, keeps `rg`, `fd`, and `ag` out of its sessions, runs, and logs even with `--hidden` (`grep -r` and `find` do not read it) |
 
 <sub>[↑ Back to top](#configuration-reference)</sub>
 
@@ -789,6 +790,7 @@ provider = "openai-codex"
 model = "gpt-6-sol"
 effort = "high"
 max_disk = "5G"                    # tool output per run; "0" disables
+block_state_in_workspace = false   # true: refuse a session in ~ or another directory holding ~/.uah
 request_max_attempts = 10          # per model request; a lost connection is retried with backoff
 fast = false                       # priority processing
 web_search = "live"                # or disabled: the provider's hosted web search

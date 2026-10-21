@@ -46,6 +46,11 @@ func TestResolve(t *testing.T) {
 			want: func(r *app.Resolved) {},
 		},
 		{
+			name: "block_state_in_workspace turns uagent's guard back on",
+			cfg:  config.Config{BlockStateInWorkspace: new(true)},
+			want: func(r *app.Resolved) { r.Settings.AllowStateInWorkspace = false },
+		},
+		{
 			name: "the config file beats the defaults",
 			cfg:  configured,
 			want: func(r *app.Resolved) {
@@ -423,6 +428,7 @@ func TestResolve(t *testing.T) {
 					Provider: app.CodexProvider, Model: app.FallbackCodexModel, Effort: app.DefaultEffort,
 					Workspace: "/ws", Mode: approval.ModeWorkspace, Sandbox: string(sandbox.WorkspaceWrite),
 					MaxAttempts: engine.DefaultMaxAttempts, AdaptiveEffort: session.AdaptiveOff,
+					AllowStateInWorkspace: true,
 				},
 				MaxDisk: 5 << 30, Instructions: true, ContextPreparation: true, RequestUserInput: true, EffortUpdates: true,
 				Sandbox: sandbox.Policy{Mode: sandbox.WorkspaceWrite}, Compaction: compaction.Settings{Percent: 90, Elision: compaction.DefaultElision, KeepCalls: compaction.DefaultKeepCalls, Remote: true}, Approval: approval.OnRequest,

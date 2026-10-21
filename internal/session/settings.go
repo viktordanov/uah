@@ -68,6 +68,9 @@ type Settings struct {
 	Workspace      string
 	BaseURL        string
 	AllowDotenv    bool
+	// AllowStateInWorkspace runs when the workspace holds the state
+	// directory, with a warning (block_state_in_workspace off).
+	AllowStateInWorkspace bool
 	// MaxAttempts is how many times a model request is sent before the
 	// run fails (0: the engine's default).
 	MaxAttempts int
@@ -147,6 +150,8 @@ func (s Settings) request(sessionID string, messages []core.UserInput) core.Requ
 		Workspace:    s.Workspace,
 		AllowDotenv:  s.AllowDotenv,
 		MaxAttempts:  s.MaxAttempts,
+
+		AllowStateInWorkspace: s.AllowStateInWorkspace,
 	}
 }
 
@@ -156,7 +161,7 @@ func (s Settings) request(sessionID string, messages []core.UserInput) core.Requ
 func (s Settings) WithRequest(req core.Request) Settings {
 	s.Provider, s.Model, s.Effort, s.BaseURL = req.Provider, req.Model, req.Effort, req.BaseURL
 	s.SystemPrompt, s.Workspace, s.AllowDotenv = req.SystemPrompt, req.Workspace, req.AllowDotenv
-	s.MaxAttempts = req.MaxAttempts
+	s.MaxAttempts, s.AllowStateInWorkspace = req.MaxAttempts, req.AllowStateInWorkspace
 
 	return s
 }

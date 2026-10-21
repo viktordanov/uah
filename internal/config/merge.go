@@ -17,6 +17,9 @@ func merge(base, over Config) Config {
 	set(&base.Model, over.Model)
 	set(&base.Effort, over.Effort)
 	set(&base.MaxDisk, over.MaxDisk)
+	if over.BlockStateInWorkspace != nil {
+		base.BlockStateInWorkspace = over.BlockStateInWorkspace
+	}
 	set(&base.WebSearch, over.WebSearch)
 	set(&base.ModelVerbosity, over.ModelVerbosity)
 	base.Fast = base.Fast || over.Fast

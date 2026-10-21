@@ -21,6 +21,11 @@ type Config struct {
 	Model    string `toml:"model"`
 	Effort   string `toml:"effort"`
 	MaxDisk  string `toml:"max_disk"`
+	// BlockStateInWorkspace refuses a run whose workspace holds the state
+	// directory, such as one in the home directory with ~/.uah under it
+	// (false by default: the state directory's ignore files keep searches
+	// out of its sessions).
+	BlockStateInWorkspace *bool `toml:"block_state_in_workspace"`
 	// RequestMaxAttempts is how many times a model request is sent before
 	// the run fails (0: uah's default, engine.DefaultMaxAttempts).
 	RequestMaxAttempts int `toml:"request_max_attempts"`
@@ -450,6 +455,12 @@ func (c Config) InstructionOptions() (fallbacks []string, markers []string, maxB
 	}
 
 	return c.ProjectDocFallbackFilenames, markers, maxBytes
+}
+
+// BlockStateInWorkspaceOn reports whether a run is refused when its
+// workspace holds the state directory (false by default).
+func (c Config) BlockStateInWorkspaceOn() bool {
+	return c.BlockStateInWorkspace != nil && *c.BlockStateInWorkspace
 }
 
 // ContextPreparationEnabled reports whether new sessions start with

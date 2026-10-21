@@ -202,6 +202,7 @@ func sessionSettings(in Inputs, o Origins, r Resolved, cfg config.Config) []Sett
 		one("effort", s.Effort, pick(input(in.Effort, "", nil), sessionValue(resumed.Effort), overrides(l, func(c config.Config) any { return c.Effort }), FromDefault)),
 		one("request_max_attempts", s.MaxAttempts, pick(attemptsInput(in, env), overrides(l, func(c config.Config) any { return c.RequestMaxAttempts }), FromDefault)),
 		one("max_disk", maxDisk, pick(given(in.MaxDiskSet), overrides(l, func(c config.Config) any { return c.MaxDisk }), FromDefault)),
+		overridden(l, "block_state_in_workspace", cfg.BlockStateInWorkspaceOn(), func(c config.Config) any { return c.BlockStateInWorkspace }),
 		{Key: "fast", Value: s.ServiceTier != "", Sources: fastSources(in, o, cfg)},
 		one("adaptive_effort", s.AdaptiveEffort, pick(input(in.AdaptiveEffort, EnvAdaptiveEffort, env), sessionValue(resumed.AdaptiveEffort),
 			overrides(l, func(c config.Config) any { return c.AdaptiveEffort }), FromDefault)),
