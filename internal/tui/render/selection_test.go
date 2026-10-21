@@ -224,21 +224,26 @@ func TestSelectedTextWrappedCodeEdges(t *testing.T) {
 	}
 }
 
-// A long wrapped code line copies in time and memory linear in its length.
+// A long wrapped code line copies in memory linear in its length: twice
+// the line allocates about twice the bytes, where joining each piece onto
+// the line so far would allocate four times as many.
 func TestSelectedTextLongWrappedCode(t *testing.T) {
-	code := strings.Repeat(`{"key":"value","n":12345},`, 4_000) // 104,000 characters
-	s := apply(base(), core.AssistantMessage{At: t0, Final: true, Text: "```json\n" + code + "\n```"})
-	answer := s.Items[len(s.Items)-1].Key
-	sel := selecting(s, pos(answer, 0, 0), pos(answer, 99_999, 99))
-	c, f := render.NewCache(render.Amber), render.Frame{Width: 40, Height: 40}
-	render.SelectedText(sel, c, f) // draws the lines into the cache
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	text, lines := render.SelectedText(sel, c, f)
-	runtime.ReadMemStats(&after)
-	assert.Equal(t, code, text)
-	assert.Equal(t, 1, lines)
-	// Joining each piece onto the line so far copies it again each time:
-	// about 140 MB here, against a few MB for one join.
-	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(200*len(code)), "bytes allocated grow with the line, not its square")
+	copyBytes := func(reps int) uint64 {
+		code := strings.Repeat(`{"key":"value","n":12345},`, reps)
+		s := apply(base(), core.AssistantMessage{At: t0, Final: true, Text: "```json\n" + code + "\n```"})
+		answer := s.Items[len(s.Items)-1].Key
+		sel := selecting(s, pos(answer, 0, 0), pos(answer, 99_999, 99))
+		c, f := render.NewCache(render.Amber), render.Frame{Width: 40, Height: 40}
+		render.SelectedText(sel, c, f) // draws the lines into the cache
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		text, lines := render.SelectedText(sel, c, f)
+		runtime.ReadMemStats(&after)
+		require.Equal(t, code, text)
+		require.Equal(t, 1, lines)
+
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	small, large := copyBytes(2_000), copyBytes(4_000) // 52,000 and 104,000 characters
+	assert.Less(t, float64(large)/float64(small), 3.0, "%d bytes, then %d: the bytes grow with the line, not its square", small, large)
 }
