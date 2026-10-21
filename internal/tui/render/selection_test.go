@@ -2,6 +2,7 @@ package render_test
 
 import (
 	"fmt"
+	"runtime"
 	"image/color"
 	"strings"
 	"testing"
@@ -175,4 +176,69 @@ func TestSelectedTextMarkdown(t *testing.T) {
 	text, _ := render.SelectedText(selecting(s, pos(answer, 0, 0), pos(answer, 99, 99)), render.NewCache(render.Amber), render.Frame{Width: 44, Height: 24})
 	assert.Equal(t, "a quote long enough to wrap onto a\nsecond line of the quote\n\n! Warning\n  be careful\n\n"+
 		"Name    Val\none     1\ntwo     2\n\n1. first\n   ◦ nested\n\nif ok {\n    return\n}", text)
+}
+
+// TestSelectedTextWrappedCode: a code line longer than the width wraps,
+// each piece after the first marked ↪ in the padding column, and a copy
+// gives back the lines as written: the pieces joined without a break, the
+// spaces at a break kept, the mark left out.
+func TestSelectedTextWrappedCode(t *testing.T) {
+	long := `query := "SELECT id,  name FROM users WHERE created_at > now() - interval '30 days' ORDER BY id"`
+	code := long + "\nshort()\n" + strings.Repeat("x", 30) + "  " + strings.Repeat("y", 70) + "\na" + strings.Repeat(" ", 60) + "b"
+	s := apply(base(), core.AssistantMessage{At: t0, Final: true, Text: "```go\n" + code + "\n```"})
+	answer := s.Items[len(s.Items)-1].Key
+	c, f := render.NewCache(render.Amber), render.Frame{Width: 40, Height: 40}
+
+	text, lines := render.SelectedText(selecting(s, pos(answer, 0, 0), pos(answer, 99, 99)), c, f)
+	assert.Equal(t, code, text)
+	assert.Equal(t, 4, lines, "one line per line of code, not per row drawn")
+
+	screen, _ := render.Screen(s, c, f)
+	assert.Contains(t, ansi.Strip(screen), "↪", "a continuation shows the mark")
+	assert.NotContains(t, text, "↪")
+
+	text, _ = render.SelectedText(selecting(s, pos(answer, 1, 0), pos(answer, 1, 99)), c, f)
+	assert.NotContains(t, text, "\n", "a selection that starts on a continuation copies that piece")
+	assert.True(t, strings.HasPrefix(long, "query") && strings.Contains(long, text), "%q is a piece of the line", text)
+}
+
+// TestSelectedTextWrappedCodeEdges: a wide character that does not fit at
+// a row's end leaves a padded cell that is not copied; a continuation of
+// only spaces is part of its line, not a blank line between blocks; and a
+// wrapped line loses the indent the block's lines share, as they do.
+func TestSelectedTextWrappedCodeEdges(t *testing.T) {
+	f := render.Frame{Width: 40, Height: 40}
+	for name, code := range map[string]string{
+		"a wide character at the edge": strings.Repeat("a", 36) + "界b",
+		"a row of spaces":              "a" + strings.Repeat(" ", 90) + "b",
+		"an indented block":            "    short()\n    " + strings.Repeat("long ", 20) + "end\n    done()",
+	} {
+		s := apply(base(), core.AssistantMessage{At: t0, Final: true, Text: "```\n" + code + "\n```"})
+		answer := s.Items[len(s.Items)-1].Key
+		text, _ := render.SelectedText(selecting(s, pos(answer, 0, 0), pos(answer, 99, 99)), render.NewCache(render.Amber), f)
+		want := code
+		if name == "an indented block" {
+			want = strings.ReplaceAll(strings.TrimPrefix(code, "    "), "\n    ", "\n") // the block's shared indent goes
+		}
+		assert.Equal(t, want, text, name)
+	}
+}
+
+// A long wrapped code line copies in time and memory linear in its length.
+func TestSelectedTextLongWrappedCode(t *testing.T) {
+	code := strings.Repeat(`{"key":"value","n":12345},`, 4_000) // 104,000 characters
+	s := apply(base(), core.AssistantMessage{At: t0, Final: true, Text: "```json\n" + code + "\n```"})
+	answer := s.Items[len(s.Items)-1].Key
+	sel := selecting(s, pos(answer, 0, 0), pos(answer, 99_999, 99))
+	c, f := render.NewCache(render.Amber), render.Frame{Width: 40, Height: 40}
+	render.SelectedText(sel, c, f) // draws the lines into the cache
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	text, lines := render.SelectedText(sel, c, f)
+	runtime.ReadMemStats(&after)
+	assert.Equal(t, code, text)
+	assert.Equal(t, 1, lines)
+	// Joining each piece onto the line so far copies it again each time:
+	// about 140 MB here, against a few MB for one join.
+	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(200*len(code)), "bytes allocated grow with the line, not its square")
 }

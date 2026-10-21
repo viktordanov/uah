@@ -172,20 +172,26 @@ func carry(lines []string) []string {
 	for i, l := range lines {
 		reopen := strings.Join(open, "")
 		for _, seq := range sgr.FindAllString(l, -1) {
-			if seq == "\x1b[m" || seq == "\x1b[0m" {
+			if isReset(seq) {
 				open = open[:0]
 			} else {
 				open = append(open, seq)
 			}
 		}
 		if len(open) > 0 {
-			l += "\x1b[m"
+			l += sgrReset
 		}
 		lines[i] = reopen + l
 	}
 
 	return lines
 }
+
+// sgrReset ends every style.
+const sgrReset = "\x1b[m"
+
+// isReset reports whether an SGR sequence ends every style.
+func isReset(seq string) bool { return seq == sgrReset || seq == "\x1b[0m" }
 
 // sgr matches one SGR escape sequence.
 var sgr = regexp.MustCompile("\x1b\\[[0-9;:]*m")

@@ -33,6 +33,7 @@
 == width 20 ==
 ●  <c>func main() {</> <d>go</>
    <c>    fmt.Println("</>
+  <d>↪</><c>hi") // a comment</>
    <c>}</>░░░░░░░░░░░░░░░░
 
    <c>some code</>░░░░░░░░

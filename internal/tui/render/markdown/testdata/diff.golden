@@ -12,25 +12,34 @@
    <c>short</>                                              <d>a-very-long-language-name</>
 == width 40 ==
 ●  <c>@@ -210,3 +210,4 @@ func (m *Model) r</>
+  <d>↪</><c>esume</>░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
    <c>-    run := m.store.MustLoad(id)</>▓▓▓▓▓
    <c>+    m.waitIdle()</>▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒
    <c>+    run, err := m.store.Load(id)</>▒▒▒▒
    <c>     m.run = run</>░░░░░░░░░░░░░░░░░░░░░
 
    <c>func (m *Model) resume(id string) tea</>
+  <d>↪</><c>.Cmd {</>░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
    <c>    return m.listen(run, 64)</>░░░░░░░░░
    <c>}</>░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 
    <c>short</>      <d>a-very-long-language-name</>
 == width 20 ==
 ●  <c>@@ -210,3 +210,4 </>
+  <d>↪</><c>@@ func (m *Model</>
+  <d>↪</><c>) resume</>░░░░░░░░░
    <c>-    run := m.sto</>
+  <d>↪</><c>re.MustLoad(id)</>▓▓
    <c>+    m.waitIdle()</>
    <c>+    run, err := </>
+  <d>↪</><c>m.store.Load(id)</>▒
    <c>     m.run = run</>░
 
    <c>func (m *Model) r</>
+  <d>↪</><c>esume(id string) </>
+  <d>↪</><c>tea.Cmd {</>░░░░░░░░
    <c>    return m.list</>
+  <d>↪</><c>en(run, 64)</>░░░░░░
    <c>}</>░░░░░░░░░░░░░░░░
 
    <c>short</>░░░░░░░░░░░░
