@@ -31,7 +31,7 @@ func TestReduce_Agents(t *testing.T) {
 	assert.False(t, s.Items[n-1].Live())
 
 	s, _ = apply(s, state.Submit{Text: "/agents"})
-	assert.Equal(t, "Ada (reviewer) · completed · a1\n/agents <name> shows one's transcript as it works; alt+← and alt+→ switch agents", s.Items[len(s.Items)-1].Text)
+	assert.Equal(t, "Ada (reviewer) · completed · a1\n/agents <name> shows one's transcript as it works; alt+← and alt+→ on an empty composer switch agents", s.Items[len(s.Items)-1].Text)
 
 	s, _ = apply(s, engine.AgentUpdated{ID: "a1", Nickname: "Ada", State: engine.AgentErrored, Message: "The model is not supported"})
 	assert.Equal(t, "The model is not supported", s.Items[n-1].Agent.Message, "the item keeps the latest update")

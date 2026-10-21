@@ -102,6 +102,6 @@ func listAgents(s *State) {
 
 		return
 	}
-	b.WriteString("\n/agents <name> shows one's transcript as it works; alt+← and alt+→ switch agents")
+	b.WriteString("\n/agents <name> shows one's transcript as it works; alt+← and alt+→ on an empty composer switch agents")
 	s.notice(session.LevelInfo, b.String())
 }

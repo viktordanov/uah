@@ -110,3 +110,25 @@ func TestTUI_SkillMenu(t *testing.T) {
 	assert.Equal(t, "use $uah-customization ", d.draft())
 	assert.Empty(t, llm.Requests(), "completing sends nothing")
 }
+
+// TestTUI_AltArrowsMoveByAWord: option+← and option+→, which terminals
+// send as alt+← and alt+→, move the cursor by a word through a draft, where
+// the composer's cursor is drawn; only on an empty composer do they switch
+// agents.
+func TestTUI_AltArrowsMoveByAWord(t *testing.T) {
+	d := start(t, deps(t, "simple.jsonl"))
+	d.typeText("hello world foo")
+	end := d.m.View().Cursor.X
+	d.send(term.KeyPressMsg{Code: 'a', Mod: term.ModCtrl})
+	home := d.m.View().Cursor.X
+
+	d.send(term.KeyPressMsg{Code: term.KeyRight, Mod: term.ModAlt})
+	assert.Equal(t, home+len("hello"), d.m.View().Cursor.X, "alt+→ moves past a word")
+	d.send(term.KeyPressMsg{Code: term.KeyRight, Mod: term.ModAlt})
+	assert.Equal(t, home+len("hello world"), d.m.View().Cursor.X)
+	d.send(term.KeyPressMsg{Code: term.KeyLeft, Mod: term.ModAlt})
+	assert.Equal(t, home+len("hello "), d.m.View().Cursor.X, "alt+← moves back a word")
+	d.typeText("big ")
+	assert.Equal(t, "hello big world foo", d.draft(), "the edit lands where the cursor shows")
+	assert.Less(t, d.m.View().Cursor.X, end+len("big "), "not at the end")
+}

@@ -126,16 +126,14 @@ func (m Model) onKey(msg term.KeyPressMsg) (term.Model, term.Cmd) { //nolint:goc
 		if draft == "" {
 			return m.dispatch(state.ScrollToBottom{})
 		}
-	case "alt+left":
-		return m.dispatch(state.SwitchAgent{Delta: -1})
-	case "alt+right":
-		return m.dispatch(state.SwitchAgent{Delta: 1})
-	case "alt+b", "alt+f":
-		// Many macOS terminals send alt+← and alt+→ as these word motions;
-		// on an empty composer they switch agents, as in Codex.
+	case "alt+left", "alt+right", "alt+b", "alt+f":
+		// On an empty composer they switch agents, as in Codex; with a
+		// draft they move by a word, as option+← and option+→ do in a
+		// macOS text field (terminals send alt+← and alt+→, or alt+b and
+		// alt+f), so the cursor goes where the composer says.
 		if draft == "" {
 			delta := 1
-			if msg.String() == "alt+b" {
+			if k := msg.String(); k == "alt+left" || k == "alt+b" {
 				delta = -1
 			}
 
