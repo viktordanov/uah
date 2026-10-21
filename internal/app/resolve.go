@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/viktordanov/uah/internal/approval"
 	"github.com/viktordanov/uah/internal/compaction"
@@ -103,6 +104,9 @@ type Resolved struct {
 	// Settings has no SystemPrompt yet; Setup adds it from the instructions.
 	Settings session.Settings
 	MaxDisk  int64
+	// StreamIdle is how long a model stream may send no data before its
+	// request is retried (stream_idle_timeout_ms; 0: the engine's default).
+	StreamIdle time.Duration
 	// Instructions reports whether to load AGENTS.md and CLAUDE.md files.
 	Instructions bool
 	// ContextPreparation reports whether new sessions start with prepared
@@ -194,7 +198,8 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 		s.Model = fallbackModels[s.Provider]
 	}
 	var err error
-	if s.MaxAttempts, err = pickMaxAttempts(in, cfg); err != nil {
+	var streamIdle time.Duration
+	if s.MaxAttempts, streamIdle, err = pickRequestLimits(in, cfg); err != nil {
 		return Resolved{}, err
 	}
 	if pickFast(in, resumed, cfg) {
@@ -258,7 +263,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 	}
 
 	return Resolved{
-		Settings: s, MaxDisk: maxDisk, Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
+		Settings: s, MaxDisk: maxDisk, StreamIdle: streamIdle, Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
 		Sandbox: policy, Env: envPolicy, Compaction: compact, CompactPromptFile: promptFile, Approval: approvalPolicy, Rules: configured,
 		ApprovalsReviewer: reviewer, Review: reviewCfg, Agents: agentSettings, WebSearch: webSearch, Verbosity: verbosity, DefaultModel: defaulted,
 		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills, NoSkillMentions: !cfg.TUI.SkillMentionsOn(), NoToolBridge: !tools.bridge,
@@ -392,6 +397,18 @@ func pickModel(in Inputs, resumed session.Info, cfg config.Config) string {
 // configured one, or the default.
 func providerChanged(in Inputs, resumed session.Info, cfg config.Config) bool {
 	return in.Provider != "" && in.Provider != first(resumed.Provider, cfg.Provider, CodexProvider)
+}
+
+// pickRequestLimits is a model request's attempts (pickMaxAttempts) and
+// its stream idle timeout, stream_idle_timeout_ms (0: the engine's
+// default).
+func pickRequestLimits(in Inputs, cfg config.Config) (int, time.Duration, error) {
+	if cfg.StreamIdleTimeoutMS < 0 {
+		return 0, 0, usage(fmt.Errorf("invalid stream_idle_timeout_ms %d (want milliseconds above 0, or 0 for 90 seconds)", cfg.StreamIdleTimeoutMS))
+	}
+	attempts, err := pickMaxAttempts(in, cfg)
+
+	return attempts, time.Duration(cfg.StreamIdleTimeoutMS) * time.Millisecond, err
 }
 
 // pickMaxAttempts is the max-attempts flag or its environment variable,

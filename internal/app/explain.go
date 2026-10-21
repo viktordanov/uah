@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -10,9 +11,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/viktordanov/uah/internal/compaction"
 	"github.com/viktordanov/uah/internal/config"
+	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
@@ -200,6 +203,7 @@ func sessionSettings(in Inputs, o Origins, r Resolved, cfg config.Config) []Sett
 		one("provider", s.Provider, pick(input(in.Provider, EnvProvider, env), sessionValue(resumed.Provider), overrides(l, func(c config.Config) any { return c.Provider }), FromDefault)),
 		one("model", s.Model, modelSource),
 		one("effort", s.Effort, pick(input(in.Effort, "", nil), sessionValue(resumed.Effort), overrides(l, func(c config.Config) any { return c.Effort }), FromDefault)),
+		overridden(l, "stream_idle_timeout_ms", cmp.Or(cfg.StreamIdleTimeoutMS, int(embedded.DefaultStreamIdleTimeout/time.Millisecond)), func(c config.Config) any { return c.StreamIdleTimeoutMS }),
 		one("request_max_attempts", s.MaxAttempts, pick(attemptsInput(in, env), overrides(l, func(c config.Config) any { return c.RequestMaxAttempts }), FromDefault)),
 		one("max_disk", maxDisk, pick(given(in.MaxDiskSet), overrides(l, func(c config.Config) any { return c.MaxDisk }), FromDefault)),
 		overridden(l, "block_state_in_workspace", cfg.BlockStateInWorkspaceOn(), func(c config.Config) any { return c.BlockStateInWorkspace }),

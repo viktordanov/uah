@@ -44,6 +44,10 @@ func ask(t *testing.T, url string, headerTimeout time.Duration, diag io.Writer) 
 	return askUntil(t, url, headerTimeout, diag, nil)
 }
 
+// askStreamIdle is the switcher's stream idle timeout in ask, as the
+// engine's StreamIdleTimeout sets it (0: the default).
+var askStreamIdle time.Duration
+
 // askUntil is ask that cancels the request at the first event for which
 // stop, when set, reports true.
 func askUntil(t *testing.T, url string, headerTimeout time.Duration, diag io.Writer, stop func(core.Event) bool) ([]core.Event, error) {
@@ -56,6 +60,7 @@ func askUntil(t *testing.T, url string, headerTimeout time.Duration, diag io.Wri
 	t.Cleanup(func() { _ = ra.Close() })
 	sw, err := newSwitcher("m", variant{}, attempts, func(variant) (Client, error) { return ra, nil })
 	require.NoError(t, err)
+	sw.streamIdle = askStreamIdle
 	var mu sync.Mutex
 	var events []core.Event
 	ctx, cancel := context.WithCancel(t.Context())
@@ -338,4 +343,25 @@ func TestModelTransport(t *testing.T) {
 	assert.Zero(t, headerTimeout("http://127.0.0.1:11434"))
 	assert.NotSame(t, shared, ts.get(0))
 	assert.NotSame(t, shared, (*transports)(nil).get(responseHeaderTimeout))
+}
+
+// TestModelCall_StreamIdleFromTheEngine: the engine's StreamIdleTimeout
+// closes a silent stream, in place of the default, and the attempt's line
+// records the silence after its last data line, which longest_gap_ms
+// between data lines leaves out.
+func TestModelCall_StreamIdleFromTheEngine(t *testing.T) {
+	setLimit(t, &askStreamIdle, 200*time.Millisecond)
+	srv := fakellm.New(t, fakellm.Reply{Deltas: []string{"a"}, Hold: make(chan struct{})}, fakellm.Reply{Text: "back"})
+	var diag bytes.Buffer
+	events, err := ask(t, srv.URL, 0, &diag)
+	require.NoError(t, err)
+	retries := only[engine.Reconnecting](events)
+	require.NotEmpty(t, retries)
+	assert.Equal(t, "no data from the model for 200ms", retries[0].Reason)
+	var first attemptDiag
+	require.NoError(t, json.Unmarshal(bytes.SplitN(diag.Bytes(), []byte("\n"), 2)[0], &first))
+	assert.Equal(t, "retry", first.Result)
+	assert.GreaterOrEqual(t, first.TrailingGapMS, int64(200), "the stall up to the timeout")
+	assert.Less(t, first.TrailingGapMS, int64(1500), "not the 2 s backoff after it")
+	assert.Less(t, first.LongestGapMS, int64(200), "between data lines it was short")
 }

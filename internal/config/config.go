@@ -29,6 +29,10 @@ type Config struct {
 	// RequestMaxAttempts is how many times a model request is sent before
 	// the run fails (0: uah's default, engine.DefaultMaxAttempts).
 	RequestMaxAttempts int `toml:"request_max_attempts"`
+	// StreamIdleTimeoutMS is how long a model stream may send no data
+	// before its request is retried, in milliseconds, as Codex's
+	// stream_idle_timeout_ms (0: 90 seconds).
+	StreamIdleTimeoutMS int `toml:"stream_idle_timeout_ms"`
 	// Fast asks for priority processing.
 	Fast bool `toml:"fast"`
 	// SandboxMode is read-only or workspace-write (the default); the names

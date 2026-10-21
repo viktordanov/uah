@@ -35,6 +35,9 @@ type callKey struct{}
 // modelCall observes one model request. It queues events; a pump sends
 // them to emit, merged when they pile up.
 type modelCall struct {
+	// streamIdle is how long the stream may send no data line (0: the
+	// default).
+	streamIdle      time.Duration
 	guardianMarkers bool
 	parentResponse  string
 	latestResponse  *atomic.Pointer[string]
@@ -82,7 +85,11 @@ type attemptDiag struct {
 	Events       int       `json:"events"`
 	RecvBytes    int64     `json:"recv_bytes"`
 	LongestGapMS int64     `json:"longest_gap_ms"`
-	Tool         string    `json:"tool,omitempty"`
+	// TrailingGapMS is the stream's silence from its last data line to the
+	// attempt's end: a stall that a timeout or a message ended, which
+	// LongestGapMS, between data lines, leaves out.
+	TrailingGapMS int64  `json:"trailing_gap_ms,omitempty"`
+	Tool          string `json:"tool,omitempty"`
 	// Effort is the effort the request went at; EffortReason, with adaptive
 	// effort on, why (adaptive.go). With effort updates, RequestEffort is
 	// the effort the request carried, which keys the prompt cache, Effort
@@ -102,7 +109,7 @@ type attemptDiag struct {
 // left, so every event precedes the runner's final events for the response.
 func (s *switcher) observe(ctx context.Context, kind string) (context.Context, func(error) error) {
 	ctx, stop := context.WithCancelCause(ctx)
-	c := &modelCall{ctx: ctx, stop: stop, kind: kind, emit: s.stream, max: s.max, diag: s.diag, wake: make(chan struct{}, 1), done: make(chan struct{}), final: map[string]bool{}}
+	c := &modelCall{ctx: ctx, stop: stop, kind: kind, emit: s.stream, max: s.max, streamIdle: s.streamIdle, diag: s.diag, wake: make(chan struct{}, 1), done: make(chan struct{}), final: map[string]bool{}}
 	c.guardianMarkers = s.guardianMarkers
 	if id := s.latestResponse.Load(); id != nil {
 		c.parentResponse = *id
@@ -273,6 +280,7 @@ func (c *modelCall) resetLocked() {
 func (c *modelCall) ended(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.a.TrailingGapMS = time.Since(c.last).Milliseconds() // when the stream ends, before any backoff
 	switch {
 	case c.terminal == eventCompleted || c.terminal == eventIncomplete:
 	case c.terminal != "":

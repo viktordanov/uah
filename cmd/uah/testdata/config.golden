@@ -7,6 +7,7 @@ KEY                                               VALUE                         
 provider                                          openai-codex                  default
 model                                             gpt-6-luna                    user file
 effort                                            medium                        project file
+stream_idle_timeout_ms                            90000                         default
 request_max_attempts                              10                            default
 max_disk                                          1G                            flag
 block_state_in_workspace                          false                         default

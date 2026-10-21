@@ -46,6 +46,11 @@ func TestResolve(t *testing.T) {
 			want: func(r *app.Resolved) {},
 		},
 		{
+			name: "stream_idle_timeout_ms sets the engine's",
+			cfg:  config.Config{StreamIdleTimeoutMS: 120000},
+			want: func(r *app.Resolved) { r.StreamIdle = 2 * time.Minute },
+		},
+		{
 			name: "block_state_in_workspace turns uagent's guard back on",
 			cfg:  config.Config{BlockStateInWorkspace: new(true)},
 			want: func(r *app.Resolved) { r.Settings.AllowStateInWorkspace = false },
@@ -468,6 +473,7 @@ func TestResolveUsageErrors(t *testing.T) {
 		{name: "invalid config max disk", cfg: config.Config{MaxDisk: "lots"}, want: `max_disk: invalid size "LOTS"`},
 		{name: "invalid auto_compact_percent", cfg: config.Config{AutoCompactPercent: new(101)}, want: "invalid auto_compact_percent 101"},
 		{name: "invalid request_max_attempts", cfg: config.Config{RequestMaxAttempts: -1}, want: "invalid request_max_attempts -1"},
+		{name: "invalid stream_idle_timeout_ms", cfg: config.Config{StreamIdleTimeoutMS: -1}, want: "invalid stream_idle_timeout_ms -1"},
 		{name: "invalid --max-attempts", in: func(in *app.Inputs) { in.MaxAttempts = -2 }, want: "invalid --max-attempts -2"},
 		{name: "invalid model_context_window", cfg: config.Config{ModelContextWindow: -1}, want: "invalid model_context_window -1"},
 		{name: "invalid model_auto_compact_token_limit", cfg: config.Config{ModelAutoCompactTokenLimit: -5}, want: "invalid model_auto_compact_token_limit -5"},

@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -21,14 +22,22 @@ import (
 	"github.com/viktordanov/uah/internal/engine"
 )
 
+// DefaultStreamIdleTimeout is how long a model stream may send no data
+// line before its request is retried, as Codex's stream_idle_timeout_ms
+// (5 minutes there). HTTP/2 pings catch a dead connection within 45
+// seconds; this catches a live one whose stream stopped. Healthy streams
+// were never quiet for more than 34 seconds in 12,000 requests at every
+// effort up to max, so 90 seconds retries a stalled one well before a user
+// gives up on it, without retrying a slow one.
+const DefaultStreamIdleTimeout = 90 * time.Second
+
 // A model request's limits, which tests shorten: the wait for headers, for
-// the next data line (as Codex's stream idle timeout), first for the
-// network, and in all for a host that does not resolve. The runner allows
-// 30 minutes without a byte per attempt (responsesapi/adapter.go in
-// v0.1.1), which bounds the network wait.
+// the next data line when the engine sets none, first for the network, and in all for a host that does not resolve. The
+// runner allows 30 minutes without a byte per attempt (responsesapi/
+// adapter.go in v0.1.1), which bounds the network wait.
 var (
 	responseHeaderTimeout = 2 * time.Minute
-	streamIdleTimeout     = 5 * time.Minute
+	streamIdleTimeout     = DefaultStreamIdleTimeout
 	offlineWait           = 5 * time.Second
 	notFoundWait          = 30 * time.Second
 	dialContext           = (&net.Dialer{Timeout: 30 * time.Second, KeepAliveConfig: net.KeepAliveConfig{
@@ -120,6 +129,11 @@ func loopback(host string) bool {
 	return host == "localhost" || ip != nil && ip.IsLoopback()
 }
 
+// idleTimeout is how long the call's stream may send no data line.
+func (c *modelCall) idleTimeout() time.Duration {
+	return cmp.Or(c.streamIdle, streamIdleTimeout)
+}
+
 // errNoSuchHost ends a request whose host did not resolve for notFoundWait.
 var errNoSuchHost = errors.New("no such host")
 
@@ -154,15 +168,15 @@ func (c *modelCall) waitForNetwork(ctx context.Context, err error, wait time.Dur
 }
 
 // idleError is a quiet stream's net.Error timeout, which the runner retries.
-type idleError struct{}
+type idleError struct{ after time.Duration }
 
-func (idleError) Error() string   { return "no data from the model for " + streamIdleTimeout.String() }
+func (e idleError) Error() string { return "no data from the model for " + e.after.String() }
 func (idleError) Timeout() bool   { return true }
 func (idleError) Temporary() bool { return true }
 
 // attemptBody passes a 2xx stream to the runner a line at a time, after the
-// scanner (sse.go), and closes it when no data line comes for
-// streamIdleTimeout.
+// scanner (sse.go), and closes it when no data line comes for the call's
+// idle timeout.
 type attemptBody struct {
 	io.ReadCloser
 
@@ -191,7 +205,7 @@ func (c *modelCall) response(resp *http.Response) {
 		c.pushLocked(engine.ReconnectEnded{At: time.Now(), OK: true})
 	}
 	b := &attemptBody{ReadCloser: resp.Body, c: c}
-	b.timer = time.AfterFunc(streamIdleTimeout, func() { b.idle.Store(true); _ = b.ReadCloser.Close() })
+	b.timer = time.AfterFunc(c.idleTimeout(), func() { b.idle.Store(true); _ = b.ReadCloser.Close() })
 	resp.Body = b
 }
 
@@ -223,7 +237,7 @@ func (b *attemptBody) Read(p []byte) (int, error) {
 
 func (b *attemptBody) endLine() {
 	if bytes.HasPrefix(b.line, dataPrefix) {
-		b.timer.Reset(streamIdleTimeout)
+		b.timer.Reset(b.c.idleTimeout())
 	}
 	b.out.Write(b.c.line(b.line))
 	b.line = b.line[:0]
@@ -240,7 +254,7 @@ func (b *attemptBody) Close() error {
 func (b *attemptBody) finish(err error) error {
 	b.timer.Stop()
 	if b.idle.Load() {
-		err = idleError{}
+		err = idleError{b.c.idleTimeout()}
 	}
 	b.once.Do(func() { b.c.ended(err) })
 

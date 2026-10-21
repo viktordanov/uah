@@ -59,6 +59,9 @@ func merge(base, over Config) Config {
 	if over.AutoCompactPercent != nil {
 		base.AutoCompactPercent = over.AutoCompactPercent
 	}
+	if over.StreamIdleTimeoutMS != 0 {
+		base.StreamIdleTimeoutMS = over.StreamIdleTimeoutMS
+	}
 	if over.RequestMaxAttempts != 0 {
 		base.RequestMaxAttempts = over.RequestMaxAttempts
 	}

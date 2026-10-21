@@ -66,6 +66,9 @@ type Config struct {
 	// WakeHold is how long a turn's results wait for a call still running
 	// before it wakes the model (wake.go); 0 is 5 minutes. Tests shorten it.
 	WakeHold time.Duration
+	// StreamIdleTimeout is how long a model stream may send no data line
+	// before the request is retried; 0 is DefaultStreamIdleTimeout.
+	StreamIdleTimeout time.Duration
 	// ContextWindow overrides the model catalog's context window (tokens).
 	ContextWindow int64
 	// Models is the model catalog: context windows and whether a model

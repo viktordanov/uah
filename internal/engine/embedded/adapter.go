@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/viktordanov/uah-core/harness/llm"
 
@@ -21,6 +22,8 @@ import (
 // for it, and to the ultra client at effort ultra, so /model, /fast, and
 // /effort apply from the next model request.
 type switcher struct {
+	// streamIdle is each model call's stream idle timeout (0: the default).
+	streamIdle      time.Duration
 	guardianMarkers bool
 	latestResponse  atomic.Pointer[string]
 	build           func(variant) (Client, error)
