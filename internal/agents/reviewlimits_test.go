@@ -202,8 +202,14 @@ func TestReview_StopsItsOwnCommand(t *testing.T) {
 	require.Empty(t, fin.Err)
 	require.Len(t, fin.Output.Findings, 1)
 	reqs := reviewerRequests(e)
-	require.Len(t, reqs, 3)
-	outputs := strings.Join(reqs[2].ToolOutputs, "\n")
+	require.GreaterOrEqual(t, len(reqs), 3)
+	// The killed command's end comes with the kill's result, or in a turn
+	// of its own when it lands after it.
+	var after []string
+	for _, r := range reqs[2:] {
+		after = append(after, r.ToolOutputs...)
+	}
+	outputs := strings.Join(after, "\n")
 	assert.Contains(t, outputs, "Exit code: 143", "the command ended on the reviewer's SIGTERM")
 	assert.NotContains(t, outputs, "not permitted")
 	assert.NotContains(t, outputs, "not run")
