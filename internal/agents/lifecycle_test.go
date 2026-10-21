@@ -308,8 +308,12 @@ func TestAgents_CloseParentClosesChildren(t *testing.T) {
 
 	require.NoError(t, s.Close())
 	for _, id := range children {
-		statuses, _, err := e.mgr.Wait(t.Context(), s.ID(), []string{id}, waitTimeout)
-		require.NoError(t, err)
-		assert.Equal(t, engine.AgentShutdown, statuses[id].State)
+		// Closing interrupts a child's run, then closes it: a wait may
+		// return the interrupt first.
+		assert.Eventually(t, func() bool {
+			statuses, _, err := e.mgr.Wait(t.Context(), s.ID(), []string{id}, waitTimeout)
+
+			return err == nil && statuses[id].State == engine.AgentShutdown
+		}, waitTimeout, 10*time.Millisecond, "child %s shuts down", id)
 	}
 }
