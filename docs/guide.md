@@ -123,7 +123,7 @@ uah context --show         # lists the context modules for this workspace and pr
 
 ### 1.5 `/config` and `uah config`
 
-`/config` in the TUI changes the basic settings: compaction, the model and effort, fast mode, adaptive effort, the permission mode, the number of open subagents, web search, the details view, the mouse, and file links, each with its value and its source. ↑↓ choose, enter or space changes, esc closes.
+`/config` in the TUI changes the basic settings: compaction, the model and effort, fast mode, adaptive effort, the permission mode, the number of open subagents, web search, the details view, the mouse, and file links, each with the value the open session uses and its source: its workspace's project file, and the model, effort, fast mode, adaptive effort, and permission mode it keeps (`session`). ↑↓ choose, enter or space changes, esc closes.
 
 - **Saving:** each change is saved to your user file, keeping its comments, and applies to the running session where it can; compaction settings apply from the next session.
 - **Precedence:** a flag, a configuration layer, or a trusted project file that sets the same key still wins, and `/config` says so.

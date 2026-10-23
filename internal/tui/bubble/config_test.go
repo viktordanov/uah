@@ -25,7 +25,7 @@ func configDeps(t *testing.T, d *withUserFile) {
 		MaxDisk: "5G",
 	}
 	d.path = in.ConfigPath
-	d.Config = func(ctx context.Context) state.ConfigLoaded {
+	d.Config = func(ctx context.Context, _ string) state.ConfigLoaded {
 		rep, err := app.Inspect(ctx, in)
 		if err != nil {
 			return state.ConfigLoaded{Err: err}

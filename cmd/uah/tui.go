@@ -96,7 +96,7 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		},
 		History:    &prompts,
 		Version:    buildVersion(),
-		Config:     tuiConfig(cmd),
+		Config:     tuiConfig(inputs(cmd)),
 		SaveConfig: tuiSaveConfig(ctx, cmd),
 		Images:     &images.Store{Dir: images.DirIn(st.StateDir)},
 		Clipboard:  clipboard.System(),

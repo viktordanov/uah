@@ -9,13 +9,14 @@ import (
 	"github.com/viktordanov/uah/internal/tui/state"
 )
 
-// tuiConfig loads what /config shows: the values a session opened now
-// would use (the flags, then the files), with their sources, as `uah
-// config` explains them.
-func tuiConfig(cmd *cli.Command) func(context.Context) state.ConfigLoaded {
-	return func(ctx context.Context) state.ConfigLoaded {
-		in := inputs(cmd)
-		in.SessionRef = ""
+// tuiConfig loads what /config shows: the values the TUI's session uses
+// (the flags, the session, then the files of its workspace), with their
+// sources, as `uah config --session` explains them. With no session, as
+// in the picker, they are what a session opened now would use.
+func tuiConfig(in app.Inputs) func(ctx context.Context, sessionID string) state.ConfigLoaded {
+	return func(ctx context.Context, sessionID string) state.ConfigLoaded {
+		in := in // loads may overlap
+		in.SessionRef = sessionID
 		rep, err := app.Inspect(ctx, in)
 		if err != nil {
 			return state.ConfigLoaded{Err: err}

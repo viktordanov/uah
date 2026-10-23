@@ -170,15 +170,22 @@ func (m Model) run(e state.Effect) term.Cmd { //nolint:gocyclo // a dispatch swi
 			return func() term.Msg { return state.ConfigLoaded{Err: errNoConfig} }
 		}
 
-		return func() term.Msg { return m.deps.Config(m.ctx) }
+		id := ""
+		if sess != nil {
+			id = sess.ID()
+		}
+
+		return func() term.Msg { return m.deps.Config(m.ctx, id) }
 	case state.EffSaveConfig:
 		if m.deps.SaveConfig == nil {
 			return func() term.Msg { return state.ConfigSaved{Key: e.Key, Value: e.Value, Err: errNoConfig} }
 		}
 
-		return func() term.Msg {
+		// After the session calls before it, such as the save's own
+		// EffSetSettings: the values loaded once it is saved are current.
+		return m.calls.next(func() term.Msg {
 			return state.ConfigSaved{Key: e.Key, Value: e.Value, Err: m.deps.SaveConfig(e.Key, e.Value)}
-		}
+		})
 	case state.EffListMCP:
 		return func() term.Msg {
 			if sess == nil {

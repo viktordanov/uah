@@ -30,7 +30,7 @@ type (
 	// EffLoadConfig loads the effective configuration.
 	EffLoadConfig struct{}
 	// ConfigLoaded carries it: the user file and each key's value and
-	// source for a session opened now.
+	// source for the open session.
 	ConfigLoaded struct {
 		Path   string
 		Values map[string]ConfigValue
@@ -195,7 +195,6 @@ func (s *State) save(key string, value any) []Effect {
 	if value == nil {
 		p.Values[key] = ConfigValue{Source: sourceDefault}
 	}
-	effects := []Effect{EffSaveConfig{Key: key, Value: value}}
 	next := s.Settings
 	switch key {
 	case keyModel:
@@ -226,11 +225,14 @@ func (s *State) save(key string, value any) []Effect {
 			s.relinkAll()
 		}
 	}
+	// The session changes first, so the values loaded after the save are
+	// the ones it now uses.
+	var effects []Effect
 	if next != s.Settings && (key != keyFast || s.Priority) {
 		effects = append(effects, EffSetSettings{Settings: next})
 	}
 
-	return effects
+	return append(effects, EffSaveConfig{Key: key, Value: value})
 }
 
 // configSaved reports the save and when it applies, then reloads the

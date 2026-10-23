@@ -150,7 +150,7 @@ func TestConfig_AdaptiveEffort(t *testing.T) {
 	assert.Equal(t, "off", row(s).Value)
 	assert.Contains(t, row(s).Help, "Adaptive effort: think one or two effort levels less on follow-up turns")
 	s, effects := apply(s, state.ConfigChange{Delta: 1})
-	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "adaptive_effort", Value: "1-step"}, state.EffSetSettings{Settings: with("1-step")}}, effects)
+	assert.Equal(t, []state.Effect{state.EffSetSettings{Settings: with("1-step")}, state.EffSaveConfig{Key: "adaptive_effort", Value: "1-step"}}, effects)
 	assert.Equal(t, "1 step", row(s).Value)
 	s, _ = apply(s, state.ConfigSaved{Key: "adaptive_effort", Value: "1-step"})
 	assert.Contains(t, s.Items[len(s.Items)-1].Text, "saved adaptive_effort = 1-step")
@@ -158,11 +158,11 @@ func TestConfig_AdaptiveEffort(t *testing.T) {
 	s, _ = apply(s, session.SettingsChanged{At: t0, Settings: with("1-step"), Applied: session.AppliedLive})
 	assert.Contains(t, s.Items[len(s.Items)-1].Text, "adaptive effort: 1 step (follow-ups at medium), applies now")
 	s, effects = apply(s, state.ConfigChange{Delta: 1})
-	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "adaptive_effort", Value: "2-steps"}, state.EffSetSettings{Settings: with("2-steps")}}, effects)
+	assert.Equal(t, []state.Effect{state.EffSetSettings{Settings: with("2-steps")}, state.EffSaveConfig{Key: "adaptive_effort", Value: "2-steps"}}, effects)
 	assert.Equal(t, "2 steps", row(s).Value)
 	s, _ = apply(s, session.SettingsChanged{At: t0, Settings: with("2-steps")})
 	_, effects = apply(s, state.ConfigChange{Delta: 1})
-	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "adaptive_effort", Value: "off"}, state.EffSetSettings{Settings: with("off")}}, effects, "and off again")
+	assert.Equal(t, []state.Effect{state.EffSetSettings{Settings: with("off")}, state.EffSaveConfig{Key: "adaptive_effort", Value: "off"}}, effects, "and off again")
 }
 
 // TestCycleAdaptive: alt+e steps adaptive effort for this session only,
@@ -203,13 +203,13 @@ func TestConfig_ModelEffortAndFastChangeTheSession(t *testing.T) {
 	_, effects := apply(s, state.ConfigChange{Delta: 1})
 	next := settings()
 	next.Effort = "xhigh"
-	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "effort", Value: "xhigh"}, state.EffSetSettings{Settings: next}}, effects)
+	assert.Equal(t, []state.Effect{state.EffSetSettings{Settings: next}, state.EffSaveConfig{Key: "effort", Value: "xhigh"}}, effects)
 
 	s = openConfig(t, opened(), "Model")
 	_, effects = apply(s, state.ConfigChange{Delta: 1})
 	next = settings()
 	next.Model = "gpt-6-luna"
-	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "model", Value: "gpt-6-luna"}, state.EffSetSettings{Settings: next}}, effects, "the next model in the provider's list")
+	assert.Equal(t, []state.Effect{state.EffSetSettings{Settings: next}, state.EffSaveConfig{Key: "model", Value: "gpt-6-luna"}}, effects, "the next model in the provider's list")
 
 	s = openConfig(t, opened(), "Fast mode")
 	_, effects = apply(s, state.ConfigChange{Delta: 1})
@@ -220,18 +220,18 @@ func TestConfig_ModelEffortAndFastChangeTheSession(t *testing.T) {
 	_, effects = apply(s, state.ConfigChange{Delta: 1})
 	next = settings()
 	next.ServiceTier = "priority"
-	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "fast", Value: true}, state.EffSetSettings{Settings: next}}, effects)
+	assert.Equal(t, []state.Effect{state.EffSetSettings{Settings: next}, state.EffSaveConfig{Key: "fast", Value: true}}, effects)
 }
 
 func TestConfig_CyclesThePermissionModeAsShiftTab(t *testing.T) {
 	s := openConfig(t, opened(), "Permission mode")
 	s, effects := apply(s, state.ConfigChange{Delta: 1})
 	assert.Equal(t, []state.Effect{
-		state.EffSaveConfig{Key: "permission_mode", Value: "auto"},
 		state.EffSetSettings{Settings: settings().WithMode(approval.ModeAuto)},
+		state.EffSaveConfig{Key: "permission_mode", Value: "auto"},
 	}, effects)
 	_, effects = apply(s, state.ConfigChange{Delta: 1})
-	assert.Equal(t, state.EffSaveConfig{Key: "permission_mode", Value: "read-only"}, effects[0], "yolo is not in the cycle")
+	assert.Equal(t, state.EffSaveConfig{Key: "permission_mode", Value: "read-only"}, effects[len(effects)-1], "yolo is not in the cycle")
 }
 
 func TestConfig_CyclesAutoCompactAndTheCompactionModel(t *testing.T) {
@@ -282,7 +282,7 @@ func TestConfig_TypesAModelWithoutAList(t *testing.T) {
 	_, effects := apply(s, state.ConfigType{Text: "\b"}, state.ConfigType{Text: "\b"}, state.ConfigType{Text: "\b"}, state.ConfigType{Text: "luna"}, state.ConfigEnter{})
 	next := settings()
 	next.Model = "gpt-6-luna"
-	assert.Equal(t, []state.Effect{state.EffSaveConfig{Key: "model", Value: "gpt-6-luna"}, state.EffSetSettings{Settings: next}}, effects)
+	assert.Equal(t, []state.Effect{state.EffSetSettings{Settings: next}, state.EffSaveConfig{Key: "model", Value: "gpt-6-luna"}}, effects)
 }
 
 func TestConfig_WarnsWhenAnotherSourceWins(t *testing.T) {

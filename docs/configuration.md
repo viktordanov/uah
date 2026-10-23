@@ -772,7 +772,7 @@ uah config --json | jq '.settings[] | select(.sources != ["default"])'
 - **Merged sources:** keys that append or OR list every file that set them in merge order, such as `user file + config.d/host.toml + project file`.
 - **JSON:** `--json` prints the same as JSON.
 - **Flags and the environment:** a flag equal to its environment variable's value is reported as `env`.
-- **`/config` in the TUI** shows the same values and sources for the basic settings (auto-compact and its token limit, `compact_model`, `model`, `effort`, `fast`, `adaptive_effort`, `permission_mode`, `[agents] max_concurrent_threads_per_session`, `[tui] details`, `mouse`, and `file_links`) and changes them in the user file (`--config` or the default path). It edits one key in place and keeps the file's comments and formatting, with the editor `uah mcp add` uses; a change that would stop a session from starting is undone. The layers and the project file are never written, and a value one of them sets still wins over the change.
+- **`/config` in the TUI** shows the values and sources of the open session, as `uah config --session <id>` does, for the basic settings (auto-compact and its token limit, `compact_model`, `model`, `effort`, `fast`, `adaptive_effort`, `permission_mode`, `[agents] max_concurrent_threads_per_session`, `[tui] details`, `mouse`, and `file_links`) and changes them in the user file (`--config` or the default path). It edits one key in place and keeps the file's comments and formatting, with the editor `uah mcp add` uses; a change that would stop a session from starting is undone. The layers and the project file are never written, and a value one of them sets still wins over the change.
 
 <sub>[↑ Back to top](#configuration-reference)</sub>
 

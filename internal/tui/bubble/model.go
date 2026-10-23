@@ -67,9 +67,10 @@ type Deps struct {
 	// to OSC 52 (optional; internal/images/clipboard.WriteText).
 	CopyText func(ctx context.Context, text string) error
 	// Config loads the effective configuration for /config: the user file
-	// and each key's value and source (optional). SaveConfig writes one key
+	// and each key's value and source for the open session, or "" with
+	// none (optional). SaveConfig writes one key
 	// to the user file, keeping its comments; a nil value removes it.
-	Config     func(ctx context.Context) state.ConfigLoaded
+	Config     func(ctx context.Context, sessionID string) state.ConfigLoaded
 	SaveConfig func(key string, value any) error
 	// Version is uah's version, for the banner.
 	Version string
