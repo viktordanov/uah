@@ -172,6 +172,11 @@ func (m *Manager) submit(c *child, message string, when session.When) (string, e
 			c.unstalled, when = nil, session.SendNow
 		}
 	}
+	if c.closed { // closed since the caller looked, or while the message waited for the stall's interrupt
+		m.mu.Unlock()
+
+		return "", fmt.Errorf("agent with id %s is closed", c.id)
+	}
 	c.gen++
 	c.sending++
 	if c.status.Final() {
@@ -204,16 +209,21 @@ func (m *Manager) submit(c *child, message string, when session.When) (string, e
 
 // steerQueued sends a child's queued messages now, as ctrl+enter on an
 // empty composer does for the main agent. A child a user interrupt left
-// idle with its queue starts work again, so it is marked running.
+// idle with its queue starts work again, so it is marked running, unless
+// the run's start already did (woken, a new generation): that run may have
+// ended meanwhile, and its final status stays.
 func (m *Manager) steerQueued(c *child) error {
 	m.mu.Lock()
 	c.sending++
-	s := c.s
+	s, gen := c.s, c.gen
 	m.mu.Unlock()
 	n, err := s.SteerQueued()
 	m.settle(c)
+	if m.afterSteer != nil {
+		m.afterSteer()
+	}
 	m.mu.Lock()
-	resumed := n > 0 && c.status.Final()
+	resumed := n > 0 && c.status.Final() && c.gen == gen
 	if resumed {
 		c.gen++
 		c.started = time.Now()

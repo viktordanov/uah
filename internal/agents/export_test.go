@@ -12,6 +12,9 @@ import (
 // BeforeSubmit runs f before each message goes to a child's session.
 func (m *Manager) BeforeSubmit(f func(message string)) { m.beforeSubmit = f }
 
+// AfterSteer runs f once a steer of a child's queue settled.
+func (m *Manager) AfterSteer(f func()) { m.afterSteer = f }
+
 // WaitResult is wait_agent's result for the statuses, as JSON.
 func WaitResult(statuses map[string]Status, timedOut bool) string {
 	data, _ := json.Marshal(newWaitResult(statuses, timedOut))

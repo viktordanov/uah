@@ -82,6 +82,8 @@ type Manager struct {
 	changed chan struct{}
 	// beforeSubmit, set by tests, runs before a message goes to a child.
 	beforeSubmit func(message string)
+	// afterSteer, set by tests, runs once a steer of a child's queue settled.
+	afterSteer func()
 }
 
 // New returns a manager; Bind gives it the engine children run on.
