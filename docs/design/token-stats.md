@@ -52,7 +52,7 @@ uah stats --json
 ```
 
 - **Range:** `--since` and `--until` take a date (`2026-10-01`, local midnight) or an RFC 3339 time; `--until` is inclusive. All time by default; with no `--by`, `--since`, or `--until`, the rows are the last 7 days, with all time's sum under theirs and the statistics of all time. Time rows include the empty days, weeks, or months.
-- **Workspaces:** all by default; `-C` (or `--workspace`) limits to one, as `uah sessions` does.
+- **Workspaces:** all by default; `-C` (or `--workspace`) limits to one, as `uah sessions` does. `--by workspace` and the summary's workspaces group the paths as `-C` matches them, absolute with symlinks resolved, so `/tmp/x` and `/private/tmp/x` are one row.
 - **Columns per row:** runs, sessions, input, cached, output, reasoning, total, and the cache hit rate (cached ÷ input). Cached and reasoning are shown as parts, never added again. Model responses are not a column: the index has no count of them, and adding one changes its schema, which would rebuild it whenever an older uah opens it.
 - **Statistics over the range,** under the table:
   - active days of the days in the range;

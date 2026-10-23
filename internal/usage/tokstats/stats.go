@@ -61,7 +61,8 @@ type Options struct {
 	// Now is today, in the location whose days count.
 	Now time.Time
 	// Workspace keeps one workspace's entries, a NormalDir ("": all);
-	// normal makes an entry's comparable.
+	// Normal makes an entry's comparable, for the filter and for rows by
+	// workspace.
 	Workspace string
 	Normal    func(string) string
 }
@@ -147,6 +148,9 @@ func Build(entries []Entry, o Options) Report {
 	return r
 }
 
+// filter keeps the range's entries, and the workspace's with one, with
+// each workspace made comparable, so rows by workspace group as the
+// workspace filter matches.
 func filter(entries []Entry, o Options) []Entry {
 	var out []Entry
 	normal := map[string]string{}
@@ -154,18 +158,16 @@ func filter(entries []Entry, o Options) []Entry {
 		if !o.Since.IsZero() && e.At.Before(o.Since) || !o.Until.IsZero() && !e.At.Before(o.Until) {
 			continue
 		}
-		if o.Workspace != "" {
+		if o.Normal != nil && e.Workspace != "" {
 			n, ok := normal[e.Workspace]
 			if !ok {
-				n = e.Workspace
-				if o.Normal != nil && n != "" {
-					n = o.Normal(n)
-				}
+				n = o.Normal(e.Workspace)
 				normal[e.Workspace] = n
 			}
-			if n != o.Workspace {
-				continue
-			}
+			e.Workspace = n
+		}
+		if o.Workspace != "" && e.Workspace != o.Workspace {
+			continue
 		}
 		out = append(out, e)
 	}

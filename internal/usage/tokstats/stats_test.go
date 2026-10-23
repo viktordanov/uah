@@ -107,6 +107,33 @@ func TestBuild_Workspace(t *testing.T) {
 	assert.Equal(t, int64(2200), r.Sum.Total())
 }
 
+// Rows by workspace group the paths the workspace filter takes for one,
+// such as a link and its target.
+func TestBuild_WorkspaceRowsNormalized(t *testing.T) {
+	entries := []tokstats.Entry{
+		run(at(12, 10), "s1", "astra", "/tmp/x", tokstats.SourceTUI, tokens(100, 0, 0)),
+		run(at(12, 11), "s2", "astra", "/private/tmp/x", tokstats.SourceTUI, tokens(200, 0, 0)),
+		run(at(12, 12), "s3", "astra", "", tokstats.SourceTUI, tokens(50, 0, 0)),
+	}
+	calls := 0
+	normal := func(s string) string {
+		calls++
+		if s == "/tmp/x" {
+			return "/private/tmp/x"
+		}
+
+		return s
+	}
+	rows := tokstats.Build(entries, tokstats.Options{By: tokstats.ByWorkspace, Now: today, Normal: normal}).Rows
+	require.Len(t, rows, 2)
+	assert.Equal(t, tokstats.Row{Key: "/private/tmp/x", Runs: 2, Sessions: 2, Tokens: tokens(300, 0, 0)}, rows[0])
+	assert.Equal(t, "(unknown)", rows[1].Key)
+	assert.Equal(t, 2, calls, "once per path")
+
+	one := tokstats.Build(entries, tokstats.Options{Now: today, Workspace: "/private/tmp/x", Normal: normal})
+	assert.Equal(t, int64(300), one.Sum.Total(), "the filter takes the same two")
+}
+
 func TestBuild_Models(t *testing.T) {
 	m := tokstats.Build(sample(), tokstats.Options{Now: today}).Models
 	require.Len(t, m, 2)
