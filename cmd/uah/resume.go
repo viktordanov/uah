@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -62,7 +63,8 @@ func resumeAction(ctx context.Context, cmd *cli.Command) error {
 // latestSession is the most recent session in the current directory, or in
 // any directory with --all.
 //
-// interactiveOnly skips sessions started by `uah exec`, as `codex resume` skips
+// A subagent's or reviewer's session is never the latest. interactiveOnly
+// also skips sessions started by `uah exec`, as `codex resume` skips
 // `codex exec` sessions.
 func latestSession(ctx context.Context, cmd *cli.Command, interactiveOnly bool) (session.Info, error) {
 	stateDir, err := filepath.Abs(cmd.String("state-dir"))
@@ -85,6 +87,8 @@ func latestSession(ctx context.Context, cmd *cli.Command, interactiveOnly bool) 
 	}
 	if interactiveOnly {
 		infos = session.Interactive(infos)
+	} else {
+		infos = slices.DeleteFunc(infos, func(in session.Info) bool { return in.Source == session.SourceSubagent })
 	}
 	if len(infos) == 0 {
 		where := "in " + cwd

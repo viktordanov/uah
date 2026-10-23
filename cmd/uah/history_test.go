@@ -162,3 +162,33 @@ func TestConvertedSession_PickerRules(t *testing.T) {
 	_, err := os.Stat(filepath.Join(e.StateDir, "sessions", "99999999-2222-4333-8444-555555555555.session.jsonl"))
 	assert.True(t, os.IsNotExist(err), "the never-run session stays as it was")
 }
+
+// TestExecLast_SkipsSubagent: `uah exec --last` continues the parent, not
+// a newer subagent's or reviewer's session in the same directory.
+func TestExecLast_SkipsSubagent(t *testing.T) {
+	t.Parallel()
+	llm := fakellm.New(t, fakellm.Reply{Text: "one"}, fakellm.Reply{Text: "two"})
+	e, env := modelEnv(t, llm)
+	res := uahWith(t, env, "", "exec", "-C", e.Workspace, "first question")
+	require.Equal(t, 0, res.code, res.stderr)
+	parent := listAll(t, env)[0].ID
+	sub := "subagent-" + converted
+	lines := []string{
+		fmt.Sprintf(`{"type":"session","data":{"Version":2,"Session":{"ID":%q,"CreatedAt":"2030-03-01T10:00:00Z"}}}`, sub),
+		`{"type":"item","data":{"Item":{"Sequence":1,"RecordedAt":"2030-03-01T10:00:01Z","Kind":"input","Data":{"ID":"in-1","Kind":"external","Payload":"child task"}}}}`,
+	}
+	writeFile(t, filepath.Join(e.StateDir, "sessions", sub+".session.jsonl"), strings.Join(lines, "\n")+"\n")
+	writeFile(t, filepath.Join(e.StateDir, "sessions", sub+".uah.json"),
+		fmt.Sprintf(`{"source":"subagent","parent":%q,"created":"2030-03-01T10:00:00Z","workspace":%q}`, parent, e.Workspace))
+
+	res = uahWith(t, env, "", "exec", "--last", "-C", e.Workspace, "follow up")
+	require.Equal(t, 0, res.code, res.stderr)
+	for _, in := range listAll(t, env) {
+		switch in.ID {
+		case parent:
+			assert.Equal(t, 2, in.Runs, "--last continued the parent")
+		case sub:
+			assert.Zero(t, in.Runs, "the newer subagent stays as it was")
+		}
+	}
+}

@@ -624,6 +624,7 @@ uah exec --json "..."                             # JSONL events for scripts, wi
 uah exec --ephemeral -o answer.md "..."           # keep no session; write the final answer to a file
 ```
 
+- **`--last`** continues this directory's most recent session, one `uah exec` started too, but never a subagent's or a reviewer's.
 - **`--ephemeral`** keeps nothing: the session runs in a temporary directory that uah removes at exit, so `sessions/`, `runs/`, and the index do not change and `uah sessions` does not list it. The model cache and the small scripts that start the sandbox stay in the state directory, because sandboxed commands can write the temporary directory, and a script there could be swapped for one that runs outside the sandbox. It starts a new session, so it cannot be used with `--last` or `--session`.
 - **`-o`** (`--output-last-message`) writes the last run's answer to the file at exit; with no answer, it writes an empty file and warns on stderr.
 - **No one to ask:** commands that need an approval are declined with a reason, and the question tool is not offered, so the agent asks in its answer.
