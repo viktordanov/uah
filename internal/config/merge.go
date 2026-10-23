@@ -195,11 +195,10 @@ func mergeAgents(base *Agents, over Agents) {
 	if over.Enabled != nil {
 		base.Enabled = over.Enabled
 	}
-	if over.MaxConcurrentThreadsPerSession != nil {
-		base.MaxConcurrentThreadsPerSession = over.MaxConcurrentThreadsPerSession
-	}
-	if over.MaxThreads != nil {
-		base.MaxThreads = over.MaxThreads
+	// max_threads is an alias: a file sets the limit under either name, and
+	// the merged config keeps it under the main one.
+	if n := over.MaxThreadsValue(); n != nil {
+		base.MaxConcurrentThreadsPerSession, base.MaxThreads = n, nil
 	}
 	if over.MaxDepth != nil {
 		base.MaxDepth = over.MaxDepth

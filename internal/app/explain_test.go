@@ -189,6 +189,24 @@ func TestExplainSources(t *testing.T) {
 			vals: map[string]string{"model_instructions_file": "/ws/.uah/system.md"},
 		},
 		{
+			name: "the project file's max_threads alias overrides the user file's key",
+			in:   func(in *app.Inputs) { in.Workspace = "/ws" },
+			o: app.Origins{Layers: trusted(
+				config.Config{Agents: config.Agents{MaxConcurrentThreadsPerSession: new(6)}}, config.Config{Agents: config.Agents{MaxThreads: new(2)}},
+			)},
+			want: map[string]string{"agents.max_concurrent_threads_per_session": "project file"},
+			vals: map[string]string{"agents.max_concurrent_threads_per_session": "2"},
+		},
+		{
+			name: "the project file's key overrides the user file's max_threads alias",
+			in:   func(in *app.Inputs) { in.Workspace = "/ws" },
+			o: app.Origins{Layers: trusted(
+				config.Config{Agents: config.Agents{MaxThreads: new(6)}}, config.Config{Agents: config.Agents{MaxConcurrentThreadsPerSession: new(2)}},
+			)},
+			want: map[string]string{"agents.max_concurrent_threads_per_session": "project file"},
+			vals: map[string]string{"agents.max_concurrent_threads_per_session": "2"},
+		},
+		{
 			name: "no model_instructions_file keeps uah's default prompt",
 			want: map[string]string{"model_instructions_file": "default"},
 			vals: map[string]string{"model_instructions_file": "uah's default prompt"},

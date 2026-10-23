@@ -170,7 +170,7 @@ These keys bound a run: how often a model request is retried, and how much tool 
 | `stream_idle_timeout_ms` | integer | 90000 | | override | How long a model stream may send no data before uah retries the request, in milliseconds (Codex's key; its default is 300000). A dead connection is caught sooner, by HTTP/2 pings within 45 s; this catches a live one whose stream stopped. Healthy streams were never quiet for more than 34 s in 12,000 requests at every effort, so a stall retries by itself instead of waiting for a message to replace it. Each request's line in `stderr.log` records the silence before it ended (`trailing_gap_ms`) |
 | `request_max_attempts` | integer | 10 | `--max-attempts`, `UAH_LLM_MAX_ATTEMPTS` | override | How many times a model request is sent before the run fails. A lost connection, a timeout, a 429, or most 5xx statuses are retried after 2 s, then 4, 8, and 16 s, and then every 30 s (less up to a fifth of jitter, or the server's `Retry-After` up to 30 s): 10 attempts wait about 3 minutes in all. The runner's own default is 5 |
 | `max_disk` | size | `5G` | `--max-disk` | override | Stop a run when tool output exceeds this size (`500M`, `5G`, bytes without a suffix); `0` disables it |
-| `block_state_in_workspace` | bool | `false` | | override | Refuse a session whose workspace holds the state directory, such as one in `~` with `~/.uah` under it. Off, such a session runs with a warning; the state directory's `.ignore`, which uah writes, keeps `rg`, `fd`, and `ag` out of its sessions, runs, and logs even with `--hidden` (`grep -r` and `find` do not read it) |
+| `block_state_in_workspace` | bool | `false` | | override, can unset | Refuse a session whose workspace holds the state directory, such as one in `~` with `~/.uah` under it. Off, such a session runs with a warning; the state directory's `.ignore`, which uah writes, keeps `rg`, `fd`, and `ag` out of its sessions, runs, and logs even with `--hidden` (`grep -r` and `find` do not read it) |
 
 <sub>[↑ Back to top](#configuration-reference)</sub>
 
@@ -458,8 +458,8 @@ Context preparation starts each new session with one developer message built fro
 
 | Key | Type | Default | Flag, env | Merge | Meaning |
 | --- | --- | --- | --- | --- | --- |
-| `context_preparation` | bool | true | `--no-context-preparation`, `UAH_CONTEXT_PREPARATION` (`on` or `off`) | override | Start each new session, subagents' included, with one developer message of [prepared context](../internal/contextprep/README.md) before the first user message: git's state and tracked files, the instruction files (said to be all of them), how to size Bash output, the shell's and OS's traps, and the sandbox. Resumed and forked sessions get none. Off, nothing is added; the agent benchmark turns it off to compare |
-| `[context]` `modules` | list of strings | `[]` | none | override | The ids of [context modules](#57-context-modules) to turn on that ship turned off: the library's `go`, `python-venv`, `node`, `rust`, `docker`, and `git-lfs`, or a user's or project's module with `enabled: false` |
+| `context_preparation` | bool | true | `--no-context-preparation`, `UAH_CONTEXT_PREPARATION` (`on` or `off`) | override, can unset | Start each new session, subagents' included, with one developer message of [prepared context](../internal/contextprep/README.md) before the first user message: git's state and tracked files, the instruction files (said to be all of them), how to size Bash output, the shell's and OS's traps, and the sandbox. Resumed and forked sessions get none. Off, nothing is added; the agent benchmark turns it off to compare |
+| `[context]` `modules` | list of strings | `[]` | none | override, can unset | The ids of [context modules](#57-context-modules) to turn on that ship turned off: the library's `go`, `python-venv`, `node`, `rust`, `docker`, and `git-lfs`, or a user's or project's module with `enabled: false` |
 
 The prepared context's text is in Markdown modules, each with front matter that says when it applies; the [context preparation guide](context-preparation.md) explains the format, the library, and recipes, and the [implementation reference](../internal/contextprep/README.md#modules) the code. uah ships the built-in blocks' modules and a library of modules that are off until `[context] modules` names them.
 
@@ -572,9 +572,9 @@ Subagent limits and defaults, the role files that define kinds of subagents, and
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
 | `enabled` | bool | true | override, can unset | Offer `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent` |
-| `max_concurrent_threads_per_session` | int | 6 | override | Open subagents per session tree, above Codex's 4; Codex's `max_threads` is an alias. `/config` changes it as "Open subagents", also for the running session |
-| `max_threads` | int | none | override | Codex's older name for `max_concurrent_threads_per_session` |
-| `max_depth` | int | 1 | override | 1 offers subagents, 0 turns them off. Subagents never start subagents: a value above 1 is used as 1, with a notice |
+| `max_concurrent_threads_per_session` | int | 6 | override, can unset | Open subagents per session tree, above Codex's 4; Codex's `max_threads` is an alias. `/config` changes it as "Open subagents", also for the running session |
+| `max_threads` | int | none | override, can unset | Codex's older name for `max_concurrent_threads_per_session`. A later file's limit replaces an earlier file's under either name; a file that sets both uses `max_concurrent_threads_per_session` |
+| `max_depth` | int | 1 | override, can unset | 1 offers subagents, 0 turns them off. Subagents never start subagents: a value above 1 is used as 1, with a notice |
 | `default_subagent_model` | string | the parent's model | override | Model for subagents a role or call does not set; on openai-codex it must be in Codex's model catalog, as `spawn_agent`'s `model` must. A fork (`fork_context`) does not take it: it keeps the parent's model unless its call sets one, so it shares the parent's prompt cache, where Codex v0.156.1 applies the default to forks too |
 | `default_subagent_reasoning_effort` | string | the parent's effort | override | Effort for subagents a role or call does not set; a fork keeps the parent's effort, as above |
 
@@ -642,7 +642,7 @@ developer_instructions = "Review the diff you are given. List only real bugs, ea
 | --- | --- | --- | --- | --- |
 | `review_model` | string | the session's current model, as Codex | override | The model `/review` runs its reviewer on, on the session's provider, with the session's effort ([the review design](design/review.md)) |
 | `review_time_limit` | duration | none | override | How long one `/review` or `uah review` may run. When it runs out, the reviewer's commands stop and it gets one last turn, with no tools, to answer with what it has; the review says "stopped at the time limit". `0` is no limit |
-| `review_token_limit` | integer | none | override | The input and output tokens one review's model responses may use, cached input included; when they run out, the same as the time limit ("stopped at the token limit"). `0` is no limit |
+| `review_token_limit` | integer | none | override, can unset | The input and output tokens one review's model responses may use, cached input included; when they run out, the same as the time limit ("stopped at the token limit"). `0` is no limit |
 | `review_command_timeout` | duration | `10m` | override | How long one of the reviewer's commands may run before it is stopped, as an interrupt stops it; its result says so. `0` is no limit |
 
 - **Limits:** the time and token limits are off until the owner decides; about three times the longest normal review before would be `30m` and `3000000` (it took 10 minutes and 1.6M tokens). The command limit is longer than the longest command of those reviews, 7 minutes ([the review design](design/review.md#limits)).
@@ -680,9 +680,9 @@ These keys decide when uah compacts the context, which model writes the summary 
 | `compact_prompt` | string | uah's: Codex's summary prompt in fixed sections (Goal, Constraints, Decisions, State, Errors, TODOs, Next) | override | Codex's key: the prompt the summary call ends with. Surrounding whitespace is trimmed; empty means the default |
 | `experimental_compact_prompt_file` | path | none | override | Codex's key: a file whose text is the summary prompt, when `compact_prompt` is not set. An absolute path or one under `~/`; a missing or empty file stops the session from starting |
 | `compact_user_message_max_tokens` | integer | 20000, at most a quarter of the window | override | The cap on user messages a compaction keeps word for word, newest first; the one that crosses it is shortened in the middle. Codex fixes it at 20,000 (`COMPACT_USER_MESSAGE_MAX_TOKENS`); uah's default is at most a quarter of the window, so a small model's compacted context is not mostly old messages. A compaction saves the cap it used, so changing it affects later compactions only |
-| `compact_elide_after_calls` | integer | 10 | override | Before an automatic summary, replace the tool outputs this many calls old, and outputs over 2,000 tokens three calls old, with a short stub (tool, command, exit code, size); when that frees enough, no summary runs. SkillUse outputs stay. 0 turns it off |
-| `compact_keep_recent_calls` | integer | 5 | override | A summary leaves the last this many tool calls, with their outputs and the model's output around them, word for word after it; when they take more than a quarter of the window, the summary covers them too. 0 summarizes everything, as Codex does |
-| `remote_compaction` | boolean | true | override | On openai and openai-codex, compact as Codex does: the provider turns the history into an encrypted item that later requests send in its place, after the kept user messages (up to 64,000 tokens) and before uah's ledger. A failed remote compaction, a `/compact` with focus instructions, and every other provider use the summary. Codex has no key for it (its `remote_compaction_v2` feature is removed and always on) |
+| `compact_elide_after_calls` | integer | 10 | override, can unset | Before an automatic summary, replace the tool outputs this many calls old, and outputs over 2,000 tokens three calls old, with a short stub (tool, command, exit code, size); when that frees enough, no summary runs. SkillUse outputs stay. 0 turns it off |
+| `compact_keep_recent_calls` | integer | 5 | override, can unset | A summary leaves the last this many tool calls, with their outputs and the model's output around them, word for word after it; when they take more than a quarter of the window, the summary covers them too. 0 summarizes everything, as Codex does |
+| `remote_compaction` | boolean | true | override, can unset | On openai and openai-codex, compact as Codex does: the provider turns the history into an encrypted item that later requests send in its place, after the kept user messages (up to 64,000 tokens) and before uah's ledger. A failed remote compaction, a `/compact` with focus instructions, and every other provider use the summary. Codex has no key for it (its `remote_compaction_v2` feature is removed and always on) |
 
 - **Focus instructions:** `/compact <instructions>` adds focus instructions to the prompt for that one summary, as in Claude Code: `/compact keep the failing test names`.
 
@@ -718,7 +718,7 @@ How the TUI draws and handles the mouse, and the prompt history it recalls.
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
 | `persistence` | string | `save-all` | override | `save-all` writes every prompt; `none` writes nothing, and ↑ still recalls what the file has, as in Codex. Any other value stops the TUI with an error |
-| `max_bytes` | int | 8388608 (8 MiB) | override | The file's cap. Past it, the oldest prompts go until the file is at most 80% of the cap, as Codex trims; the newest prompt always stays. 0 means no cap, Codex's default |
+| `max_bytes` | int | 8388608 (8 MiB) | override, can unset | The file's cap. Past it, the oldest prompts go until the file is at most 80% of the cap, as Codex trims; the newest prompt always stays. 0 means no cap, Codex's default |
 
 - **Workspaces:** the file holds every workspace's prompts; the TUI shows the session's workspace's only.
 - **Format:** each prompt is one line, `{"session_id":…,"ts":…,"text":…,"workspace":…}`: Codex's `~/.codex/history.jsonl` format plus the session's workspace, an absolute path. A line without `workspace` shows in no workspace. The file is private (0600).
