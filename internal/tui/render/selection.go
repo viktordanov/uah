@@ -1,7 +1,6 @@
 package render
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -14,25 +13,9 @@ import (
 // mouse into a state.TextPos (At), and draws the selection over the
 // window's lines as fade does, so the cache keeps each item's own lines.
 
-// rowRefs are the transcript lines of all, a transcript's lines built from
-// rev (each item's lines, bottom item first, with its key in keys) after
-// head lines of banner.
-func rowRefs(keys []string, rev [][]string, head int) []state.TextPos {
-	refs := make([]state.TextPos, 0, head+len(rev)*2)
-	for l := range head {
-		refs = append(refs, state.TextPos{Key: state.BannerKey, Line: l})
-	}
-	for i, lines := range slices.Backward(rev) {
-		for l := range lines {
-			refs = append(refs, state.TextPos{Key: keys[i], Line: l})
-		}
-	}
-
-	return refs
-}
-
 // selectWindow records the window's rows, refs for its last lines (the
-// first pad rows are empty), and draws the selection over them.
+// first pad rows are empty; Cache.windowLines makes refs), and draws the
+// selection over them.
 func (c *Cache) selectWindow(s state.State, out []string, refs []state.TextPos) {
 	pad := len(out) - len(refs)
 	c.rows, c.window = make([]state.TextPos, len(out)), out

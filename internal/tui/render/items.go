@@ -65,14 +65,14 @@ type view struct {
 }
 
 // lines returns an item's lines, from the cache when the item is not live.
-func (c *Cache) lines(it state.Item, width int, now time.Time, v view) []string {
+func (c *Cache) lines(it *state.Item, width int, now time.Time, v view) []string {
 	if it.Live() {
-		return c.styles.itemLines(it, width, now, v)
+		return c.styles.itemLines(*it, width, now, v)
 	}
 	if e, ok := c.entries[it.Key]; ok && e.version == it.Version && e.width == width && e.reasoning == v.reasoning && e.details == v.details && e.links == c.styles.linkGen {
 		return e.lines
 	}
-	lines := c.styles.itemLines(it, width, now, v)
+	lines := c.styles.itemLines(*it, width, now, v)
 	c.entries[it.Key] = cacheEntry{version: it.Version, width: width, reasoning: v.reasoning, details: v.details, links: c.styles.linkGen, lines: lines}
 
 	return lines

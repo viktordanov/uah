@@ -11,26 +11,49 @@ import (
 // lines (ownLines), after a blank line when it or the item above stands
 // apart (spaced). The blank line is the item's, so the backtrack fade and
 // text selection map it like its other lines.
-func (c *Cache) transcriptLines(s state.State, i, w int) []string {
-	lines := c.ownLines(s, i, w)
-	if len(lines) == 0 || lines[0] == "" || !c.spaced(s, i, w, lines) {
+func (c *Cache) transcriptLines(s *state.State, i, w int) []string {
+	return withBlank(c.spacedLines(s, i, w))
+}
+
+// withBlank are lines after a blank line when blank says so.
+func withBlank(lines []string, blank bool) []string {
+	if !blank {
 		return lines
 	}
 
 	return append([]string{""}, lines...)
 }
 
+// spacedLines are an item's own lines and whether the transcript draws a
+// blank line above them, so a walk can count an item's lines without
+// copying them.
+func (c *Cache) spacedLines(s *state.State, i, w int) (lines []string, blank bool) {
+	lines = c.ownLines(s, i, w)
+
+	return lines, len(lines) > 0 && lines[0] != "" && c.spaced(s, i, w, lines)
+}
+
+// transcriptLen is len(transcriptLines(s, i, w)).
+func (c *Cache) transcriptLen(s *state.State, i, w int) int {
+	lines, blank := c.spacedLines(s, i, w)
+	if blank {
+		return len(lines) + 1
+	}
+
+	return len(lines)
+}
+
 // spaced reports whether item i, drawn as lines, needs a blank line above
 // it: it or the nearest item above that draws anything stands apart, and
 // no blank line is there yet. The first item drawn gets none.
-func (c *Cache) spaced(s state.State, i, w int, lines []string) bool {
+func (c *Cache) spaced(s *state.State, i, w int, lines []string) bool {
 	for j := i - 1; j >= 0; j-- {
 		above := c.ownLines(s, j, w)
 		if len(above) == 0 {
 			continue
 		}
 
-		return above[len(above)-1] != "" && (apart(s.Items[i], lines) || apart(s.Items[j], above))
+		return above[len(above)-1] != "" && (apart(&s.Items[i], lines) || apart(&s.Items[j], above))
 	}
 
 	return false
@@ -39,14 +62,14 @@ func (c *Cache) spaced(s state.State, i, w int, lines []string) bool {
 // apart is an item with a blank line above and below it: your message on
 // its band, and a tool call of more than one line (a file edit with its
 // diff, or a call with a second line), while one-line calls stay together.
-func apart(it state.Item, lines []string) bool {
+func apart(it *state.Item, lines []string) bool {
 	return it.Kind == state.KindUser || (it.Kind == state.KindTool && (len(it.Diff) > 0 || len(lines) > 1))
 }
 
 // ownLines are an item's lines, with the message selected to go back to
 // (state.Backtrack) marked, as Codex highlights it.
-func (c *Cache) ownLines(s state.State, i, w int) []string {
-	it := s.Items[i]
+func (c *Cache) ownLines(s *state.State, i, w int) []string {
+	it := &s.Items[i]
 	if s.Backtrack != nil && it.Key == s.Backtrack.Key {
 		return c.styles.bandLines("▶ ", it.Text, c.styles.selected.Render("  ↵ edit from here"), w)
 	}
@@ -76,9 +99,9 @@ func backtrackScroll(s state.State, c *Cache, w, height int) (scroll int, ok boo
 		return 0, false
 	}
 	below := 0
-	for i, it := range slices.Backward(s.Items) {
-		n := len(c.transcriptLines(s, i, w))
-		if it.Key != key {
+	for i := range slices.Backward(s.Items) {
+		n := c.transcriptLen(&s, i, w)
+		if s.Items[i].Key != key {
 			below += n
 
 			continue

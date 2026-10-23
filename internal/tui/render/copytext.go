@@ -31,8 +31,8 @@ func SelectedText(s state.State, c *Cache, f Frame) (string, int) {
 	}
 	for i, it := range s.Items {
 		if it.Key == start.Key || len(cp.out) > 0 {
-			lines := c.transcriptLines(s, i, f.Width)
-			add(it.Key, gutter(it), lines, len(lines) > len(c.ownLines(s, i, f.Width)))
+			lines := c.transcriptLines(&s, i, f.Width)
+			add(it.Key, gutter(it), lines, len(lines) > len(c.ownLines(&s, i, f.Width)))
 		}
 		if it.Key == end.Key {
 			break

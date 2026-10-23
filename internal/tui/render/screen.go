@@ -98,30 +98,30 @@ func screen(s state.State, c *Cache, f Frame) (string, int) {
 // transcript returns exactly height lines ending at the scroll position,
 // rendering items from the bottom up and stopping once the window is full.
 // head, when the whole transcript fits above the scroll position, comes
-// first: the banner.
+// first: the banner. Only the window's lines are copied; the items below
+// it are counted.
 func transcript(s state.State, c *Cache, w, height int, head []string) []string {
 	if scroll, ok := backtrackScroll(s, c, w, height); ok {
 		s.Scroll = scroll
 	}
 	d := c.gather(s, w, height)
-	all := make([]string, 0, d.count)
-	for _, lines := range slices.Backward(d.rev) {
-		all = append(all, lines...)
-	}
+	total := d.count // the transcript's lines: head's, then the items'
 	c.maxScroll = -1
 	if d.whole {
-		if n := len(head); n > 0 && head[n-1] == "" && len(all) > 0 && all[0] == "" {
+		if n := len(head); n > 0 && head[n-1] == "" && d.count > 0 && d.first == "" {
 			head = head[:n-1] // one blank line between the banner and an item that starts with one
 		}
-		all = append(slices.Clip(head), all...)
-		c.maxScroll = max(len(all)-height, 0)
-		if n := len(all) - d.count; d.banner >= 0 && n > 0 {
-			d.scroll = len(all) - 1 - min(d.banner, n-1) // anchored in the banner
+		total += len(head)
+		c.maxScroll = max(total-height, 0)
+		if n := len(head); d.banner >= 0 && n > 0 {
+			d.scroll = total - 1 - min(d.banner, n-1) // anchored in the banner
 		}
+	} else {
+		head = nil
 	}
-	end := len(all) - min(d.scroll, max(len(all)-height, 0))
+	end := total - min(d.scroll, max(total-height, 0))
 	start := max(end-height, 0)
-	window := all[start:end]
+	window, refs := c.windowLines(s, w, d, head, total, start, end)
 	out := make([]string, 0, height)
 	for range height - len(window) {
 		out = append(out, "")
@@ -133,10 +133,9 @@ func transcript(s state.State, c *Cache, w, height int, head []string) []string 
 	case s.Find != nil:
 		c.styles.fade(out[height-len(window):], start, 0, 0)
 	case s.Backtrack != nil:
-		c.styles.fade(out[height-len(window):], start, len(all)-d.below-d.selected, d.selected)
+		c.styles.fade(out[height-len(window):], start, total-d.under-d.selected, d.selected)
 	}
-	refs := rowRefs(d.keys, d.rev, len(all)-d.count)[start:end]
-	c.scrolled, c.bottom = len(all)-end, state.TextPos{}
+	c.scrolled, c.bottom = total-end, state.TextPos{}
 	if len(refs) > 0 {
 		c.bottom = refs[len(refs)-1]
 	}
@@ -149,28 +148,32 @@ func transcript(s state.State, c *Cache, w, height int, head []string) []string 
 
 // gathered are the items a window draws, from the bottom up.
 type gathered struct {
-	rev  [][]string // each item's lines, bottom item first
+	rev  [][]string // the lines of the items in the window, bottom item first
 	keys []string   // each of rev's items
-	// count is their lines, and scroll how many of them lie below the
-	// window; whole says every item is drawn.
-	count, scroll int
-	whole         bool
+	// count is the lines of the items walked, scroll how many of them lie
+	// below the window, and below the lines of the walked items under rev's,
+	// which are counted, not kept. whole says every item was walked, and
+	// first is the top one's first line.
+	count, scroll, below int
+	whole                bool
+	first                string
 	// banner is the anchor's line when it is in the banner, else -1.
 	banner int
-	// below and selected place the message selected to go back to: the
+	// under and selected place the message selected to go back to: the
 	// lines under it and its own.
-	below, selected int
+	under, selected int
 }
 
-// gather draws the items from the bottom up until the window is full. A
-// pinned window ends at its anchor (state/scroll.go): the lines below the
-// anchor are the scroll, however many arrived since.
+// gather walks the items from the bottom up until the window is full,
+// keeping the lines of the items in it. A pinned window ends at its anchor
+// (state/scroll.go): the lines below the anchor are the scroll, however
+// many arrived since.
 func (c *Cache) gather(s state.State, w, height int) gathered {
 	anchor := -2 // the anchor's item, or -2 for none
 	if focusKey(s) == "" && s.Anchor.Key != "" && s.Pinned() {
 		anchor = s.Order(s.Anchor.Key)
 	}
-	d := gathered{scroll: s.Scroll, below: -1, banner: -1}
+	d := gathered{scroll: s.Scroll, under: -1, banner: -1}
 	need := height + d.scroll
 	if anchor == -1 {
 		d.banner = s.Anchor.Line
@@ -180,29 +183,103 @@ func (c *Cache) gather(s state.State, w, height int) gathered {
 	}
 	i := len(s.Items) - 1
 	for ; i >= 0 && d.count < need; i-- {
-		lines := c.transcriptLines(s, i, w)
-		if len(lines) == 0 {
+		own, blank := c.spacedLines(&s, i, w)
+		n := len(own)
+		if blank {
+			n++
+		}
+		if n == 0 {
 			continue
 		}
 		if i <= anchor {
 			// The anchor's line; an item the view does not draw anchors at
 			// the end of the drawn item above it.
-			line := len(lines) - 1
+			line := n - 1
 			if i == anchor {
 				line = min(s.Anchor.Line, line)
 			}
-			d.scroll, anchor = d.count+len(lines)-1-line, -2
+			d.scroll, anchor = d.count+n-1-line, -2
 			need = d.scroll + height
 		}
 		if s.Backtrack != nil && s.Items[i].Key == s.Backtrack.Key {
-			d.below, d.selected = d.count, len(lines)
+			d.under, d.selected = d.count, n
 		}
-		d.rev, d.keys = append(d.rev, lines), append(d.keys, s.Items[i].Key)
-		d.count += len(lines)
+		d.first = ""
+		if !blank {
+			d.first = own[0]
+		}
+		if anchor >= -1 || d.count+n <= d.scroll {
+			d.below += n // under the window, or under the anchor not found yet
+		} else {
+			d.rev, d.keys = append(d.rev, withBlank(own, blank)), append(d.keys, s.Items[i].Key)
+		}
+		d.count += n
 	}
 	d.whole = i < 0
 
 	return d
+}
+
+// windowLines are the transcript's lines [start, end) and the line each one is,
+// in a transcript of total lines that starts with head. They are the
+// gathered items' lines, unless the window moved down from the scroll (a
+// transcript shorter than the scroll, an anchor in the banner, or one not
+// found): then the items are walked again for it.
+func (c *Cache) windowLines(s state.State, w int, d gathered, head []string, total, start, end int) ([]string, []state.TextPos) {
+	kept := linesIn(d.rev)
+	if end > len(head) && (total-end < d.below || max(start, len(head)) < total-d.below-kept) {
+		d.rev, d.keys, d.below = c.itemsIn(s, w, total-end, total-start)
+		kept = linesIn(d.rev)
+	}
+	lines := make([]string, 0, end-start)
+	refs := make([]state.TextPos, 0, end-start)
+	for l := start; l < min(end, len(head)); l++ {
+		lines = append(lines, head[l])
+		refs = append(refs, state.TextPos{Key: state.BannerKey, Line: l})
+	}
+	at := total - d.below - kept // the transcript line rev's top item starts on
+	for j, item := range slices.Backward(d.rev) {
+		for l := max(start-at, 0); l < min(end-at, len(item)); l++ {
+			lines = append(lines, item[l])
+			refs = append(refs, state.TextPos{Key: d.keys[j], Line: l})
+		}
+		at += len(item)
+	}
+
+	return lines, refs
+}
+
+// itemsIn are the lines, bottom item first, and the keys of the items with
+// lines in [from, to) counted from the transcript's bottom, and the lines
+// of the items below them.
+func (c *Cache) itemsIn(s state.State, w, from, to int) (rev [][]string, keys []string, below int) {
+	count := 0
+	for i := len(s.Items) - 1; i >= 0 && count < to; i-- {
+		own, blank := c.spacedLines(&s, i, w)
+		n := len(own)
+		if blank {
+			n++
+		}
+		switch {
+		case n == 0:
+		case count+n <= from:
+			below += n
+		default:
+			rev, keys = append(rev, withBlank(own, blank)), append(keys, s.Items[i].Key)
+		}
+		count += n
+	}
+
+	return rev, keys, below
+}
+
+func linesIn(items [][]string) int {
+	n := 0
+	for _, lines := range items {
+		n += len(lines)
+	}
+
+	return n
 }
 
 func (st *Styles) headerLine(s state.State, w int) string {
