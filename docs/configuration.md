@@ -572,8 +572,8 @@ Subagent limits and defaults, the role files that define kinds of subagents, and
 | Key | Type | Default | Merge | Meaning |
 | --- | --- | --- | --- | --- |
 | `enabled` | bool | true | override, can unset | Offer `spawn_agent`, `send_input`, `wait_agent`, `close_agent`, and `resume_agent` |
-| `max_concurrent_threads_per_session` | int | 6 | override, can unset | Open subagents per session tree, above Codex's 4; Codex's `max_threads` is an alias. `/config` changes it as "Open subagents", also for the running session |
-| `max_threads` | int | none | override, can unset | Codex's older name for `max_concurrent_threads_per_session`. A later file's limit replaces an earlier file's under either name; a file that sets both uses `max_concurrent_threads_per_session` |
+| `max_concurrent_threads_per_session` | int | 6 | override | Open subagents per session tree, above Codex's 4; Codex's `max_threads` is an alias. 0 or less stops the session from starting (want 1 or more). `/config` changes it as "Open subagents", also for the running session |
+| `max_threads` | int | none | override | Codex's older name for `max_concurrent_threads_per_session`. A later file's limit replaces an earlier file's under either name; a file that sets both uses `max_concurrent_threads_per_session` |
 | `max_depth` | int | 1 | override, can unset | 1 offers subagents, 0 turns them off. Subagents never start subagents: a value above 1 is used as 1, with a notice |
 | `default_subagent_model` | string | the parent's model | override | Model for subagents a role or call does not set; on openai-codex it must be in Codex's model catalog, as `spawn_agent`'s `model` must. A fork (`fork_context`) does not take it: it keeps the parent's model unless its call sets one, so it shares the parent's prompt cache, where Codex v0.156.1 applies the default to forks too |
 | `default_subagent_reasoning_effort` | string | the parent's effort | override | Effort for subagents a role or call does not set; a fork keeps the parent's effort, as above |
