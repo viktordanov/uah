@@ -189,9 +189,9 @@ The manager knows only the children of the current process. `resume_agent(id)` r
 <!-- memoria:section id="roles" files="roles.go models.go markdown.go" -->
 ## Roles
 
-Agent types are Codex role files and Markdown agent files, loaded by `LoadRoles` from `~/.uah/agents` and a trusted workspace's `.uah/agents` (recursive `*.toml` and `*.md`). A later directory replaces a role of the same name; within one directory, a Markdown file replaces a TOML file of the same name, with a warning. The subset read from TOML is `name`, `description`, `nickname_candidates`, `model`, `model_reasoning_effort`, `service_tier`, `developer_instructions`, and uah's `tools` and `approve`, with Codex's validation. Other keys produce a warning, and a malformed file is skipped with one. The `spawn_agent` description lists the roles of both formats alike.
+Agent types are Codex role files and Markdown agent files, loaded by `LoadRoles` from `~/.uah/agents` and a trusted workspace's `.uah/agents` (recursive `*.toml` and `*.md`). A later directory replaces a role of the same name; within one directory, a Markdown file replaces a TOML file of the same name, with a warning. The subset read from TOML is `name`, `description`, `nickname_candidates`, `model`, `model_reasoning_effort`, `service_tier`, `developer_instructions`, and uah's `tools` and `approve`, with Codex's validation. `tools` and `service_tier` take the forms a Markdown file's do (the `nameList` and `tierValue` types in `markdown.go`). Other keys produce a warning, and a malformed file is skipped with one. The `spawn_agent` description lists the roles of both formats alike.
 
-`service_tier` is Codex's key: `"priority"` (or its legacy name `"fast"`) runs the role's agents with priority processing when the provider offers it, `"default"` runs them without it, and an absent key follows the parent. `"flex"`, which no provider of uah's serves, is ignored with a warning. Codex rust-v0.156.1 reads the key into the role's config layer but then sets every child's tier to the root's (`apply_spawn_agent_service_tier`); uah applies the role's tier, so a role can turn fast mode on for its agents alone.
+`service_tier` is Codex's key: `"priority"` (or its legacy name `"fast"`) runs the role's agents with priority processing when the provider offers it, `"default"` runs them without it, and an absent key follows the parent. A bool works as `fast` does: `true` is `"priority"`, `false` is `"default"`. `"flex"`, which no provider of uah's serves, is ignored with a warning. Codex rust-v0.156.1 reads the key into the role's config layer but then sets every child's tier to the root's (`apply_spawn_agent_service_tier`); uah applies the role's tier, so a role can turn fast mode on for its agents alone.
 <!-- /memoria:section -->
 
 <!-- memoria:section id="markdown" files="markdown.go toolnames.go manager.go" -->
@@ -222,7 +222,7 @@ Review only; do not edit files. List each finding with its file and line.
 | the body | `DeveloperInstructions` | Required, as Codex requires `developer_instructions` |
 | `model` | `Model` | `inherit` and Claude Code's aliases (`sonnet`, `opus`, `haiku`, `fable`, with a warning) are the parent's model |
 | `effort`, `model_reasoning_effort` | `Effort` | Claude Code's key and Codex's; Codex's wins |
-| `fast`, `service_tier` | `ServiceTier` | `fast: true` is `priority`, `false` is `default`; `service_tier` wins |
+| `fast`, `service_tier` | `ServiceTier` | `fast: true` is `priority`, `false` is `default`; `service_tier` takes a string or a bool the same way, and wins |
 | `tools` | `Tools` | A comma-separated string or a list, mapped by `mapTools` (`toolnames.go`) |
 | `approve` | `Approve` | A list, read by `mapApprove` |
 | `nickname_candidates` | `NicknameCandidates` | Codex's key |

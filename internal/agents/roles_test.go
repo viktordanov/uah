@@ -70,3 +70,25 @@ developer_instructions = "Wait."
 	assert.Contains(t, warnings[1], "must define a non-empty description")
 	assert.Contains(t, warnings[2], `service_tier = "flex" (want priority, fast, or default)`)
 }
+
+// TestLoadRoles_TOMLValues reads tools and service_tier in a TOML role
+// file in the forms a Markdown file takes: tools as a comma-separated
+// string or a list, service_tier as a string or a bool.
+func TestLoadRoles_TOMLValues(t *testing.T) {
+	dir := t.TempDir()
+	writeRole(t, dir, "a.toml", "name = \"a\"\ndescription = \"A.\"\ndeveloper_instructions = \"A.\"\ntools = \"Bash, apply_patch\"\nservice_tier = true\n")
+	writeRole(t, dir, "b.toml", "name = \"b\"\ndescription = \"B.\"\ndeveloper_instructions = \"B.\"\ntools = [\"Bash\"]\nservice_tier = false\n")
+	writeRole(t, dir, "c.md", "---\nname: c\ndescription: C.\nservice_tier: true\n---\nC.\n")
+	writeRole(t, dir, "d.toml", "name = \"d\"\ndescription = \"D.\"\ndeveloper_instructions = \"D.\"\ntools = 3\n")
+
+	roles, warnings := agents.LoadRoles(dir)
+
+	require.Len(t, roles, 3, warnings)
+	assert.Equal(t, []string{"Bash", "apply_patch"}, roles[0].Tools)
+	assert.Equal(t, agents.TierPriority, roles[0].ServiceTier)
+	assert.Equal(t, []string{"Bash"}, roles[1].Tools)
+	assert.Equal(t, agents.TierDefault, roles[1].ServiceTier)
+	assert.Equal(t, agents.TierPriority, roles[2].ServiceTier, "a Markdown file's service_tier may be a bool too")
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "d.toml")
+}

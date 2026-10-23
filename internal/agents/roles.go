@@ -30,13 +30,13 @@ type Role struct {
 	// ServiceTier is Codex's service_tier: "priority" (or its legacy name
 	// "fast") runs the agent with priority processing, and "default" without
 	// it, whatever the parent uses. Empty follows the parent.
-	ServiceTier string `toml:"service_tier"`
+	ServiceTier string `toml:"-"`
 	// DeveloperInstructions are added to the agent's system prompt; a
 	// Markdown file's body.
 	DeveloperInstructions string `toml:"developer_instructions"`
 	// Tools are the tools its agents are offered, by uah's names (see
 	// mapTools); nil offers every tool.
-	Tools []string `toml:"tools"`
+	Tools []string `toml:"-"`
 	// Approve are actions its agents run without asking, within the
 	// permission mode: command prefixes and MCP tools (see mapApprove).
 	Approve []string `toml:"approve"`
@@ -137,11 +137,22 @@ func readRole(path string) (Role, []string, error) {
 	if err != nil {
 		return Role{}, nil, fmt.Errorf("failed to read %s: %w", path, err)
 	}
-	var r Role
-	meta, err := toml.Decode(string(data), &r)
+	// tools and service_tier take the forms a Markdown file's do.
+	var f struct {
+		Role
+
+		Tools       *nameList `toml:"tools"`
+		ServiceTier tierValue `toml:"service_tier"`
+	}
+	meta, err := toml.Decode(string(data), &f)
 	if err != nil {
 		return Role{}, nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
+	r := f.Role
+	if f.Tools != nil {
+		r.Tools = []string(*f.Tools)
+	}
+	r.ServiceTier = string(f.ServiceTier)
 	var ignored []string
 	for _, k := range meta.Undecoded() {
 		ignored = append(ignored, k[0])

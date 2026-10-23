@@ -21,7 +21,7 @@ type front struct {
 	Model              string    `yaml:"model"`
 	Effort             string    `yaml:"effort"`
 	ReasoningEffort    string    `yaml:"model_reasoning_effort"`
-	ServiceTier        string    `yaml:"service_tier"`
+	ServiceTier        tierValue `yaml:"service_tier"`
 	Fast               *bool     `yaml:"fast"`
 	Approve            []string  `yaml:"approve"`
 	NicknameCandidates []string  `yaml:"nickname_candidates"`
@@ -38,7 +38,7 @@ var frontKeys = []string{
 var claudeModels = []string{"sonnet", "opus", "haiku", "fable"}
 
 // nameList is Claude Code's tools value: a comma-separated string or a
-// YAML list.
+// list, in YAML or in a TOML role file.
 type nameList []string
 
 func (l *nameList) UnmarshalYAML(n *yaml.Node) error {
@@ -47,12 +47,7 @@ func (l *nameList) UnmarshalYAML(n *yaml.Node) error {
 		if err := n.Decode(&s); err != nil {
 			return err // the YAML error names the line
 		}
-		*l = nameList{}
-		for part := range strings.SplitSeq(s, ",") {
-			if part = strings.TrimSpace(part); part != "" {
-				*l = append(*l, part)
-			}
-		}
+		*l = splitNames(s)
 
 		return nil
 	}
@@ -64,6 +59,69 @@ func (l *nameList) UnmarshalYAML(n *yaml.Node) error {
 
 	return nil
 }
+
+func (l *nameList) UnmarshalTOML(v any) error {
+	switch v := v.(type) {
+	case string:
+		*l = splitNames(v)
+
+		return nil
+	case []any:
+		*l = nameList{}
+		for _, x := range v {
+			s, ok := x.(string)
+			if !ok {
+				return fmt.Errorf("tools has %v; want names", x)
+			}
+			*l = append(*l, s)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("tools is %v; want a comma-separated string or a list", v)
+}
+
+// splitNames splits a comma-separated list, leaving out empty names.
+func splitNames(s string) nameList {
+	l := nameList{}
+	for part := range strings.SplitSeq(s, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			l = append(l, part)
+		}
+	}
+
+	return l
+}
+
+// tierValue is a service_tier value, in YAML or in a TOML role file:
+// Codex's string, or a bool as Claude Code's fast takes it, true for
+// priority and false for default.
+type tierValue string
+
+func (t *tierValue) set(v any) error {
+	switch v := v.(type) {
+	case string:
+		*t = tierValue(v)
+	case bool:
+		*t = map[bool]tierValue{true: TierPriority, false: TierDefault}[v]
+	default:
+		return fmt.Errorf("service_tier is %v; want a string or a bool", v)
+	}
+
+	return nil
+}
+
+func (t *tierValue) UnmarshalYAML(n *yaml.Node) error {
+	var v any
+	if err := n.Decode(&v); err != nil {
+		return err // the YAML error names the line
+	}
+
+	return t.set(v)
+}
+
+func (t *tierValue) UnmarshalTOML(v any) error { return t.set(v) }
 
 // readMarkdown parses and checks one Markdown agent file: YAML front
 // matter between --- lines, then the instructions.
@@ -114,10 +172,10 @@ func (f front) role(ignored []string) (Role, []string) {
 		ignored = append(ignored, fmt.Sprintf("model = %q (a Claude model alias; the agent uses the parent's model)", r.Model))
 		r.Model = ""
 	}
-	tier := f.ServiceTier
-	if tier == "" && f.Fast != nil {
-		tier = map[bool]string{true: TierPriority, false: TierDefault}[*f.Fast]
+	if f.ServiceTier == "" && f.Fast != nil {
+		_ = f.ServiceTier.set(*f.Fast) // a bool always sets it
 	}
+	tier := string(f.ServiceTier)
 	if t, ok := serviceTier(tier); ok {
 		r.ServiceTier = t
 	} else {
