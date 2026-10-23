@@ -21,6 +21,7 @@ The [state storage record](../../docs/design/state.md) explains why the files st
 | Function | Used by |
 | --- | --- |
 | `List` | `uah sessions`, `uah resume`, the TUI picker, `--last`, shell completion. Falls back to the file scan |
+| `Load` | A resumed TUI, an agent view, `uah sessions show`, and the TUI's prompt cache stats: `session.LoadRuns` of the session's runs (`runs_by_session`), so only their summaries are read. Falls back to `session.Load`'s file scan |
 | `SearchIn` | `uah sessions --search`. Each word is quoted, so user text is never FTS syntax |
 | `ActivityIn` | `/status`'s 12-week heatmap |
 | `TokensIn` | `uah stats`: every run's start, model, workspace, and tokens, oldest first |
@@ -28,5 +29,5 @@ The [state storage record](../../docs/design/state.md) explains why the files st
 
 `CopyIndex` copies an index into another state directory for the one-time move to `~/.uah` (`internal/home/migrate`). SQLite writes a consistent snapshot with `VACUUM INTO`, so another uah may hold it open; the old directory is only read (opened immutable when no WAL exists, so no `-wal` or `-shm` file appears next to it). The copy's `dir` column is repointed at the new `runs/`.
 
-No code writes to the index except `Reconcile` and `Forget`, which only deletes, so runs written by `uagent` or by another uah process appear on the next open. `TestIndexMatchesTheFiles` requires the index and the file scan to return the same sessions.
+No code writes to the index except `Reconcile` and `Forget`, which only deletes, so runs written by `uagent` or by another uah process appear on the next open. `TestIndexMatchesTheFiles` requires the index and the file scan to return the same sessions, and `TestLoadMatchesTheScan` the same runs of one session; `BenchmarkLoadSession` compares the two on 2,000 runs.
 <!-- /memoria:section -->

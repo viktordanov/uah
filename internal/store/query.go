@@ -175,6 +175,42 @@ func List(ctx context.Context, stateDir string) ([]session.Info, error) {
 	return ix.Sessions(ctx)
 }
 
+// Load is session.Load with the session's runs from the index, so loading
+// one session reads only its own run records. When the index cannot be
+// used it scans the files instead.
+func Load(ctx context.Context, stateDir, id string) ([]session.LoadedRun, error) {
+	ix, err := Open(ctx, stateDir)
+	if err != nil {
+		return session.Load(stateDir, id)
+	}
+	defer ix.Close()
+	dirs, err := ix.runDirs(ctx, id)
+	if err != nil {
+		return session.Load(stateDir, id)
+	}
+
+	return session.LoadRuns(stateDir, id, dirs)
+}
+
+// runDirs are the session's run directories in start order.
+func (ix *Index) runDirs(ctx context.Context, id string) ([]string, error) {
+	rows, err := ix.db.QueryContext(ctx, `SELECT run_id FROM runs WHERE session_id = ? ORDER BY started_ns, run_id`, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read the index: %w", err)
+	}
+	defer rows.Close()
+	var dirs []string
+	for rows.Next() {
+		var runID string
+		if err := rows.Scan(&runID); err != nil {
+			return nil, fmt.Errorf("failed to read the index: %w", err)
+		}
+		dirs = append(dirs, filepath.Join(ix.stateDir, "runs", runID))
+	}
+
+	return dirs, rows.Err()
+}
+
 // Forget deletes the index rows of the sessions, after their run records
 // were removed (`uah sessions rm`); Reconcile would drop them on the next
 // open too.

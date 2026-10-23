@@ -123,6 +123,23 @@ func runTokens(dir string) core.Tokens {
 	return SummaryTokens(d)
 }
 
+// loadRecord reads a run's summary.json as harness.Runs does, with the
+// tokens it leaves out.
+func loadRecord(dir string) (harness.RunRecord, bool) {
+	b, err := os.ReadFile(filepath.Join(dir, harness.SummaryFile))
+	if err != nil {
+		return harness.RunRecord{}, false
+	}
+	var d stream.SummaryDTO
+	if json.Unmarshal(b, &d) != nil {
+		return harness.RunRecord{}, false
+	}
+	res := stream.SummaryFromDTO(d)
+	res.Stats.Tokens = SummaryTokens(d)
+
+	return harness.RunRecord{Dir: dir, Result: res, Complete: res.Status != core.StatusRunning}, true
+}
+
 // SummaryTokens are the tokens of a run summary. The harness's run records
 // carry none: uagent v0.7.0's stream.SummaryFromDTO reads only the
 // summary's metadata, not its stats.
@@ -155,27 +172,44 @@ func firstPrompt(req core.Request) string {
 // engine.PatchApplied, failed commands and MCP calls their output, as
 // engine.ToolOutput, and rewinds the run before them, as engine.Rewound.
 // Each run's result carries its tokens, from its summary.
+//
+// Load finds the session's runs by reading every run summary in stateDir;
+// store.Load finds them in the index and calls LoadRuns.
 func Load(stateDir, id string) ([]LoadedRun, error) {
 	records, err := harness.New(harness.Config{StateDir: stateDir}).Runs()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load session: %w", err)
 	}
+	var dirs []string
+	for _, r := range slices.Backward(records) {
+		if r.Result.Request.SessionID == id {
+			dirs = append(dirs, r.Dir)
+		}
+	}
+
+	return LoadRuns(stateDir, id, dirs)
+}
+
+// LoadRuns is Load of the session's run directories, in start order. A
+// directory without a readable summary of the session is left out, as
+// Load's scan leaves it out.
+func LoadRuns(stateDir, id string, dirs []string) ([]LoadedRun, error) {
 	var runs []LoadedRun
 	br := bufio.NewReaderSize(nil, 1<<20) // one buffer for every run's events file
-	for _, r := range slices.Backward(records) {
-		if r.Result.Request.SessionID != id {
+	for _, dir := range dirs {
+		r, ok := loadRecord(dir)
+		if !ok || r.Result.Request.SessionID != id {
 			continue
 		}
 		events, err := loadEvents(br, r.Dir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load run %s: %w", r.Result.Request.RunID, err)
 		}
-		r.Result.Stats.Tokens = runTokens(r.Dir)
 		runs = append(runs, LoadedRun{Record: r, Events: events})
 	}
 
 	runs = withPrior(br, stateDir, id, runs)
-	runs, err = withCompactions(stateDir, id, runs)
+	runs, err := withCompactions(stateDir, id, runs)
 	if err != nil {
 		return nil, err
 	}

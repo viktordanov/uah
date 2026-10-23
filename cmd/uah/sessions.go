@@ -161,7 +161,7 @@ func showSession(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return exitError(err)
 	}
-	runs, err := session.Load(stateDir, info.ID)
+	runs, err := store.Load(ctx, stateDir, info.ID)
 	if err != nil {
 		return err
 	}

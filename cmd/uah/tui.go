@@ -123,7 +123,7 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 			if !setup.Options.Resumed {
 				return s, nil, nil
 			}
-			history, err := session.Load(setup.StateDir, s.ID())
+			history, err := store.Load(ctx, setup.StateDir, s.ID())
 			if err != nil {
 				_ = s.Close()
 
@@ -140,7 +140,14 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 		Windows:  st.Models.Window,
 		Usage:    st.Usage, // read after each run and on /status, never on a timer
 		Activity: func() (map[string]int, error) { return store.ActivityIn(ctx, st.StateDir, time.Now(), 7*12) },
-		Cache:    func(id string) ([]cachestats.Attributed, error) { return session.CacheStats(st.StateDir, id) },
+		Cache: func(id string) ([]cachestats.Attributed, error) {
+			runs, err := store.Load(ctx, st.StateDir, id)
+			if err != nil {
+				return nil, err
+			}
+
+			return cachestats.Attribute(session.CacheRequests(runs), cachestats.TTL), nil
+		},
 		Sessions: func() ([]session.Info, error) {
 			infos, err := store.List(ctx, st.StateDir)
 			if err == nil {

@@ -144,7 +144,7 @@ Hooks come from `Config.Hooks`, the session's runner:
 
 `Manager` implements `session.AgentWatcher`, and `Session.WatchAgent(ref)` reaches it through the embedded engine's `Subagents()`. A watch finds the parent's child by ID or nickname and returns:
 
-- `History`: the child's runs from before this process, from its run records; for a closed child, all of its runs, since its log is gone;
+- `History`: the child's runs from before this process, from its run records (`store.Load`, which finds them in the index); for a closed child, all of its runs, since its log is gone;
 - `Events`: its session's events since it opened in this process, which the watcher logs (the newest 20,000, trimmed in steps of a quarter; dropped when the child closes, whose runs stay on disk);
 - `Next`: the events that follow, on a channel of 4,096. A view that falls a whole queue behind is closed rather than holding up the child; the TUI opens it again;
 - `Send`: a message to the child through `submit`, as `send_input` sends it, so the child's status and `wait_agent` see it; its `session.When` says when it reaches the child's live run (`Session.Send`: now for ctrl+enter, after the next tool call for enter, after the run for tab). `submit` refuses a closed child under the lock, so a message to it, or one that `send_input` hands over while `close_agent` closes it, fails and leaves it `shutdown` (`TestAgents_SendToAClosedChild`);

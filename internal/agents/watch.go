@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/session"
+	"github.com/viktordanov/uah/internal/store"
 )
 
 // Bounds of a child's event log and of a view's backlog.
@@ -43,7 +45,7 @@ func (m *Manager) WatchAgent(parentID, ref string) (*session.AgentWatch, error) 
 	// A closed child dropped its log, so its runs since it opened come
 	// from disk too.
 	var history []session.LoadedRun
-	if runs, err := session.Load(filepath.Dir(dir), c.id); err == nil {
+	if runs, err := store.Load(context.Background(), filepath.Dir(dir), c.id); err == nil {
 		history = slices.DeleteFunc(runs, func(r session.LoadedRun) bool { return !closed && !r.Record.Result.StartedAt.Before(opened) })
 	}
 
