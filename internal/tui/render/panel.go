@@ -46,11 +46,9 @@ func (st *Styles) edge(left, right, text string, w int) string {
 	return st.tool.Render(left+"─ ") + text + st.tool.Render(" "+strings.Repeat("─", rest)+right)
 }
 
-// choiceRows draw a panel's choices: each row's key in the accent, its
-// label, and its help dim, the labels padded to one column of at most half
-// the width when there is help to show; the selected row (-1: none) in the
-// accent band with "›".
-func (st *Styles) choiceRows(keys, labels, helps []string, selected, w int) []string {
+// choiceWidth is the labels' column in choiceRows; the help starts four
+// cells after it.
+func choiceWidth(keys, labels, helps []string, w int) int {
 	width, help := 0, false
 	for i := range labels {
 		width = max(width, ansi.StringWidth(keys[i]+" "+labels[i]))
@@ -59,7 +57,16 @@ func (st *Styles) choiceRows(keys, labels, helps []string, selected, w int) []st
 	if help {
 		width = min(width, max(w/2, 12)) // a long label leaves its help some room
 	}
-	width = min(width, max(w-2, 1))
+
+	return min(width, max(w-2, 1))
+}
+
+// choiceRows draw a panel's choices: each row's key in the accent, its
+// label, and its help dim, the labels padded to one column of at most half
+// the width when there is help to show; the selected row (-1: none) in the
+// accent band with "›".
+func (st *Styles) choiceRows(keys, labels, helps []string, selected, w int) []string {
+	width := choiceWidth(keys, labels, helps, w)
 	out := make([]string, 0, len(labels))
 	for i := range labels {
 		label := ansi.Truncate(keys[i]+" "+labels[i], width, "…")

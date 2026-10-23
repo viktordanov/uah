@@ -242,6 +242,11 @@ func (st *Styles) headerLine(s state.State, w int) string {
 	return markYolo(left+strings.Repeat(" ", gap)+right, st.header, st.yoloChip)
 }
 
+// panelChrome is the screen's rows around the panel: the status line and
+// the row above it, the composer's band rows and the row above them, the
+// footer, and one row of the transcript.
+const panelChrome = 7
+
 // panelLines shows a pending approval, the agent's questions, the /config
 // panel, the /model picker, the suggestion menu while typing a command or
 // an "@" mention, or else the queue.
@@ -250,7 +255,7 @@ func (st *Styles) panelLines(s state.State, f Frame) []string {
 		return st.approvalLines(a, f.Width)
 	}
 	if q, ok := s.PendingQuestions(); ok {
-		return st.questionLines(q, f.Width)
+		return st.questionLines(q, f.Width, f.Height-f.ComposerHeight-panelChrome)
 	}
 	if s.Config != nil {
 		return st.configLines(s, f.Width)

@@ -2,8 +2,8 @@ package render_test
 
 import (
 	"fmt"
-	"runtime"
 	"image/color"
+	"runtime"
 	"strings"
 	"testing"
 

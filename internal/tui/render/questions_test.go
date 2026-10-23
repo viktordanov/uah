@@ -140,3 +140,53 @@ func screenAt(s state.State, draft string, w int) string {
 
 	return strings.Join(lines, "\n") + "\n"
 }
+
+// TestScreen_QuestionsLongText: the question's text and the chosen
+// option's description show in full, wrapped, where a few rows cut them
+// before; the other options' descriptions keep one row. A short screen
+// cuts them so the whole panel shows.
+func TestScreen_QuestionsLongText(t *testing.T) {
+	long := strings.Repeat("Require verifiable excerpts and a checklist of correction criteria. ", 4) + "The end."
+	ask := strings.Repeat("How should the stronger model decide a correction is clear enough? ", 6) + "Last words."
+	s := apply(base(),
+		core.RunStarted{At: t0, RunID: "20260924-120000-3f2a1b2c"},
+		session.QuestionsAsked{At: t0, ID: "q1", CallID: "c1", Questions: []engine.Question{{ID: "gate", Header: "Auto gate", Question: ask, Options: []engine.QuestionOption{
+			{Label: "Evidence gate (Recommended)", Description: long},
+			{Label: "Judge probability cutoff", Description: long},
+		}}}},
+	)
+	for _, w := range []int{100, 40} {
+		out := screenAt(s, "", w)
+		flat := strings.Join(strings.Fields(strings.NewReplacer("│", " ", "›", " ").Replace(out)), " ")
+		assert.Contains(t, flat, "Last words.", "the question, at %d columns", w)
+		assert.Equal(t, 1, strings.Count(flat, "The end."), "the chosen option's description alone, at %d columns", w)
+		for line := range strings.SplitSeq(out, "\n") {
+			assert.LessOrEqual(t, ansi.StringWidth(line), w, "%q", line)
+		}
+	}
+
+	// On a short screen the two give rows back before the title and the
+	// question's start would scroll off the top.
+	for _, w := range []int{100, 40} {
+		out, _ := render.Screen(s, render.NewCache(render.Amber), render.Frame{Width: w, Height: 24, Composer: "λ ", ComposerHeight: 1})
+		plain := ansi.Strip(out)
+		assert.Contains(t, plain, "? Auto gate", "at %d columns", w)
+		assert.Contains(t, plain, "How should the stronger", "at %d columns", w)
+		assert.Contains(t, plain, "2. Judge", "at %d columns", w)
+		assert.Contains(t, plain, "…", "something is cut at %d columns", w)
+	}
+
+	// Beside a taller preview, cutting the description gains nothing: the
+	// question gives the rows.
+	s = apply(base(),
+		core.RunStarted{At: t0, RunID: "20260924-120000-3f2a1b2c"},
+		session.QuestionsAsked{At: t0, ID: "q1", CallID: "c1", Questions: []engine.Question{{ID: "gate", Header: "Auto gate", Question: ask + ask, Options: []engine.QuestionOption{
+			{Label: "Evidence gate", Description: long + long, Preview: strings.Repeat("line\n", 20)},
+			{Label: "Judge", Description: long},
+		}}}},
+	)
+	out, _ := render.Screen(s, render.NewCache(render.Amber), render.Frame{Width: 120, Height: 32, Composer: "λ ", ComposerHeight: 1})
+	plain := ansi.Strip(out)
+	assert.Contains(t, plain, "? Auto gate")
+	assert.Contains(t, plain, "How should the stronger")
+}

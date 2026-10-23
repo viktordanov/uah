@@ -5,9 +5,6 @@
 
 
 
-
-
-
 ╭──────────────────────────────────────╮
 │ λ uah                                │
 │                                      │
@@ -28,7 +25,10 @@
 │ ways. Which should the migration     │
 │ take?                                │
 │                                      │
-│ › 1. Expand and con…  Add the new c… │
+│ › 1. Expand and con…                 │
+│      Add the new column, backfill    │
+│      it, and drop the old one in a   │
+│      later release.                  │
 │   2. Rename in place  One migration… │
 │   3. Copy and swap    Build a new t… │
 │   4. Type your own …                 │
