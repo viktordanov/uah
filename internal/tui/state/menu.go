@@ -25,6 +25,10 @@ type Menu struct {
 	// Files are the workspace's files for "@", loaded on first use.
 	Files        []string
 	filesLoading bool
+	// found is the files that best match the last draft's "@" word, kept
+	// by DraftChanged and FilesLoaded so the menu's keys and every frame
+	// do not search the file list again.
+	found fileMatches
 	// Models is the provider's model list for /model, loaded on first use.
 	Models        *models.Catalog
 	modelsLoading bool
@@ -44,6 +48,17 @@ type Menu struct {
 	Skills        []engine.Skill
 	skillsLoading bool
 }
+
+// fileMatches is the best files for an "@" word's query, at most a menu's
+// worth; ok is false until the file list is searched for it.
+type fileMatches struct {
+	query string
+	paths []string
+	ok    bool
+}
+
+// findFiles searches the file list; a variable so a test can count it.
+var findFiles = fuzzy.Find
 
 // Suggestion is one menu entry. Accepting it replaces the draft with Draft.
 type Suggestion struct {
@@ -162,22 +177,47 @@ func mentionAt(draft string) (int, bool) {
 
 func (s State) fileSuggestions(draft string, at int) []Suggestion {
 	query := draft[at+1:]
-	var out []Suggestion
-	if query == "" {
-		for _, f := range s.Menu.Files[:min(menuSize, len(s.Menu.Files))] {
-			out = append(out, Suggestion{Label: f, Draft: draft[:at] + f + " "})
-		}
-
-		return out
+	paths := s.Menu.found.paths
+	if !s.Menu.found.ok || s.Menu.found.query != query {
+		paths = s.bestFiles(query) // a draft DraftChanged did not report
 	}
-	for _, m := range fuzzy.Find(query, s.Menu.Files) {
-		out = append(out, Suggestion{Label: m.Str, Draft: draft[:at] + m.Str + " "})
+	out := make([]Suggestion, 0, len(paths))
+	for _, f := range paths {
+		out = append(out, Suggestion{Label: f, Draft: draft[:at] + f + " "})
+	}
+
+	return out
+}
+
+// bestFiles returns the files that best match query, the first ones for
+// an empty query.
+func (s State) bestFiles(query string) []string {
+	if query == "" {
+		return s.Menu.Files[:min(menuSize, len(s.Menu.Files))]
+	}
+	var out []string
+	for _, m := range findFiles(query, s.Menu.Files) {
+		out = append(out, m.Str)
 		if len(out) == menuSize {
 			break
 		}
 	}
 
 	return out
+}
+
+// matchFiles keeps the files for the draft's "@" word, searched once per
+// draft and file list rather than at each key and frame.
+func (s *State) matchFiles(draft string) {
+	s.Menu.found = fileMatches{}
+	at, ok := mentionAt(draft)
+	if !ok {
+		return
+	}
+	s.Menu.found.query = draft[at+1:]
+	if s.Menu.Files != nil {
+		s.Menu.found.paths, s.Menu.found.ok = s.bestFiles(s.Menu.found.query), true
+	}
 }
 
 // loadMenu loads what the menu offers for the draft: the files once and
@@ -211,6 +251,7 @@ func (s *State) onMenu(ev any) (effects []Effect, ok bool) {
 	case DraftChanged:
 		s.Menu.Index = 0
 		s.pruneImages(e.Draft)
+		s.matchFiles(e.Draft)
 		if eff := s.loadModels(e.Draft); eff != nil {
 			return []Effect{eff}, true
 		}
@@ -230,6 +271,7 @@ func (s *State) onMenu(ev any) (effects []Effect, ok bool) {
 		if s.Menu.Files == nil {
 			s.Menu.Files = []string{}
 		}
+		s.Menu.found.paths, s.Menu.found.ok = s.bestFiles(s.Menu.found.query), true
 	case ModelsLoaded:
 		s.Menu.Models, s.Menu.modelsLoading = &e.Catalog, false
 
