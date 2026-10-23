@@ -181,7 +181,10 @@ func (s *State) finishRun(r core.Result) {
 	if !s.update("done:"+r.Request.RunID, func(it *Item) { it.Status, it.Wall = r.Status, r.Wall }) {
 		s.put(Item{Kind: KindFinish, Key: "done:" + r.Request.RunID, RunID: r.Request.RunID, Status: r.Status, Started: r.StartedAt, Wall: r.Wall})
 	}
-	for i := range s.Items {
+	// The run's calls and turns come after its own item, and an earlier
+	// run's were stopped when it ended, so a replay of many runs scans each
+	// run's items once; with no item for the run, it scans them all.
+	for i := s.index["run:"+r.Request.RunID]; i < len(s.Items); i++ {
 		it := &s.Items[i]
 		if it.Kind == KindTool && (it.Tool == ToolRunning || it.Tool == ToolCalled) {
 			it.Tool, it.Detail = ToolStopped, "stopped"
