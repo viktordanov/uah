@@ -208,7 +208,7 @@ Three small probes with `uah run --stdin --stream` on openai-codex, `gpt-6-luna`
 
 Open:
 
-1. **Cross-run cache on openai-codex.** Requests that start a run get only the common prefix cached. Following Codex's transport (a websocket kept across turns, `x-codex-turn-state`) would need the runner's client; a probe with a longer history (tens of thousands of tokens) would show whether the backend caches more beyond some size.
+1. **Cross-run cache on openai-codex.** Requests that start a run get only the common prefix cached. uah now follows Codex's transport: the turn state is replayed within a run, and a session's turn requests go over a WebSocket kept across its runs ([engine README](../../internal/engine/README.md#retries)). On a resumed copy of a 202,600-token session (2026-10-27, one run each), the run's first request had 13,952 tokens cached over the WebSocket and 3,712 over HTTP, and its later requests had the whole prefix cached either way. A run that starts on a connection an earlier run left open, as in the TUI, has not been measured yet.
 2. **`permissionMode`, `disallowedTools`, `skills`, `mcpServers`, `hooks`, `maxTurns`, `isolation`, and `color`** from Claude Code's front matter are not read. `permissionMode` could only make a child stricter; the others need features uah's children do not have.
 3. **Read, Grep, and Glob** have no tools of their own in uah; an agent limited to them gets no tools and a warning.
 

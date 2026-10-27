@@ -199,6 +199,8 @@ A model request that fails because the connection dropped, it timed out, or the 
 
 When every attempt loses the connection, the run fails with "gave up after 10 attempts because the connection to the model was lost". Change the limit with `request_max_attempts` in the [configuration](../README.md#configuration), `--max-attempts`, or `UAH_LLM_MAX_ATTEMPTS`.
 
+On openai-codex, a session's model requests go over one WebSocket, as Codex sends them. Each request after the first sends only what is new since the model's last answer, a few kilobytes instead of the whole conversation, so a long session uploads far less and its answers start sooner. A request that cannot continue the last answer, such as the first after a compaction or a rewind, sends the whole conversation, and a retry starts on a new connection. If the WebSocket fails, uah sends the session's requests over HTTP, compressed. `responses_websocket = false` sends every request over HTTP.
+
 <sub>[↑ Back to top](#using-uah)</sub>
 
 ---

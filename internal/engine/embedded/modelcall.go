@@ -73,7 +73,10 @@ type modelCall struct {
 
 // attemptDiag is an attempt's line in the diagnostics. SentBytes is the
 // request body's bytes on the wire, BodyBytes its size as built; they differ
-// when the body is compressed (compress.go).
+// when the body is compressed (compress.go), or sent over the WebSocket
+// without the input the last response has (socket.go). There Transport is
+// websocket or http, Send full or incremental, and SendReason why the
+// request sent its whole input, or went over HTTP.
 type attemptDiag struct {
 	Diag         string    `json:"diag"`
 	At           time.Time `json:"at"`
@@ -82,6 +85,9 @@ type attemptDiag struct {
 	Max          int       `json:"max"`
 	SentBytes    int64     `json:"sent_bytes"`
 	BodyBytes    int64     `json:"body_bytes"`
+	Transport    string    `json:"transport,omitempty"`
+	Send         string    `json:"send,omitempty"`
+	SendReason   string    `json:"send_reason,omitempty"`
 	ConnectMS    int64     `json:"connect_ms"`
 	FirstByteMS  int64     `json:"first_byte_ms"`
 	Status       int       `json:"status"`

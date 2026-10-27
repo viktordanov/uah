@@ -7,6 +7,7 @@ import (
 	"github.com/viktordanov/uah-core/harness/llm"
 	"github.com/viktordanov/uah-core/harness/llm/clients/ollama"
 	"github.com/viktordanov/uah-core/harness/llm/clients/openaicodex"
+	"github.com/viktordanov/uah-core/harness/llm/responsesapi"
 	"github.com/viktordanov/uah-core/harness/primitives"
 )
 
@@ -31,6 +32,9 @@ type ClientConfig struct {
 	// turnState is the run's, which its clients share (turnstate.go); nil
 	// gives the client its own.
 	turnState *atomic.Pointer[string]
+	// socket, when set, is the session's WebSocket for its turn requests
+	// (socket.go).
+	socket *responsesapi.WebSocketTransport
 }
 
 // Provider mirrors unreal-agent-runner v0.1.1's provider table

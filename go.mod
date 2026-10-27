@@ -11,6 +11,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/charmbracelet/x/vt v0.0.0-20260920004010-53e2afe73ae5
+	github.com/coder/websocket v1.8.15
 	github.com/creack/pty v1.1.24
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/uuid v1.6.0
@@ -22,7 +23,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/urfave/cli/v3 v3.13.0
 	github.com/viktordanov/uagent v0.9.1
-	github.com/viktordanov/uah-core v0.9.3
+	github.com/viktordanov/uah-core v0.10.0
 	github.com/yuin/goldmark v1.8.6
 	github.com/zalando/go-keyring v0.2.8
 	go.starlark.net v0.0.0-20260908191801-89a6a09411d5

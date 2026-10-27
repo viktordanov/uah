@@ -69,6 +69,9 @@ type Config struct {
 	// StreamIdleTimeout is how long a model stream may send no data line
 	// before the request is retried; 0 is DefaultStreamIdleTimeout.
 	StreamIdleTimeout time.Duration
+	// ResponsesWebSocket sends openai-codex turn requests over the
+	// Responses WebSocket (socket.go).
+	ResponsesWebSocket bool
 	// ContextWindow overrides the model catalog's context window (tokens).
 	ContextWindow int64
 	// Models is the model catalog: context windows and whether a model
@@ -163,6 +166,9 @@ type Engine struct {
 	cacheKeys, scopes sync.Map
 	// transports are the model clients' connections, shared by every run.
 	transports transports
+	// sockets are the sessions' Responses WebSockets, by session and base
+	// URL (socket.go).
+	sockets sync.Map
 	// runs counts the runs in progress (Config.ReturnMemory).
 	runs runs
 	// shells are the sessions' background shells (shells.go), and bridges
@@ -173,8 +179,8 @@ type Engine struct {
 
 // Forget drops what the engine kept for a session that closed: the
 // auto-reviewer's transcript, the last request for /context, and a cache
-// key or scope it may have (engine.Forgetter), and stops its background
-// shells.
+// key or scope it may have (engine.Forgetter), and its Responses
+// WebSocket, and stops its background shells.
 func (e *Engine) Forget(sessionID string) {
 	e.shells.forget(sessionID)
 	e.bridges.forget(sessionID)
@@ -182,6 +188,7 @@ func (e *Engine) Forget(sessionID string) {
 	e.cacheKeys.Delete(sessionID)
 	e.scopes.Delete(sessionID)
 	e.last.forget(sessionID)
+	e.forgetSockets(sessionID)
 }
 
 func New(cfg Config) *Engine {
@@ -247,6 +254,7 @@ func (e *Engine) Close() error {
 		errs = append(errs, e.cfg.MCP.Close())
 	}
 	e.transports.m.Range(func(_, tr any) bool { tr.(*http.Transport).CloseIdleConnections(); return true }) //nolint:forcetypeassert // as transports.get
+	e.sockets.Range(func(_, ws any) bool { _ = ws.(io.Closer).Close(); return true })                       //nolint:forcetypeassert // as socket
 
 	return errors.Join(errs...)
 }

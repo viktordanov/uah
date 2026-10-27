@@ -62,6 +62,9 @@ func merge(base, over Config) Config {
 	if over.StreamIdleTimeoutMS != 0 {
 		base.StreamIdleTimeoutMS = over.StreamIdleTimeoutMS
 	}
+	if over.ResponsesWebSocket != nil {
+		base.ResponsesWebSocket = over.ResponsesWebSocket
+	}
 	if over.RequestMaxAttempts != 0 {
 		base.RequestMaxAttempts = over.RequestMaxAttempts
 	}

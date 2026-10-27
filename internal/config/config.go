@@ -33,6 +33,9 @@ type Config struct {
 	// before its request is retried, in milliseconds, as Codex's
 	// stream_idle_timeout_ms (0: 90 seconds).
 	StreamIdleTimeoutMS int `toml:"stream_idle_timeout_ms"`
+	// ResponsesWebSocket sends openai-codex model requests over the
+	// Responses WebSocket, as Codex does (on by default).
+	ResponsesWebSocket *bool `toml:"responses_websocket"`
 	// Fast asks for priority processing.
 	Fast bool `toml:"fast"`
 	// SandboxMode is read-only or workspace-write (the default); the names
@@ -465,6 +468,12 @@ func (c Config) InstructionOptions() (fallbacks []string, markers []string, maxB
 // workspace holds the state directory (false by default).
 func (c Config) BlockStateInWorkspaceOn() bool {
 	return c.BlockStateInWorkspace != nil && *c.BlockStateInWorkspace
+}
+
+// ResponsesWebSocketOn reports whether openai-codex requests go over the
+// Responses WebSocket (true by default).
+func (c Config) ResponsesWebSocketOn() bool {
+	return c.ResponsesWebSocket == nil || *c.ResponsesWebSocket
 }
 
 // ContextPreparationEnabled reports whether new sessions start with

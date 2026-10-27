@@ -150,6 +150,12 @@ type Arrival struct {
 	Parse time.Duration
 	// Encoding is the body's Content-Encoding; Bytes counts it as sent.
 	Encoding string
+	// Over the WebSocket, Bytes is the message's size, Socket numbers its
+	// connection (from 1), Previous is the response it continued, and Items
+	// counts the input items it sent.
+	Socket   int
+	Previous string
+	Items    int
 }
 
 // Server serves the script. When the script runs out, it answers "done".
@@ -167,9 +173,13 @@ type Server struct {
 	// RejectZstd, set before the first request, answers a body compressed
 	// with zstd with a 415, as a backend that cannot read it does.
 	RejectZstd bool
+	// WebSocket, set before the first request, serves the Responses
+	// WebSocket (socket.go); unset, an upgrade gets a 426.
+	WebSocket bool
 
-	srv   *httptest.Server
-	conns atomic.Int64
+	srv     *httptest.Server
+	conns   atomic.Int64
+	sockets atomic.Int64
 
 	mu       sync.Mutex
 	replies  []Reply
@@ -282,6 +292,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	if r.Header.Get("Upgrade") != "" {
+		s.serveSocket(w, r)
+
+		return
+	}
 	body, sent, status, err := s.readBody(r)
 	if err != nil {
 		http.Error(w, err.Error(), status)
@@ -293,7 +308,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		req = parseRequest(body)
 	}
 	req.Authorization, req.TurnState = r.Header.Get("Authorization"), r.Header.Get("X-Codex-Turn-State")
-	arrival := Arrival{At: arrived, Bytes: sent, Parse: time.Since(arrived), Encoding: r.Header.Get("Content-Encoding")}
+	n, reply := s.take(req, Arrival{At: arrived, Bytes: sent, Parse: time.Since(arrived), Encoding: r.Header.Get("Content-Encoding")})
+	s.answer(w, r, n, reply)
+}
+
+// take records request n and takes its reply.
+func (s *Server) take(req Request, arrival Arrival) (int, Reply) {
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
 	s.arrivals = append(s.arrivals, arrival)
@@ -308,6 +328,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		reply = reply.From(req)
 	}
 	s.seen <- n
+
+	return n, reply
+}
+
+// answer streams request n's reply.
+func (s *Server) answer(w http.ResponseWriter, r *http.Request, n int, reply Reply) {
 	if reply.Gate != nil {
 		select {
 		case <-reply.Gate:
@@ -523,11 +549,11 @@ func replyUsage(n int, reply Reply) *usage {
 const rejectedUpdate = `{"error":{"message":"Invalid value: 'configuration_update'. Supported values are: 'message', 'function_call', 'function_call_output', and 'reasoning'.","type":"invalid_request_error","param":"input[2].type","code":"invalid_value"}}`
 
 func failWith(w http.ResponseWriter, reply Reply) {
-	body, err := json.Marshal(map[string]any{"error": map[string]any{
-		"code": reply.FailCode, "message": "fakellm: " + reply.FailCode, "type": "invalid_request_error",
-	}})
+	body, err := json.Marshal(struct {
+		Error apiError `json:"error"`
+	}{replyError(reply)})
 	if err != nil {
-		panic(err) // a map of strings always encodes
+		panic(err) // a struct of strings always encodes
 	}
 	if reply.FailBody != "" {
 		body = []byte(reply.FailBody)
@@ -538,4 +564,15 @@ func failWith(w http.ResponseWriter, reply Reply) {
 	}
 	w.WriteHeader(reply.Fail)
 	_, _ = w.Write(body)
+}
+
+// apiError is a Responses API error.
+type apiError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Type    string `json:"type"`
+}
+
+func replyError(reply Reply) apiError {
+	return apiError{Code: reply.FailCode, Message: "fakellm: " + reply.FailCode, Type: "invalid_request_error"}
 }

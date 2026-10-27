@@ -58,12 +58,17 @@ func headerTimeout(baseURL string) time.Duration {
 // attempt and renews them after a 401 (codexauth.Login.Transport), where
 // the runner's client sends the token it read once. Bodies go out
 // compressed, and each request of the run carries the backend's turn
-// state, as Codex sends them (compress.go, turnstate.go).
-func codexHTTPClient(ts *transports, login *codexauth.Login, baseURL string, turnState *atomic.Pointer[string]) *http.Client {
+// state, as Codex sends them (compress.go, turnstate.go); with the
+// session's socket, its turn requests go over the WebSocket (socket.go).
+func codexHTTPClient(ts *transports, login *codexauth.Login, baseURL string, turnState *atomic.Pointer[string], socket *responsesapi.WebSocketTransport) *http.Client {
 	if turnState == nil {
 		turnState = new(atomic.Pointer[string])
 	}
-	base := login.Transport(zstdTransport{base: ts.get(headerTimeout(baseURL))})
+	var wire http.RoundTripper = zstdTransport{base: ts.get(headerTimeout(baseURL))}
+	if socket != nil {
+		wire = turnSocket{ws: socket, http: wire}
+	}
+	base := login.Transport(wire)
 
 	return &http.Client{
 		Transport:     callTransport{base: turnStateTransport{base: base, state: turnState}},
@@ -167,7 +172,7 @@ func codexClient(c ClientConfig) (Client, error) {
 	if _, err := login.Check(); err != nil {
 		return nil, err // the provider wraps it
 	}
-	ra, err := newClient(codexHTTPClient(c.transports, login, baseURL, c.turnState), c, responsesapi.Config{
+	ra, err := newClient(codexHTTPClient(c.transports, login, baseURL, c.turnState, c.socket), c, responsesapi.Config{
 		Endpoint: baseURL + "/responses",
 		Headers: map[string][]string{
 			headerContentType: {contentJSON},

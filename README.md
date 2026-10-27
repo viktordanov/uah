@@ -210,7 +210,7 @@ Earlier versions used `~/.config/uagent`, `~/.local/state/unreal-agent`, and a p
 
 | Group | Keys |
 | --- | --- |
-| Model | `provider`, `model`, `effort`, `fast`, `adaptive_effort`, `model_verbosity`, `context_preparation`, `web_search`, `max_disk`, `request_max_attempts` |
+| Model | `provider`, `model`, `effort`, `fast`, `adaptive_effort`, `model_verbosity`, `context_preparation`, `web_search`, `max_disk`, `request_max_attempts`, `responses_websocket` |
 | Sandbox | `permission_mode`, `sandbox_mode`, `user_shell_sandbox`; `[sandbox_workspace_write]` `network_access`, `writable_roots`; `[shell_environment_policy]` `inherit`, `ignore_default_excludes`, `exclude`, `include_only`, `set` |
 | Approvals | `approval_policy`, `approvals_reviewer`; `[approvals]` `allow`, `forbid`; `[review]` `model`, `effort`, `timeout`, `policy_file` |
 | Compaction | `auto_compact_percent`, `model_auto_compact_token_limit`, `model_context_window`, `compact_model`, `compact_effort`, `compact_prompt`, `experimental_compact_prompt_file`, `compact_user_message_max_tokens` |

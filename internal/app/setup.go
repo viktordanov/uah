@@ -189,7 +189,7 @@ func newEngine(r Resolved, stateDir, sandboxDir string, logger *slog.Logger, p p
 		ContextPreparation: r.ContextPreparation, ContextModules: p.context, EffortUpdates: r.EffortUpdates,
 		AutoReview: r.ApprovalsReviewer == review.ReviewerAuto, Review: r.Review, WebSearch: r.WebSearch == WebSearchLive, Verbosity: r.Verbosity,
 		InstructionFiles: instructionFiles(opts.Instructions), InstructionsOff: !r.Instructions,
-		Compaction: r.Compaction, ContextWindow: r.Settings.ContextWindow, StreamIdleTimeout: r.StreamIdle,
+		Compaction: r.Compaction, ContextWindow: r.Settings.ContextWindow, StreamIdleTimeout: r.StreamIdle, ResponsesWebSocket: r.WebSocket,
 		BeforeCompact: preCompactHook(opts.Hooks, r.Settings), Subagents: p.subagents, AskUser: p.askUser,
 		Goals: !r.Goals.Disabled, ReturnMemory: true, Tools: r.Tools, NoSkills: r.NoSkills, NoSkillMentions: r.NoSkillMentions, NoToolBridge: r.NoToolBridge,
 	}

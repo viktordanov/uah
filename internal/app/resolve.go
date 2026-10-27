@@ -107,6 +107,9 @@ type Resolved struct {
 	// StreamIdle is how long a model stream may send no data before its
 	// request is retried (stream_idle_timeout_ms; 0: the engine's default).
 	StreamIdle time.Duration
+	// WebSocket reports whether openai-codex requests go over the
+	// Responses WebSocket (responses_websocket).
+	WebSocket bool
 	// Instructions reports whether to load AGENTS.md and CLAUDE.md files.
 	Instructions bool
 	// ContextPreparation reports whether new sessions start with prepared
@@ -263,7 +266,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 	}
 
 	return Resolved{
-		Settings: s, MaxDisk: maxDisk, StreamIdle: streamIdle, Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
+		Settings: s, MaxDisk: maxDisk, StreamIdle: streamIdle, WebSocket: cfg.ResponsesWebSocketOn(), Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
 		Sandbox: policy, Env: envPolicy, Compaction: compact, CompactPromptFile: promptFile, Approval: approvalPolicy, Rules: configured,
 		ApprovalsReviewer: reviewer, Review: reviewCfg, Agents: agentSettings, WebSearch: webSearch, Verbosity: verbosity, DefaultModel: defaulted,
 		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills, NoSkillMentions: !cfg.TUI.SkillMentionsOn(), NoToolBridge: !tools.bridge,

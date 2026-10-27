@@ -324,7 +324,7 @@ func TestModelCall_ToolProgressKeepsQuotes(t *testing.T) {
 func TestModelTransport(t *testing.T) {
 	var ts transports
 	shared := ts.get(responseHeaderTimeout)
-	for _, hc := range []*http.Client{remoteHTTPClient(&ts, headerTimeout("https://api.openai.com/v1")), codexHTTPClient(&ts, nil, "", nil)} {
+	for _, hc := range []*http.Client{remoteHTTPClient(&ts, headerTimeout("https://api.openai.com/v1")), codexHTTPClient(&ts, nil, "", nil, nil)} {
 		ct, ok := hc.Transport.(callTransport)
 		require.True(t, ok)
 		base := reflect.ValueOf(ct.base)

@@ -51,6 +51,11 @@ func TestResolve(t *testing.T) {
 			want: func(r *app.Resolved) { r.StreamIdle = 2 * time.Minute },
 		},
 		{
+			name: "responses_websocket = false sends over HTTP",
+			cfg:  config.Config{ResponsesWebSocket: new(false)},
+			want: func(r *app.Resolved) { r.WebSocket = false },
+		},
+		{
 			name: "block_state_in_workspace turns uagent's guard back on",
 			cfg:  config.Config{BlockStateInWorkspace: new(true)},
 			want: func(r *app.Resolved) { r.Settings.AllowStateInWorkspace = false },
@@ -435,7 +440,7 @@ func TestResolve(t *testing.T) {
 					MaxAttempts: engine.DefaultMaxAttempts, AdaptiveEffort: session.AdaptiveOff,
 					AllowStateInWorkspace: true,
 				},
-				MaxDisk: 5 << 30, Instructions: true, ContextPreparation: true, RequestUserInput: true, EffortUpdates: true,
+				MaxDisk: 5 << 30, WebSocket: true, Instructions: true, ContextPreparation: true, RequestUserInput: true, EffortUpdates: true,
 				Sandbox: sandbox.Policy{Mode: sandbox.WorkspaceWrite}, Compaction: compaction.Settings{Percent: 90, Elision: compaction.DefaultElision, KeepCalls: compaction.DefaultKeepCalls, Remote: true}, Approval: approval.OnRequest,
 				ApprovalsReviewer: review.ReviewerUser,
 				Review:            review.Config{Model: review.CodexModel, Effort: llm.ReasoningEffortLow, Timeout: review.DefaultTimeout},
