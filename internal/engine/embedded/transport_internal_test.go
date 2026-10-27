@@ -328,7 +328,7 @@ func TestModelTransport(t *testing.T) {
 		ct, ok := hc.Transport.(callTransport)
 		require.True(t, ok)
 		base := reflect.ValueOf(ct.base)
-		if base.Kind() == reflect.Struct { // the codex login's transport
+		for base.Kind() == reflect.Struct { // the codex login's transport, then compression's
 			base = base.FieldByName("base").Elem()
 		}
 		assert.Equal(t, reflect.ValueOf(shared).Pointer(), base.Pointer())

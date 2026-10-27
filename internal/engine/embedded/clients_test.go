@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/viktordanov/uah-core/harness/llm"
@@ -23,11 +24,12 @@ import (
 	"github.com/viktordanov/uah/internal/engine/embedded"
 )
 
-// sent is one request as the server saw it.
+// sent is one request as the server saw it, its body decoded.
 type sent struct {
 	Method, Path string
 	Header       http.Header
 	Body         string
+	Encoding     string
 }
 
 // recorder answers every request with one completed response and keeps
@@ -41,8 +43,15 @@ func (r *recorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	body, _ := io.ReadAll(req.Body)
 	h := req.Header.Clone()
 	h.Del("Content-Length")
+	encoding := h.Get("Content-Encoding")
+	if encoding == "zstd" {
+		dec, _ := zstd.NewReader(nil)
+		body, _ = dec.DecodeAll(body, nil)
+		dec.Close()
+		h.Del("Content-Encoding")
+	}
 	r.mu.Lock()
-	r.sent = append(r.sent, sent{Method: req.Method, Path: req.URL.Path, Header: h, Body: string(body)})
+	r.sent = append(r.sent, sent{Method: req.Method, Path: req.URL.Path, Header: h, Body: string(body), Encoding: encoding})
 	r.mu.Unlock()
 	w.Header().Set("Content-Type", "text/event-stream")
 	_, _ = io.WriteString(w, `data: {"type":"response.completed","response":{"id":"r","object":"response","status":"completed","output":[],`+
@@ -67,7 +76,8 @@ func codexToken() string {
 }
 
 // TestClients_MatchTheRunner: each provider's client sends what the
-// runner's own client sends, byte for byte, headers included.
+// runner's own client sends, byte for byte, headers included; the
+// openai-codex client compresses its body, as Codex does.
 func TestClients_MatchTheRunner(t *testing.T) {
 	rec := &recorder{}
 	srv := httptest.NewServer(rec)
@@ -117,7 +127,12 @@ func TestClients_MatchTheRunner(t *testing.T) {
 			t.Cleanup(func() { _ = ours.Close() })
 			_, err = ours.Respond(context.Background(), req, opts)
 			require.NoError(t, err)
-			assert.Equal(t, want, rec.last(t))
+			got := rec.last(t)
+			if p.Name == "openai-codex" {
+				assert.Equal(t, "zstd", got.Encoding)
+				got.Encoding = ""
+			}
+			assert.Equal(t, want, got)
 		})
 	}
 }

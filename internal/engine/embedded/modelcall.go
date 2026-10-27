@@ -71,7 +71,9 @@ type modelCall struct {
 	failure     apiError // a failed response's error
 }
 
-// attemptDiag is an attempt's line in the diagnostics.
+// attemptDiag is an attempt's line in the diagnostics. SentBytes is the
+// request body's bytes on the wire, BodyBytes its size as built; they differ
+// when the body is compressed (compress.go).
 type attemptDiag struct {
 	Diag         string    `json:"diag"`
 	At           time.Time `json:"at"`
@@ -79,6 +81,7 @@ type attemptDiag struct {
 	Attempt      int       `json:"attempt"`
 	Max          int       `json:"max"`
 	SentBytes    int64     `json:"sent_bytes"`
+	BodyBytes    int64     `json:"body_bytes"`
 	ConnectMS    int64     `json:"connect_ms"`
 	FirstByteMS  int64     `json:"first_byte_ms"`
 	Status       int       `json:"status"`
@@ -259,7 +262,7 @@ func (c *modelCall) start(sent int64) {
 	defer c.mu.Unlock()
 	c.writeLocked("retry")
 	c.a = attemptDiag{
-		Diag: "model_attempt", At: time.Now(), Kind: c.kind, Attempt: c.a.Attempt + 1, Max: c.max, SentBytes: sent,
+		Diag: "model_attempt", At: time.Now(), Kind: c.kind, Attempt: c.a.Attempt + 1, Max: c.max, SentBytes: sent, BodyBytes: sent,
 		Effort: c.effort.effort, EffortReason: c.effort.reason, RequestEffort: c.effort.request, EffortUpdate: c.effort.update,
 	}
 	c.last, c.lost, c.terminal, c.failure, c.tool, c.outputs = c.a.At, false, "", apiError{}, toolCall{}, attemptOutputs{}

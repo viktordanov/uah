@@ -119,6 +119,17 @@ func TestEmbedded_RefreshesAnExpiredCodexLoginBeforeTheRun(t *testing.T) {
 	assert.EqualValues(t, 1, c.calls.Load())
 }
 
+// TestEmbedded_CodexCompressesItsRequests: the openai-codex client sends
+// its bodies compressed with zstd, as Codex does.
+func TestEmbedded_CodexCompressesItsRequests(t *testing.T) {
+	c := newCodexLogin(t, accessToken(time.Now().Add(24*time.Hour), 1), fakellm.Reply{Text: "hello"})
+	result, errs := c.run(t, embedded.New(embedded.Config{StateDir: c.StateDir, Provider: codexauth.Provider, Getenv: c.getenv}))
+	assert.Equal(t, core.StatusOK, result.Status, errs)
+	require.Len(t, c.llm.Arrivals(), 1)
+	assert.Equal(t, "zstd", c.llm.Arrivals()[0].Encoding)
+	assert.Equal(t, []string{"hi"}, c.llm.Requests()[0].UserTexts)
+}
+
 // TestEmbedded_CodexLoginThatCannotBeRefreshed says to sign in again.
 func TestEmbedded_CodexLoginThatCannotBeRefreshed(t *testing.T) {
 	c := newCodexLogin(t, accessToken(time.Now().Add(24*time.Hour), 1), fakellm.Reply{Fail: http.StatusUnauthorized})

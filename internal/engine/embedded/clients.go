@@ -55,10 +55,11 @@ func headerTimeout(baseURL string) time.Duration {
 // transport, never forwarding subscription credentials through redirects.
 // Under the observing transport, the login sets the credentials on each
 // attempt and renews them after a 401 (codexauth.Login.Transport), where
-// the runner's client sends the token it read once.
+// the runner's client sends the token it read once. Bodies go out
+// compressed, as Codex sends them (compress.go).
 func codexHTTPClient(ts *transports, login *codexauth.Login, baseURL string) *http.Client {
 	return &http.Client{
-		Transport:     callTransport{base: login.Transport(ts.get(headerTimeout(baseURL)))},
+		Transport:     callTransport{base: login.Transport(zstdTransport{base: ts.get(headerTimeout(baseURL))})},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }

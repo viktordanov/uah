@@ -6,6 +6,7 @@ package fakellm
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // Reply is one model response: tool calls, then a message. A reply with
@@ -140,6 +143,8 @@ type Arrival struct {
 	At    time.Time
 	Bytes int
 	Parse time.Duration
+	// Encoding is the body's Content-Encoding; Bytes counts it as sent.
+	Encoding string
 }
 
 // Server serves the script. When the script runs out, it answers "done".
@@ -154,6 +159,9 @@ type Server struct {
 	// a backend without effort updates does, without taking a reply from
 	// the script.
 	RejectEffortUpdates bool
+	// RejectZstd, set before the first request, answers a body compressed
+	// with zstd with a 415, as a backend that cannot read it does.
+	RejectZstd bool
 
 	srv   *httptest.Server
 	conns atomic.Int64
@@ -269,9 +277,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	body, err := io.ReadAll(r.Body)
+	body, sent, status, err := s.readBody(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), status)
 
 		return
 	}
@@ -280,7 +288,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		req = parseRequest(body)
 	}
 	req.Authorization = r.Header.Get("Authorization")
-	arrival := Arrival{At: arrived, Bytes: len(body), Parse: time.Since(arrived)}
+	arrival := Arrival{At: arrived, Bytes: sent, Parse: time.Since(arrived), Encoding: r.Header.Get("Content-Encoding")}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
 	s.arrivals = append(s.arrivals, arrival)
@@ -339,6 +347,32 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", event)
+}
+
+// readBody reads the request's body, decoded when it is compressed with
+// zstd, and its size as sent; an error comes with the status to answer.
+func (s *Server) readBody(r *http.Request) ([]byte, int, int, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, 0, http.StatusBadRequest, err
+	}
+	switch encoding := r.Header.Get("Content-Encoding"); {
+	case encoding == "":
+		return body, len(body), 0, nil
+	case encoding != "zstd" || s.RejectZstd:
+		return nil, 0, http.StatusUnsupportedMediaType, errors.New("unsupported content encoding " + encoding)
+	}
+	dec, err := zstd.NewReader(nil)
+	if err != nil {
+		return nil, 0, http.StatusInternalServerError, err
+	}
+	defer dec.Close()
+	decoded, err := dec.DecodeAll(body, nil)
+	if err != nil {
+		return nil, 0, http.StatusBadRequest, err
+	}
+
+	return decoded, len(body), 0, nil
 }
 
 // hijack takes the request's connection.
