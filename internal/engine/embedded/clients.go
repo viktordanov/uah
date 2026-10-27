@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/viktordanov/uah-core/harness/llm"
@@ -56,10 +57,16 @@ func headerTimeout(baseURL string) time.Duration {
 // Under the observing transport, the login sets the credentials on each
 // attempt and renews them after a 401 (codexauth.Login.Transport), where
 // the runner's client sends the token it read once. Bodies go out
-// compressed, as Codex sends them (compress.go).
-func codexHTTPClient(ts *transports, login *codexauth.Login, baseURL string) *http.Client {
+// compressed, and each request of the run carries the backend's turn
+// state, as Codex sends them (compress.go, turnstate.go).
+func codexHTTPClient(ts *transports, login *codexauth.Login, baseURL string, turnState *atomic.Pointer[string]) *http.Client {
+	if turnState == nil {
+		turnState = new(atomic.Pointer[string])
+	}
+	base := login.Transport(zstdTransport{base: ts.get(headerTimeout(baseURL))})
+
 	return &http.Client{
-		Transport:     callTransport{base: login.Transport(zstdTransport{base: ts.get(headerTimeout(baseURL))})},
+		Transport:     callTransport{base: turnStateTransport{base: base, state: turnState}},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
@@ -160,7 +167,7 @@ func codexClient(c ClientConfig) (Client, error) {
 	if _, err := login.Check(); err != nil {
 		return nil, err // the provider wraps it
 	}
-	ra, err := newClient(codexHTTPClient(c.transports, login, baseURL), c, responsesapi.Config{
+	ra, err := newClient(codexHTTPClient(c.transports, login, baseURL, c.turnState), c, responsesapi.Config{
 		Endpoint: baseURL + "/responses",
 		Headers: map[string][]string{
 			headerContentType: {contentJSON},

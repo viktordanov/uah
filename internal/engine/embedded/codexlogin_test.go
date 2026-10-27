@@ -130,6 +130,37 @@ func TestEmbedded_CodexCompressesItsRequests(t *testing.T) {
 	assert.Equal(t, []string{"hi"}, c.llm.Requests()[0].UserTexts)
 }
 
+// TestEmbedded_CodexReplaysTheTurnState: the first x-codex-turn-state a
+// run's answers carry goes with each later request of the run, and the
+// next run starts without one, as Codex replays it within a turn.
+func TestEmbedded_CodexReplaysTheTurnState(t *testing.T) {
+	c := newCodexLogin(t, accessToken(time.Now().Add(24*time.Hour), 1),
+		fakellm.Reply{Commands: []string{"echo one"}, TurnState: "ts-1"},
+		fakellm.Reply{Commands: []string{"echo two"}, TurnState: "ts-2"},
+		fakellm.Reply{Text: "first", TurnState: "ts-3"},
+		fakellm.Reply{Commands: []string{"echo three"}, TurnState: "ts-4"},
+		fakellm.Reply{Text: "second"},
+	)
+	eng := embedded.New(embedded.Config{StateDir: c.StateDir, Provider: codexauth.Provider, Getenv: c.getenv})
+	settings := session.Settings{Provider: codexauth.Provider, Model: "gpt-test", Effort: "high", Workspace: c.Workspace, BaseURL: c.llm.URL}
+	s, err := session.Open(context.Background(), eng, session.Options{Settings: settings})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	ev := &events{t: t, s: s}
+	for _, msg := range []string{"one", "two"} {
+		_, err = s.Submit(msg)
+		require.NoError(t, err)
+		assert.Equal(t, core.StatusOK, ev.finished().Status)
+		ev.idle()
+	}
+
+	var states []string
+	for _, r := range c.llm.Requests() {
+		states = append(states, r.TurnState)
+	}
+	assert.Equal(t, []string{"", "ts-1", "ts-1", "", "ts-4"}, states)
+}
+
 // TestEmbedded_CodexLoginThatCannotBeRefreshed says to sign in again.
 func TestEmbedded_CodexLoginThatCannotBeRefreshed(t *testing.T) {
 	c := newCodexLogin(t, accessToken(time.Now().Add(24*time.Hour), 1), fakellm.Reply{Fail: http.StatusUnauthorized})

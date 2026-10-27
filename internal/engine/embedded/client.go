@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/viktordanov/uah-core/harness/llm"
 
@@ -40,11 +41,12 @@ func (w *wiring) client(req core.Request, opts engine.Options) (string, *switche
 		return "", nil, err
 	}
 	start := variant{priority: opts.ServiceTier == tierPriority, ultra: req.Effort == effortUltra}
+	turnState := new(atomic.Pointer[string])
 	sw, err := newSwitcher(model, start, maxAttempts, func(v variant) (Client, error) {
 		if v.priority && !p.Priority {
 			return nil, errNoPriority
 		}
-		c, err := p.NewClient(ClientConfig{APIKey: apiKey, BaseURL: baseURL, MaxAttempts: maxAttempts, Priority: v.priority, Ultra: v.ultra, Getenv: w.getenv, transports: &w.e.transports})
+		c, err := p.NewClient(ClientConfig{APIKey: apiKey, BaseURL: baseURL, MaxAttempts: maxAttempts, Priority: v.priority, Ultra: v.ultra, Getenv: w.getenv, transports: &w.e.transports, turnState: turnState})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create the %s client: %w", p.Name, err)
 		}

@@ -50,6 +50,9 @@ type Reply struct {
 	// FailBody, when set, is the error answer's body as sent, such as the
 	// ChatGPT backend's {"detail":"..."}.
 	FailBody string
+	// TurnState, when set, is the x-codex-turn-state header of the answer,
+	// the ChatGPT backend's sticky-routing token.
+	TurnState string
 	// NoUsage leaves the usage out of the response, as some providers do.
 	NoUsage bool
 	// Drop closes the connection without an answer, as a lost network
@@ -133,6 +136,8 @@ type Request struct {
 	CacheKey string
 	// Authorization is the request's Authorization header.
 	Authorization string
+	// TurnState is the request's x-codex-turn-state header.
+	TurnState string
 }
 
 // Arrival is when a request reached the server, before its body was read:
@@ -287,7 +292,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if !s.Light {
 		req = parseRequest(body)
 	}
-	req.Authorization = r.Header.Get("Authorization")
+	req.Authorization, req.TurnState = r.Header.Get("Authorization"), r.Header.Get("X-Codex-Turn-State")
 	arrival := Arrival{At: arrived, Bytes: sent, Parse: time.Since(arrived), Encoding: r.Header.Get("Content-Encoding")}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
@@ -335,7 +340,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
+	streamHeaders(w.Header(), reply)
 	if !streamPieces(w, r, n, reply) || reply.NoEnd {
 		return // the request was canceled while held, or ends early
 	}
@@ -347,6 +352,14 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", event)
+}
+
+// streamHeaders are the headers of a streamed answer.
+func streamHeaders(h http.Header, reply Reply) {
+	h.Set("Content-Type", "text/event-stream")
+	if reply.TurnState != "" {
+		h.Set("X-Codex-Turn-State", reply.TurnState)
+	}
 }
 
 // readBody reads the request's body, decoded when it is compressed with

@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"errors"
+	"sync/atomic"
 
 	"github.com/viktordanov/uah-core/harness/llm"
 	"github.com/viktordanov/uah-core/harness/llm/clients/ollama"
@@ -27,6 +28,9 @@ type ClientConfig struct {
 	Getenv func(string) string
 	// transports are the engine's; nil gives the client its own.
 	transports *transports
+	// turnState is the run's, which its clients share (turnstate.go); nil
+	// gives the client its own.
+	turnState *atomic.Pointer[string]
 }
 
 // Provider mirrors unreal-agent-runner v0.1.1's provider table
