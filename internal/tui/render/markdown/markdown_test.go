@@ -39,8 +39,20 @@ var (
 	}()
 )
 
-// shown is a line as goldens show it: tags readable, other escapes gone.
+// shown is a line as goldens show it: tags and hyperlinks readable (<a
+// URI>…</a>), other escapes gone.
 func shown(line string) string {
+	line = hyperlink.ReplaceAllStringFunc(line, func(seq string) string {
+		if seq == LinkClose {
+			return "</a>"
+		}
+		if uri := hyperlink.FindStringSubmatch(seq)[1]; uri != "" {
+			return "<a " + uri + ">"
+		}
+
+		return seq
+	})
+
 	return ansi.Strip(shows.Replace(line))
 }
 
@@ -65,7 +77,10 @@ func padded(fill string) func(string, int) string {
 }
 
 // fixtures are the documents in testdata, by name.
-var fixtures = []string{"inline", "headings", "lists", "quotes", "alerts", "code", "diff", "table", "html", "refs"}
+var fixtures = []string{"inline", "headings", "lists", "quotes", "alerts", "code", "diff", "table", "html", "refs", "weblinks"}
+
+// linkedFixtures are drawn with web links on.
+var linkedFixtures = map[string]bool{"weblinks": true}
 
 func fixture(t testing.TB, name string) string {
 	t.Helper()
@@ -77,13 +92,15 @@ func fixture(t testing.TB, name string) string {
 
 func TestGoldens(t *testing.T) {
 	t.Parallel()
-	widths := map[string][]int{"table": {80, 50, 34, 20}}
+	widths := map[string][]int{"table": {80, 50, 34, 20}, "weblinks": {80, 40, 24}}
 	for _, name := range fixtures {
 		t.Run(name, func(t *testing.T) {
 			var b strings.Builder
 			for _, w := range cmpOr(widths[name], []int{80, 40, 20}) {
 				fmt.Fprintf(&b, "== width %d ==\n", w)
-				for _, l := range New(testStyles()).Render(fixture(t, name), w, "● ", "  ") {
+				r := New(testStyles())
+				r.SetLinks(linkedFixtures[name])
+				for _, l := range r.Render(fixture(t, name), w, "● ", "  ") {
 					b.WriteString(strings.TrimRight(shown(l), " ") + "\n")
 				}
 			}

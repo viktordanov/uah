@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/viktordanov/uah/internal/tui/render/markdown"
 	"github.com/viktordanov/uah/internal/tui/state"
 )
 
@@ -21,10 +22,11 @@ import (
 // The line or range a link points at rides in the hyperlink's parameters
 // ("line=12-20"), which terminals ignore. A link is drawn only where the
 // line is cut, never wrapped, except a word of the agent's Markdown, which
-// linkWords links on each of its two lines.
+// linkWords links on each of its two lines. The Markdown renderer draws
+// web links itself (markdown/weblinks.go), with the same switch.
 
 // linkClose ends a hyperlink.
-const linkClose = "\x1b]8;;\x1b\\"
+const linkClose = markdown.LinkClose
 
 // linkConf is how the frames draw links: on or off, the machine's name
 // for the URLs, and the workspace relative paths are under.
@@ -34,12 +36,13 @@ type linkConf struct {
 }
 
 // setLinks takes the state's link settings; a change draws every item
-// again (cacheEntry.links).
+// again (cacheEntry.links), and web links are on with file links.
 func (st *Styles) setLinks(s state.State) {
 	conf := linkConf{on: s.FileLinks != "" && s.FileLinks != state.LinksOff, host: s.Host, workspace: s.Settings.Workspace}
 	if conf != st.links {
 		st.links = conf
 		st.linkGen++
+		st.markdown.SetLinks(conf.on)
 	}
 }
 
@@ -76,8 +79,9 @@ func linkOpen(host string, l state.FileLink) string {
 		}
 	}
 
-	// A ";" ends the URL for some terminals; escaped, it reads the same.
-	return "\x1b]8;" + params + ";" + strings.ReplaceAll(u.String(), ";", "%3B") + "\x1b\\"
+	// A ";" ends the URL for some parsers (x/vt, ultraviolet); in a file
+	// URL's path, escaped, it reads the same.
+	return markdown.Hyperlink(params, strings.ReplaceAll(u.String(), ";", "%3B"))
 }
 
 // parseLink reads the link an OSC 8 sequence starts; ok is false for an
@@ -178,10 +182,37 @@ func (st *Styles) linkWords(lines []string, links map[string]state.FileLink) []s
 	}
 	out := make([]string, len(lines))
 	for i, l := range lines {
-		out[i] = st.linkCells(l, ordered(spans[i]))
+		out[i] = st.linkCells(l, ordered(outsideLinks(l, spans[i])))
 	}
 
 	return out
+}
+
+// outsideLinks drops the spans that touch a cell already inside a
+// hyperlink, a web link the Markdown drew: links do not nest, so a file
+// link there would cut the web link short.
+func outsideLinks(line string, spans []cellSpan) []cellSpan {
+	if len(spans) == 0 || !strings.Contains(line, "\x1b]8;") {
+		return spans
+	}
+	var linked []bool
+	in := false
+	var pstate byte
+	for line != "" {
+		seq, width, n, next := ansi.DecodeSequence(line, pstate, nil)
+		pstate, line = next, line[n:]
+		if body, ok := strings.CutPrefix(seq, "\x1b]8;"); ok {
+			_, uri, _ := strings.Cut(strings.TrimSuffix(strings.TrimSuffix(body, "\x1b\\"), "\a"), ";")
+			in = uri != ""
+		}
+		for range width {
+			linked = append(linked, in)
+		}
+	}
+
+	return slices.DeleteFunc(spans, func(sp cellSpan) bool {
+		return slices.Contains(linked[min(sp.from, len(linked)):min(sp.to, len(linked))], true)
+	})
 }
 
 // ordered sorts a line's spans and drops any that overlaps the one before.

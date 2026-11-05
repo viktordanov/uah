@@ -61,6 +61,8 @@ type Renderer struct {
 	// one on a line of its own.
 	open, close, closeAlone string
 	parser                  parser.Parser
+	// links draws web links as hyperlinks (SetLinks).
+	links bool
 	// docs are the documents drawn last, the most recent first.
 	docs []*doc
 	code codeCache
@@ -85,6 +87,16 @@ func New(st Styles) *Renderer {
 	}
 
 	return &Renderer{st: st, open: st.Dim.Render("“ "), close: st.Dim.Render(" ”"), closeAlone: st.Dim.Render("”"), parser: md.Parser(), code: newCodeCache()}
+}
+
+// SetLinks turns web links (weblinks.go) on or off; a change drops the
+// kept documents, whose lines carry the old setting.
+func (r *Renderer) SetLinks(on bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.links != on {
+		r.links, r.docs = on, nil
+	}
 }
 
 // doc is a document drawn at one width with one pair of prefixes: the

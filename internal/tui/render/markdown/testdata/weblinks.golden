@@ -1,0 +1,48 @@
+== width 80 ==
+● <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>Example documentation</a>
+  <d>(</><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two><d>https://example.com/documentation/a/very/long/path/that/wraps/across/multiple</a></>
+  <d><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>/terminal/rows?first=one&second=two</></a><d>)</>
+
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/</a>
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>terminal/rows?first=one&second=two</a>
+
+  See <a https://en.wikipedia.org/wiki/Foo_(bar)>https://en.wikipedia.org/wiki/Foo_(bar)</a>, or (see <a https://x.com/a>https://x.com/a</a>). Not
+  <c>https://x.com/code</> nor a file <d>(docs/guide.md)</>.
+== width 40 ==
+● <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>Example documentation</a>
+  <d>(</><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two><d>https://example.com/documentation/a/v</a></>
+  <d><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>ery/long/path/that/wraps/across/multip</a></>
+  <d><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>le/terminal/rows?first=one&second=two</></a><d>)</>
+
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>https://example.com/documentation/a/ve</a>
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>ry/long/path/that/wraps/across/multipl</a>
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>e/terminal/rows?first=one&second=two</a>
+
+  See
+  <a https://en.wikipedia.org/wiki/Foo_(bar)>https://en.wikipedia.org/wiki/Foo_(bar</a>
+  <a https://en.wikipedia.org/wiki/Foo_(bar)>)</a>, or (see <a https://x.com/a>https://x.com/a</a>). Not
+  <c>https://x.com/code</> nor a file
+  <d>(docs/guide.md)</>.
+== width 24 ==
+● <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>Example documentation</a>
+  <d>(</><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two><d>https://example.com/d</a></>
+  <d><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>ocumentation/a/very/lo</a></>
+  <d><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>ng/path/that/wraps/acr</a></>
+  <d><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>oss/multiple/terminal/</a></>
+  <d><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>rows?first=one&second=</a></>
+  <d><a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>two</></a><d>)</>
+
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>https://example.com/do</a>
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>cumentation/a/very/lon</a>
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>g/path/that/wraps/acro</a>
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>ss/multiple/terminal/r</a>
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>ows?first=one&second=t</a>
+  <a https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two>wo</a>
+
+  See
+  <a https://en.wikipedia.org/wiki/Foo_(bar)>https://en.wikipedia.o</a>
+  <a https://en.wikipedia.org/wiki/Foo_(bar)>rg/wiki/Foo_(bar)</a>, or
+  (see <a https://x.com/a>https://x.com/a</a>).
+  Not <c>https://x.com/code</>
+  nor a file
+  <d>(docs/guide.md)</>.

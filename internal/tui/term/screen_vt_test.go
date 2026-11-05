@@ -604,3 +604,38 @@ func TestScreenLinksCutAtTheRow(t *testing.T) {
 	}
 	play(t, w, h, frames, func(int) *Cursor { return nil })
 }
+
+// TestScreenWebLinks: the agent's web links (issue #9), wrapped over many
+// rows at a narrow width, reach the terminal well formed: every cell of
+// the label, of the URL after it, and of the bare URL holds the whole URL,
+// and no other cell holds a link, also after a scroll.
+func TestScreenWebLinks(t *testing.T) {
+	const w, h = 40, 24
+	const url = "https://example.com/documentation/a/very/long/path/that/wraps/across/multiple/terminal/rows?first=one&second=two"
+	s := apply(base(), core.AssistantMessage{At: t0, Final: true, Text: "[Example documentation](" + url + ")\n\nSee " + url + ".\n"})
+	s.FileLinks, s.Host = state.LinksPeek, "host"
+	c := render.NewCache(render.Amber)
+	f := render.Frame{Width: w, Height: h, Composer: "λ ", ComposerHeight: 1}
+	var frames [][]string
+	for _, d := range []int{0, -3, 3} {
+		s = apply(s, state.ScrollBy{Lines: d})
+		out, _ := render.Screen(s, c, f)
+		frames = append(frames, strings.Split(out, "\n"))
+	}
+	play(t, w, h, frames, func(int) *Cursor { return nil })
+
+	scr, term := NewScreen(w, h), newVTTerm(w, h)
+	term.write(scr.Frame(frames[0], nil))
+	var linked strings.Builder
+	for y := range h {
+		for x := range w {
+			cell := term.em.CellAt(x, y)
+			if cell == nil || cell.Link.URL == "" {
+				continue
+			}
+			assert.Equal(t, url, cell.Link.URL, "cell %d,%d", x, y)
+			linked.WriteString(cell.Content)
+		}
+	}
+	assert.Equal(t, "Exampledocumentation"+url+url, strings.ReplaceAll(linked.String(), " ", ""), "the label, the URL after it, and the bare URL without its period")
+}

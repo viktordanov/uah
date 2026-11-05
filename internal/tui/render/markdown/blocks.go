@@ -86,7 +86,7 @@ func (r *Renderer) heading(src []byte, n *ast.Heading, f frame) string {
 	case 2:
 		style = r.st.H2
 	}
-	b := runs{upper: n.Level == 1}
+	b := runs{upper: n.Level == 1, links: r.links}
 	r.inlines(&b, src, n, append(r.base(f), style))
 
 	return b.String()
@@ -161,22 +161,34 @@ func wrap(s string, w int) []string {
 	return carry(strings.Split(ansi.Wrap(s, max(w, 10), ""), "\n"))
 }
 
-// carry ends each line's styles with it and opens them again on the next,
-// so a style that wraps survives what is drawn before the next line, such
-// as a quote bar that resets the terminal's style.
+// carry ends each line's styles and hyperlink with it and opens them again
+// on the next, so a style that wraps survives what is drawn before the
+// next line, such as a quote bar that resets the terminal's style, and
+// every line of a wrapped link leads to its whole target.
 func carry(lines []string) []string {
 	if len(lines) < 2 {
 		return lines
 	}
 	var open []string
+	link := ""
 	for i, l := range lines {
-		reopen := strings.Join(open, "")
+		reopen := strings.Join(open, "") + link
 		for _, seq := range sgr.FindAllString(l, -1) {
 			if isReset(seq) {
 				open = open[:0]
 			} else {
 				open = append(open, seq)
 			}
+		}
+		if seqs := hyperlink.FindAllStringSubmatch(l, -1); len(seqs) > 0 {
+			if last := seqs[len(seqs)-1]; last[1] != "" {
+				link = last[0]
+			} else {
+				link = ""
+			}
+		}
+		if link != "" {
+			l += LinkClose
 		}
 		if len(open) > 0 {
 			l += sgrReset
@@ -186,6 +198,10 @@ func carry(lines []string) []string {
 
 	return lines
 }
+
+// hyperlink matches one OSC 8 sequence; its group is the URI, empty for
+// the end of a link.
+var hyperlink = regexp.MustCompile("\x1b\\]8;[^;\x1b\a]*;([^\x1b\a]*)(?:\x1b\\\\|\a)")
 
 // sgrReset ends every style.
 const sgrReset = "\x1b[m"

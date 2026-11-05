@@ -542,6 +542,7 @@ File paths in the transcript are underlined links: the files a READ line reads, 
 - **In the overlay:** ↑↓, pgup and pgdn, g and G, and the wheel scroll; `e` opens the file in your editor, `o` with the system; esc closes it.
 - **`[tui] file_links`:** `"editor"` opens a click in `$VISUAL` or `$EDITOR` at the line instead (code, cursor, zed, and subl in their own window), `"open"` with the system's default app, and `"off"` draws plain paths.
 - **OSC 8:** the paths are also hyperlinks, which the terminal's own cmd+click or ctrl+click opens, also with the mouse off.
+- **Web links:** the agent's Markdown links and bare `http` or `https` URLs are hyperlinks to the whole URL, so the terminal opens the complete URL from any wrapped line of it. `"off"` turns these off too.
 
 The terminal's title shows the session's state and its workspace, to find a pane among many: `uah · api` when idle, `uah · working · api` while the agent works, `uah · approve? · api` while an approval waits, and `uah · answer? · api` while the agent's questions wait. `[tui] title = false` turns it off. See the [file links design](design/file-links.md).
 
