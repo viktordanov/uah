@@ -69,7 +69,8 @@ type Settings struct {
 	BaseURL        string
 	AllowDotenv    bool
 	// AllowStateInWorkspace runs when the workspace holds the state
-	// directory, with a warning (block_state_in_workspace off).
+	// directory (block_state_in_workspace off); ShownWarning keeps uagent's
+	// warning about it off the transcript.
 	AllowStateInWorkspace bool
 	// MaxAttempts is how many times a model request is sent before the
 	// run fails (0: the engine's default).
@@ -164,4 +165,12 @@ func (s Settings) WithRequest(req core.Request) Settings {
 	s.MaxAttempts, s.AllowStateInWorkspace = req.MaxAttempts, req.AllowStateInWorkspace
 
 	return s
+}
+
+// ShownWarning reports whether a run's preflight warning is shown. The
+// state directory inside the workspace is not: uah allows it and keeps its
+// sessions out of searches with the state directory's .ignore, so uagent's
+// warning on every run would say nothing new (`uah doctor` still names it).
+func ShownWarning(w core.PreflightWarning) bool {
+	return w.Code != core.FindingStateInWorkspace
 }

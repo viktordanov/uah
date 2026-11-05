@@ -21,7 +21,9 @@ func (s *State) onRunEvent(ev core.Event) { //nolint:gocyclo // a dispatch switc
 		s.ended, s.runErr = nil, ""
 		s.put(Item{Kind: KindRun, Key: "run:" + e.RunID, RunID: e.RunID, Status: core.StatusRunning, Started: e.At})
 	case core.PreflightWarning:
-		s.notice(session.LevelWarning, e.Message)
+		if session.ShownWarning(e) {
+			s.notice(session.LevelWarning, e.Message)
+		}
 	case core.UserMessage:
 		// The runner's echo delivers a message this session sent; any other
 		// message comes from history or another client.

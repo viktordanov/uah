@@ -82,7 +82,9 @@ func (p *printer) print(event core.Event) { //nolint:gocyclo // a dispatch switc
 		p.running = true
 		p.say("run " + e.RunID)
 	case core.PreflightWarning:
-		p.say("warning: " + e.Message)
+		if session.ShownWarning(e) {
+			p.say("warning: " + e.Message)
+		}
 	case core.ModelResponded:
 		p.say(fmt.Sprintf("turn %d  %s in · %s out  %.1fs", e.Turn, commas(e.Usage.InputTokens), commas(e.Usage.OutputTokens), e.Duration.Seconds()))
 		if e.Failure != "" {
