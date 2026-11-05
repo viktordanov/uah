@@ -15,6 +15,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/sandbox"
+	uahsession "github.com/viktordanov/uah/internal/session"
 )
 
 // reviewShell is the shell the reviewer's commands run in: POSIX, whatever
@@ -37,7 +38,7 @@ func (w *wiring) reviewCommands(req core.Request) review.Runner {
 	}
 	p := sandbox.Policy{
 		Mode: sandbox.ReadOnly, Workspace: req.Workspace,
-		TempDir: filepath.Join(w.l.SessionsDir, "operations", req.SessionID, "review-tmp"),
+		TempDir: uahsession.ReviewTempDir(w.l.SessionsDir, req.SessionID),
 	}
 	shell, err := sandbox.Shell(w.e.cfg.SandboxDir, p, w.e.cfg.Env, reviewShell)
 	if err != nil {

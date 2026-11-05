@@ -77,7 +77,7 @@ func sessionFlags() []cli.Flag {
 			Sources: cli.EnvVars("UAH_LLM_BASE_URL"),
 		},
 		&cli.StringFlag{
-			Name: "max-disk", Usage: "stop a run when tool output exceeds this size, e.g. 500M (0 disables)", Value: "5G",
+			Name: "max-disk", Usage: "stop a run when the tool output its session keeps exceeds this size, e.g. 500M (0 disables)", Value: "5G",
 			Validator: func(v string) error {
 				_, err := app.ParseSize(v)
 

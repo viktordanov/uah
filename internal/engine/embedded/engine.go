@@ -31,6 +31,7 @@ import (
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/sandbox"
+	uahsession "github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/toolpolicy"
 )
 
@@ -41,7 +42,9 @@ var errStopped = errors.New("the run has stopped")
 // Config configures the engine.
 type Config struct {
 	StateDir string
-	// MaxDisk stops a run whose tool output exceeds this many bytes (0 disables).
+	// MaxDisk stops a run when the tool output its session keeps, from all
+	// its runs, exceeds this many bytes (0 disables). The session's scratch
+	// directories (session.ScratchDirNames) do not count.
 	MaxDisk int64
 	Logger  *slog.Logger
 	// Provider is the session's provider; it decides whether /fast is offered.
@@ -210,7 +213,8 @@ func New(cfg Config) *Engine {
 		e.runs.free, e.runs.delay = debug.FreeOSMemory, releaseDelay
 	}
 	e.h = harness.New(harness.Config{
-		Backend: backend{e}, StateDir: cfg.StateDir, MaxDisk: cfg.MaxDisk, Logger: cfg.Logger, Getenv: cfg.Getenv,
+		Backend: backend{e}, StateDir: cfg.StateDir, Logger: cfg.Logger, Getenv: cfg.Getenv,
+		MaxDisk: cfg.MaxDisk, DiskExclude: uahsession.ScratchDirNames(),
 	})
 
 	return e
