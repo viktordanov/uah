@@ -74,3 +74,31 @@ func TestCall_ToolCalls(t *testing.T) {
 	assert.NotEmpty(t, res.Output)
 	assert.Equal(t, []string{"exec_command"}, srv.Requests()[0].ToolNames)
 }
+
+// deadline records the deadline of the last call's context.
+type deadline struct {
+	at  time.Time
+	set bool
+}
+
+func (d *deadline) Respond(ctx context.Context, _ llm.Request, _ llm.RequestOptions) (llm.Response, error) {
+	d.at, d.set = ctx.Deadline()
+
+	return llm.Response{Output: []llm.Item{llmcall.Message(llm.RoleAssistant, "ok")}}, nil
+}
+
+func TestCall_Deadline(t *testing.T) {
+	d := &deadline{}
+	_, err := llmcall.Call(context.Background(), d, llmcall.Request{})
+	require.NoError(t, err)
+	require.True(t, d.set)
+	assert.WithinDuration(t, time.Now().Add(llmcall.DefaultTimeout), d.at, time.Minute, "DefaultTimeout when none is set")
+
+	_, err = llmcall.Call(context.Background(), d, llmcall.Request{Timeout: -time.Second})
+	require.NoError(t, err)
+	assert.True(t, d.set, "a timeout that ran out is not no deadline")
+
+	_, err = llmcall.Call(context.Background(), d, llmcall.Request{Timeout: time.Second, NoDeadline: true})
+	require.NoError(t, err)
+	assert.False(t, d.set, "NoDeadline sets none")
+}

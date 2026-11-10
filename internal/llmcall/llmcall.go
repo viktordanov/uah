@@ -37,6 +37,10 @@ type Request struct {
 	Input []llm.Item
 	// Timeout bounds the call (DefaultTimeout when zero).
 	Timeout time.Duration
+	// NoDeadline sets no bound on the whole call, and Timeout is ignored:
+	// ctx ends it, or the adapter when the stream stalls. A long summary at
+	// a high effort can take more than DefaultTimeout.
+	NoDeadline bool
 	// CacheKey is passed to the provider for prompt caching.
 	CacheKey string
 	// Tools, when set, are offered to the model; the caller runs the calls
@@ -58,12 +62,15 @@ type Result struct {
 // Call sends the request and returns the assistant's text, or the tool
 // calls when the request offered tools.
 func Call(ctx context.Context, adapter llm.Adapter, req Request) (Result, error) {
-	timeout := req.Timeout
-	if timeout <= 0 {
-		timeout = DefaultTimeout
+	if !req.NoDeadline {
+		timeout := req.Timeout
+		if timeout <= 0 {
+			timeout = DefaultTimeout
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	input := make([]llm.Item, 0, len(req.Input)+1)
 	if req.Instructions != "" {
 		input = append(input, Message(llm.RoleSystem, req.Instructions))

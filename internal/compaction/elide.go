@@ -89,6 +89,44 @@ func Elide(items []llm.Item, ids []string) []llm.Item {
 	return out
 }
 
+// ElideToFit stubs tool outputs from the newest back until the estimate of
+// items is at most budget tokens, as Codex trims a history over the window
+// before a remote compaction. Each output keeps its item and call ID. ids
+// are the stubbed calls, newest first; ok is false when items is still over
+// budget with every output a stub. items is not changed.
+func ElideToFit(items []llm.Item, budget int64) (out []llm.Item, ids []string, ok bool) {
+	total := EstimateTokens(items)
+	if total <= budget {
+		return items, nil, true
+	}
+	calls := map[string]llm.ToolCall{}
+	for _, item := range items {
+		if c, ok := item.Data.(llm.ToolCall); ok {
+			calls[c.CallID] = c
+		}
+	}
+	out = slices.Clone(items)
+	for i := len(out) - 1; i >= 0 && total > budget; i-- {
+		r, isResult := out[i].Data.(llm.ToolResult)
+		c, known := calls[r.CallID]
+		if !isResult || !known {
+			continue
+		}
+		stub := llm.Item{ProviderID: out[i].ProviderID, Type: out[i].Type, Data: Stub(c, r)}
+		saved := EstimateTokens(out[i:i+1]) - EstimateTokens([]llm.Item{stub})
+		if saved <= 0 {
+			continue // already a stub, or too small for one
+		}
+		out[i], total = stub, total-saved
+		ids = append(ids, r.CallID)
+	}
+	if len(ids) == 0 {
+		return items, nil, false
+	}
+
+	return out, ids, total <= budget
+}
+
 // Stub is what the model sees in place of an elided output: the tool, its
 // command, the exit code, and the size.
 func Stub(call llm.ToolCall, r llm.ToolResult) llm.ToolResult {

@@ -78,8 +78,11 @@ type SummaryCall struct {
 }
 
 // Summarize asks the model for a summary of view with the call's prompt and
-// no tools. A history larger than the window is trimmed from the oldest item
-// first, and trimmed further when the provider still reports an overflow.
+// no tools. A history larger than the window has its newest tool outputs
+// stubbed first (ElideToFit), then its oldest items dropped, and is trimmed
+// further when the provider still reports an overflow. The call has no
+// deadline of its own: a summary of a long history at a high effort can take
+// many minutes, and the adapter ends a stalled stream.
 func Summarize(ctx context.Context, call SummaryCall, view []llm.Item) (Summary, error) {
 	system, input := SummaryRequest(view, call.Prompt)
 	history, prompt := input[:len(input)-1], input[len(input)-1]
@@ -87,11 +90,12 @@ func Summarize(ctx context.Context, call SummaryCall, view []llm.Item) (Summary,
 	for attempt := 0; ; attempt++ {
 		trimmed := history
 		if budget > 0 {
-			trimmed = Trim(history, budget)
+			trimmed, _, _ = ElideToFit(history, budget)
+			trimmed = Trim(trimmed, budget)
 		}
 		res, err := llmcall.Call(ctx, call.Adapter, llmcall.Request{
 			Model: call.Model, Effort: call.Effort, Instructions: system,
-			Input: append(slices.Clip(trimmed), prompt), CacheKey: call.CacheKey,
+			Input: append(slices.Clip(trimmed), prompt), CacheKey: call.CacheKey, NoDeadline: true,
 		})
 		if err == nil {
 			return Summary{Text: res.Text, Usage: res.Usage}, nil

@@ -2,6 +2,7 @@ package compaction_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -66,4 +67,48 @@ func TestElide_StubsAndStaysPut(t *testing.T) {
 func TestStillElided(t *testing.T) {
 	items := history(bash("c1", "a", "x"), bash("c2", "b", "y"))
 	assert.Equal(t, []string{"c2"}, compaction.StillElided(items[2:], []string{"c1", "c2", "c9"}))
+}
+
+func TestElideToFit_StubsTheNewestOutputsFirst(t *testing.T) {
+	items := append([]llm.Item{msg(llm.RoleSystem, "sys"), msg(llm.RoleUser, "go")}, calls(5, func(int) int { return 1_000 })...)
+	total := compaction.EstimateTokens(items)
+	before := slices.Clone(items)
+
+	same, ids, ok := compaction.ElideToFit(items, total)
+	assert.True(t, ok)
+	assert.Empty(t, ids)
+	assert.Equal(t, items, same, "nothing is stubbed when it fits")
+
+	out, ids, ok := compaction.ElideToFit(items, total-1_500)
+	assert.True(t, ok)
+	assert.Equal(t, []string{"c4", "c3"}, ids, "the newest first, and no more than it takes")
+	assert.LessOrEqual(t, compaction.EstimateTokens(out), total-1_500)
+	require.Len(t, out, len(items))
+	for i := range items {
+		assert.Equal(t, items[i].Type, out[i].Type, "the order and kinds of items stay")
+		if r, isResult := items[i].Data.(llm.ToolResult); isResult {
+			assert.Equal(t, r.CallID, out[i].Data.(llm.ToolResult).CallID, "each output keeps its call")
+		}
+	}
+	assert.Equal(t, items[:8], out[:8], "the older outputs stay whole")
+	assert.True(t, strings.HasPrefix(compaction.ResultText(out[11].Data.(llm.ToolResult)), "[uah elided this output"))
+	assert.Equal(t, before, items, "the input is not changed")
+
+	again, ids, _ := compaction.ElideToFit(out, total-2_500)
+	assert.Equal(t, []string{"c2"}, ids, "a stub is not stubbed again")
+	assert.Equal(t, out[11], again[11])
+}
+
+func TestElideToFit_ReportsWhenStubsAreNotEnough(t *testing.T) {
+	items := append([]llm.Item{msg(llm.RoleSystem, "sys"), msg(llm.RoleUser, strings.Repeat("u", 20_000))}, calls(2, func(int) int { return 1_000 })...)
+	out, ids, ok := compaction.ElideToFit(items, 1_000)
+	assert.False(t, ok)
+	assert.Equal(t, []string{"c1", "c0"}, ids, "every output is a stub")
+	assert.Greater(t, compaction.EstimateTokens(out), int64(1_000))
+
+	messages := []llm.Item{msg(llm.RoleSystem, "sys"), msg(llm.RoleUser, strings.Repeat("u", 20_000))}
+	out, ids, ok = compaction.ElideToFit(messages, 1_000)
+	assert.False(t, ok)
+	assert.Empty(t, ids)
+	assert.Equal(t, messages, out)
 }

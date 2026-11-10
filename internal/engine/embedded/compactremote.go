@@ -17,6 +17,9 @@ import (
 // trigger the transport appends (remotecompact.go). The record keeps the
 // user messages up to Codex's 64,000 tokens, then the item, then uah's
 // ledger. The covered range is Codex's: everything but the new messages.
+// A history over remoteFit of the window has its newest tool outputs
+// stubbed for the call only, as Codex's remote compaction trims it; the
+// record, the ledger, and the stats are of the history as it is.
 func (c *compactor) remoteCompact(ctx context.Context, req llm.Request, opts llm.RequestOptions, ask compactionAsk, start time.Time) (compaction.Record, error) {
 	covered := compaction.Coverable(req.Input)
 	if covered == 0 {
@@ -25,8 +28,15 @@ func (c *compactor) remoteCompact(ctx context.Context, req llm.Request, opts llm
 	call := &remoteCall{}
 	callCtx, input := c.applyPinned(context.WithValue(ctx, remoteCallKey{}, call), req.Input[:1+covered])
 	window := compaction.ContextWindow(c.next.currentModel(), c.window, c.windows)
+	input, stubbed, _ := compaction.ElideToFit(input, window*remoteFit/100)
 	if compaction.EstimateTokens(input) > window {
 		return compaction.Record{}, errRemoteTooLarge
+	}
+	if len(stubbed) > 0 && c.logger != nil {
+		c.logger.LogAttrs(ctx, slog.LevelInfo, "stubbed the newest tool outputs to fit the remote compaction",
+			slog.Int("outputs", len(stubbed)),
+			slog.Int64("tokens", compaction.EstimateTokens(input)),
+			slog.Int64("window", window))
 	}
 	resp, err := c.next.Respond(c.withItem(callCtx), llm.Request{Model: req.Model, Input: input, Tools: req.Tools}, opts)
 	if err != nil {
@@ -56,9 +66,13 @@ func (c *compactor) remoteCompact(ctx context.Context, req llm.Request, opts llm
 	return rec, nil
 }
 
-// errRemoteTooLarge sends a history over the window to the local summary,
-// which drops its oldest items to fit, as Codex's local compaction does; the
-// provider would refuse it whole.
+// remoteFit is the share of the window, in percent, a remote compaction's
+// history is trimmed to: Codex's 95.
+const remoteFit = 95
+
+// errRemoteTooLarge sends a history still over the window with every tool
+// output a stub to the local summary, which drops its oldest items to fit,
+// as Codex's local compaction does; the provider would refuse it whole.
 var errRemoteTooLarge = errors.New("the history is larger than the model's window")
 
 // usesRemote reports whether a compaction goes to the provider: when the

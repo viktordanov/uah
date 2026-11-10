@@ -133,14 +133,15 @@ func TestEmbedded_ACompactFocusUsesTheSummary(t *testing.T) {
 	assert.True(t, strings.HasSuffix(reqs[2].UserTexts[1], "the failing test"))
 }
 
-// TestEmbedded_RemoteCompactionOverTheWindowSummarizesLocally: the provider
-// would refuse a history over the window whole, so it goes to the local
-// summary, which drops the oldest items to fit, with no remote call.
-func TestEmbedded_RemoteCompactionOverTheWindowSummarizesLocally(t *testing.T) {
+// TestEmbedded_RemoteCompactionOverTheWindowStubsToolOutputs: a history
+// over the window goes to the provider with its newest tool outputs as
+// stubs, as Codex trims it; the record and its ledger are of the full
+// history.
+func TestEmbedded_RemoteCompactionOverTheWindowStubsToolOutputs(t *testing.T) {
 	e := newEnv(t,
-		fakellm.Reply{Commands: []string{"head -c 40000 /dev/zero | tr '\\0' x"}},
+		fakellm.Reply{Commands: []string{"head -c 40000 /dev/zero | tr '\\0' x; echo b$((1+1))oom >&2; exit 2"}},
 		fakellm.Reply{Text: "answer one"},
-		fakellm.Reply{Text: "SUMMARY"},
+		fakellm.Reply{Compaction: "ENCRYPTED-1"},
 		fakellm.Reply{Text: "answer two"},
 	)
 	s, ev := e.open(t, e.embedded(), "")
@@ -155,9 +156,49 @@ func TestEmbedded_RemoteCompactionOverTheWindowSummarizesLocally(t *testing.T) {
 
 	reqs := e.llm.Requests()
 	require.Len(t, reqs, 4)
+	compact := reqs[2]
+	assert.Contains(t, inputTypes(t, compact), "compaction_trigger", "the remote call went out")
+	assert.Equal(t, reqs[1].CallIDs, compact.CallIDs, "every call stays, with its output")
+	require.Len(t, compact.ToolOutputs, 1)
+	assert.True(t, strings.HasPrefix(compact.ToolOutputs[0], "[uah elided this output to save context: Bash `head -c 40000"), compact.ToolOutputs[0])
+	assert.Contains(t, inputTypes(t, reqs[3]), "compaction")
+	assert.Contains(t, reqs[3].UserTexts[1], "<uah_state_ledger>")
+	assert.Contains(t, reqs[3].UserTexts[1], "b2oom", "the ledger is of the full history: the stub has no stderr")
+	_, done := compactions(ev2.all)
+	require.Len(t, done, 1)
+	assert.Empty(t, done[0].Err)
+	require.NotNil(t, done[0].Stats)
+	assert.Equal(t, compaction.StrategyRemote, done[0].Stats.Strategy)
+}
+
+// TestEmbedded_RemoteCompactionOverTheWindowSummarizesLocally: a history
+// still over the window with every tool output a stub goes to the local
+// summary, which drops the oldest items to fit, with no remote call.
+func TestEmbedded_RemoteCompactionOverTheWindowSummarizesLocally(t *testing.T) {
+	e := newEnv(t,
+		fakellm.Reply{Commands: []string{"head -c 40000 /dev/zero | tr '\\0' x"}},
+		fakellm.Reply{Text: "answer one"},
+		fakellm.Reply{Text: "SUMMARY"},
+		fakellm.Reply{Text: "answer two"},
+	)
+	s, ev := e.open(t, e.embedded(), "")
+	ask(t, s, ev, strings.Repeat("y", 40_000))
+	id := s.ID()
+	require.NoError(t, s.Close())
+
+	eng := embedded.New(embedded.Config{StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, ContextWindow: 8_000, Compaction: compaction.Settings{Remote: true}})
+	s2, ev2 := e.open(t, eng, id)
+	require.NoError(t, s2.Compact())
+	ask(t, s2, ev2, "second")
+
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 4)
 	assert.NotContains(t, inputTypes(t, reqs[2]), "compaction_trigger", "no remote call")
 	assert.Contains(t, reqs[2].UserTexts, compaction.Prompt)
-	assert.Empty(t, reqs[2].ToolOutputs, "the oldest items, with the long output, were dropped to fit")
+	assert.NotContains(t, reqs[2].UserTexts, strings.Repeat("y", 40_000), "the oldest items were dropped to fit")
+	for _, out := range reqs[2].ToolOutputs {
+		assert.Less(t, len(out), 1_000, "the long output went out as a stub")
+	}
 	_, done := compactions(ev2.all)
 	require.Len(t, done, 1)
 	require.NotNil(t, done[0].Stats)

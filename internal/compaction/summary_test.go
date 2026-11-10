@@ -121,3 +121,37 @@ func TestInUse_CountsWhatCameAfterTheLastResponse(t *testing.T) {
 	image := llm.Item{Type: llm.ItemToolResult, Data: llm.ToolResult{CallID: "c", Output: []llm.ToolResultOutput{{Kind: llm.ToolResultImage, Value: "data:x"}}}}
 	assert.Equal(t, int64((7_373+1+3)/4), compaction.EstimateTokens([]llm.Item{image}))
 }
+
+func TestSummarize_StubsTheNewestOutputsBeforeDroppingItems(t *testing.T) {
+	srv := fakellm.New(t, fakellm.Reply{Text: "S"})
+	view := append([]llm.Item{msg(llm.RoleSystem, "sys"), msg(llm.RoleUser, "the task")}, calls(3, func(int) int { return 400 })...)
+	_, err := compaction.Summarize(context.Background(), compaction.SummaryCall{
+		Adapter: client(t, srv), Model: "gpt-test", Window: compaction.EstimateTokens(view), Prompt: compaction.CodexPrompt,
+	}, view)
+	require.NoError(t, err)
+	req := srv.Requests()[0]
+	assert.Equal(t, []string{"the task", compaction.CodexPrompt}, req.UserTexts, "no item was dropped")
+	assert.Equal(t, []string{"c0", "c1", "c2"}, req.CallIDs)
+	require.Len(t, req.ToolOutputs, 3)
+	assert.Equal(t, strings.Repeat("x", 1_600), req.ToolOutputs[0])
+	assert.Equal(t, strings.Repeat("x", 1_600), req.ToolOutputs[1], "only as many stubs as it takes")
+	assert.True(t, strings.HasPrefix(req.ToolOutputs[2], "[uah elided this output"), "the newest output is a stub")
+}
+
+// deadlines records whether each call's context had a deadline.
+type deadlines struct{ had []bool }
+
+func (d *deadlines) Respond(ctx context.Context, _ llm.Request, _ llm.RequestOptions) (llm.Response, error) {
+	_, ok := ctx.Deadline()
+	d.had = append(d.had, ok)
+
+	return llm.Response{Output: []llm.Item{msg(llm.RoleAssistant, "S")}}, nil
+}
+
+func TestSummarize_HasNoDeadlineOfItsOwn(t *testing.T) {
+	d := &deadlines{}
+	got, err := compaction.Summarize(context.Background(), compaction.SummaryCall{Adapter: d, Window: 272_000}, longHistory(2))
+	require.NoError(t, err)
+	assert.Equal(t, "S", got.Text)
+	assert.Equal(t, []bool{false}, d.had, "llmcall.DefaultTimeout does not bound a summary; the adapter ends a stalled stream")
+}
