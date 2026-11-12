@@ -58,6 +58,21 @@ uah's `Bash` never blocks a turn, but a command cannot outlive the run that star
 - **A notice when it exits.** `<background_shell_notification>` with the shell ID, the command, the exit code, how long it ran, and the last lines of the log. It goes through `Session.Inject`, as a subagent's notice does: into a live run as a developer message, which cancels no request; with no run, it starts one (as built; the plan held it for the next message).
 - **`wait_shell` to wait for one.** As `wait_agent` does for a child: it blocks until one of the named shells exits or the wait ends (4.5 minutes by default and at most, under the wake hold), returns its notice, and withdraws the held copy. Nothing sleeps or ticks; the wait is on the exit.
 
+### Deliberately waiting on a long job
+
+When the agent has nothing else to do until a job ends, it can call
+`wait_shell` with `timeout_ms` up to 3,600,000 and `allow_long_wait: true`.
+Without the explicit opt-in the cap stays 270,000 ms; the default stays
+270,000 ms even with the opt-in. The minimum stays 1,000 ms.
+
+The opt-in also extends that call's coordinator hold and suppresses its
+automatic tool heartbeats. Otherwise the five-minute wake valve and
+ten-minute heartbeat would wake the model anyway, adding repeated
+still-running turns to its context. User input, other calls' wakeups,
+completion, cancellation, and session shutdown remain responsive. The
+hold has 30 seconds of slack after the requested timeout so that the
+wait's timeout result can arrive before a progress wakeup.
+
 ### Stopping one
 
 - **`kill_shell`.** It takes a shell ID and stops the process group (SIGTERM, then SIGKILL) through `ownKill`, so it works from inside the sandbox. A killed shell sends no notice: the model already knows.

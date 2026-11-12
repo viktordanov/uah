@@ -52,6 +52,8 @@ func TestShells_Background(t *testing.T) {
 	require.Len(t, reqs, 3)
 	assert.Contains(t, reqs[0].Tools["Bash"], `"background"`)
 	assert.Contains(t, reqs[0].ToolNames, "wait_shell")
+	assert.Contains(t, reqs[0].Tools["wait_shell"], `"allow_long_wait"`)
+	assert.Contains(t, reqs[0].Tools["wait_shell"], "3600000")
 	assert.Contains(t, reqs[0].ToolNames, "kill_shell")
 	assert.Contains(t, reqs[1].ToolOutputs[0], "Background shell shell-1 started")
 	assert.Contains(t, reqs[1].ToolOutputs[0], exited.Log)
@@ -67,6 +69,26 @@ func TestShells_Background(t *testing.T) {
 		}
 	}
 	assert.Equal(t, []string{"shell-1"}, notes, "the end comes once")
+}
+
+// A deliberate long wait must outlive the ordinary coordinator hold and
+// return the shell's end without an intermediate model request.
+func TestShells_LongWaitStaysBlocked(t *testing.T) {
+	e := newEnv(t,
+		shellCall("Bash", `{"command":"sleep 1; echo finished","background":true}`),
+		shellCall("wait_shell", `{"shell_ids":["shell-1"],"timeout_ms":3600000,"allow_long_wait":true}`),
+		fakellm.Reply{Text: "done"},
+	)
+	eng := embedded.New(embedded.Config{StateDir: e.StateDir, Provider: "openai", Getenv: e.getenv, WakeHold: 200 * time.Millisecond})
+	s, ev := e.open(t, eng, "")
+	_, err := s.Submit("wait for the job")
+	require.NoError(t, err)
+	assert.Equal(t, "done", ev.finished().Answer)
+	reqs := e.llm.Requests()
+	require.Len(t, reqs, 3)
+	assert.Contains(t, reqs[2].ToolOutputs[1], `"state":"exited"`)
+	assert.Contains(t, reqs[2].ToolOutputs[1], "finished")
+	assert.NotContains(t, strings.Join(reqs[2].ToolOutputs, "\n"), "Still running")
 }
 
 // TestShells_WaitAndKill: kill_shell stops a shell's process group, and

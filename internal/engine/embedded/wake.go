@@ -21,7 +21,7 @@ const wakeHold = 5 * time.Minute
 // call it issued has finished, or a call has run for hold (wakeHold when
 // 0).
 func wakePolicy(hold time.Duration) coordinator.WakePolicy {
-	return coordinator.WakePolicy{Hold: cmp.Or(hold, wakeHold), Progress: progress}
+	return coordinator.WakePolicy{Hold: cmp.Or(hold, wakeHold), QuietHold: quietShellWait, Progress: progress}
 }
 
 // progress is a running call's output so far (bash.Progress), then how to
