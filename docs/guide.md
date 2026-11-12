@@ -386,7 +386,7 @@ The agent can start a command that keeps running after its call, such as a dev s
 | Stop them all and leave | ctrl+c on the empty composer asks once more while a shell runs, then quits and stops them, with the subagents |
 
 - **Esc esc** interrupts the turn only; the shells keep running, and their exits wait for your next message.
-- **The agent's own tools:** `wait_shell` waits up to 4.5 minutes for a shell to exit, and `kill_shell` stops one.
+- **The agent's own tools:** `wait_shell` waits up to 4.5 minutes for a shell to exit by default. For a deliberate long wait, `{"shell_ids":["shell-1"],"timeout_ms":3600000,"allow_long_wait":true}` permits up to one hour without periodic model wakeups for that wait. User input still wakes the agent, and a shell's exit returns immediately. The opt-in alone keeps the default timeout. `kill_shell` stops a shell.
 - **Sandbox:** a background shell runs in the sandbox of the permission mode it started in, and asks for approval as any command does.
 - **Limits:** 16 running shells per session, and 256 MiB of log each. Shells do not survive quitting uah, or a resume after it.
 

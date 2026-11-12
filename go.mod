@@ -63,3 +63,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+replace github.com/viktordanov/uah-core => github.com/mwotton/uah-core v0.10.1-0.20261112044308-bb15ccb5b0bd
