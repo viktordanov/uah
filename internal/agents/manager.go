@@ -51,6 +51,9 @@ type Config struct {
 	// StallAfter is how long a running child may go without an event
 	// before it is stopped as stalled (0: DefaultStallAfter).
 	StallAfter time.Duration
+	// MaxWait is how long wait_agent waits without a timeout, and the
+	// longest timeout it takes (max_wait; 0: engine.DefaultMaxWait).
+	MaxWait time.Duration
 }
 
 // DefaultStallAfter is twice the runner's tool heartbeat (10 minutes),
@@ -94,6 +97,9 @@ func New(cfg Config) *Manager {
 	cfg.MaxDepth = min(cfg.MaxDepth, MaxDepth)
 	if cfg.StallAfter <= 0 {
 		cfg.StallAfter = DefaultStallAfter
+	}
+	if cfg.MaxWait <= 0 {
+		cfg.MaxWait = engine.DefaultMaxWait
 	}
 
 	return &Manager{

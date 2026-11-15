@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,46 @@ func TestCall_WaitTimedOutSaysTheAgentsAreFine(t *testing.T) {
 	assert.Contains(t, out.Note, "still working, and nothing is wrong")
 	assert.Contains(t, out.Note, "call wait_agent again")
 	assert.JSONEq(t, `{"status":{"a":"not_found"},"timed_out":false}`, agents.WaitResult(map[string]agents.Status{"a": {State: "not_found"}}, false))
+}
+
+// TestWaitTimeout: wait_agent waits max_wait without timeout_ms, takes
+// timeout_ms between a minute and max_wait, and answers only for its own
+// calls with arguments it accepts; its description and schema name
+// max_wait.
+func TestWaitTimeout(t *testing.T) {
+	m := agents.New(agents.Config{MaxDepth: 1})
+	short := agents.New(agents.Config{MaxDepth: 1, MaxWait: 30 * time.Second})
+	for _, tc := range []struct {
+		name string
+		m    *agents.Manager
+		tool string
+		args string
+		want time.Duration
+		ok   bool
+	}{
+		{"default", m, "wait_agent", `{"targets":["a"]}`, time.Hour, true},
+		{"sooner", m, "wait_agent", `{"targets":["a"],"timeout_ms":600000}`, 10 * time.Minute, true},
+		{"minimum", m, "wait_agent", `{"targets":["a"],"timeout_ms":1000}`, time.Minute, true},
+		{"above max_wait", m, "wait_agent", `{"targets":["a"],"timeout_ms":7200000}`, time.Hour, true},
+		{"huge number", m, "wait_agent", `{"targets":["a"],"timeout_ms":1e100}`, time.Hour, true},
+		{"max_wait below the minimum", short, "wait_agent", `{"targets":["a"],"timeout_ms":1000}`, 30 * time.Second, true},
+		{"zero", m, "wait_agent", `{"targets":["a"],"timeout_ms":0}`, 0, false},
+		{"no targets", m, "wait_agent", `{"targets":[]}`, 0, false},
+		{"bad arguments", m, "wait_agent", `{"targets":"a"}`, 0, false},
+		{"another tool", m, "send_input", `{"target":"a","message":"hi"}`, 0, false},
+	} {
+		got, ok := tc.m.WaitTimeout(tc.tool, json.RawMessage(tc.args))
+		assert.Equal(t, tc.ok, ok, tc.name)
+		assert.Equal(t, tc.want, got, tc.name)
+	}
+	for _, tl := range m.Attach(engine.AgentParent{SessionID: "p"}) {
+		if tl.Name == "wait_agent" {
+			assert.Contains(t, tl.Description, "at most 60 minutes")
+			props, _ := tl.Parameters["properties"].(map[string]any)
+			timeout, _ := props["timeout_ms"].(map[string]any)
+			assert.Contains(t, timeout["description"], "Defaults to and at most 3600000 (60 minutes), min 60000.")
+		}
+	}
 }
 
 // TestTools_Offered offers Codex's v1 tools while the depth allows it, and

@@ -33,6 +33,10 @@ type Config struct {
 	// before its request is retried, in milliseconds, as Codex's
 	// stream_idle_timeout_ms (0: 90 seconds).
 	StreamIdleTimeoutMS int `toml:"stream_idle_timeout_ms"`
+	// MaxWait is how long wait_shell and wait_agent wait without a
+	// timeout, and the longest timeout they take, as a duration such as
+	// "30m" ("": one hour).
+	MaxWait string `toml:"max_wait"`
 	// ResponsesWebSocket sends openai-codex model requests over the
 	// Responses WebSocket, as Codex does (on by default).
 	ResponsesWebSocket *bool `toml:"responses_websocket"`

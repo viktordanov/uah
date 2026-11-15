@@ -50,7 +50,7 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	if !w.e.cfg.NoSkills {
 		skills, skillErrs = discoverSkills(req.Workspace, w.getenv)
 	}
-	registry := withShells(tool.NewRegistry(translators, toolNames(req, len(skills) > 0)...), background, req.DisallowedTools)
+	registry := withShells(tool.NewRegistry(translators, toolNames(req, len(skills) > 0)...), background, req.DisallowedTools, w.e.cfg.MaxWait)
 	if w.bridge != nil {
 		registry = withBridgeNote(registry) // before the sandbox layer reads Bash's definition
 	}

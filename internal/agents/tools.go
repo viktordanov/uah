@@ -21,18 +21,14 @@ const (
 	// toolWaitBefore is what uah called wait_agent before; the name still
 	// resolves, so a session with past calls resumes, but it is not offered.
 	toolWaitBefore = "wait"
+	// toolWaitShell is the embedded engine's wait for background shells.
+	toolWaitShell = "wait_shell"
 )
 
-// wait_agent's timeout bounds. Codex's are 30 s by default, 10 s to 1 h;
-// its parents polled with 10 s waits. A wait without a timeout waits as long
-// as one can: just under the embedded engine's 5-minute wake hold
-// (embedded.wakeHold), which would otherwise wake the parent only to say the
-// wait is still running.
-const (
-	waitMax     = 4*time.Minute + 30*time.Second
-	waitDefault = waitMax
-	waitMin     = time.Minute
-)
+// waitMin is wait_agent's shortest timeout; max_wait (Config.MaxWait) is
+// its default and longest. Codex's are 30 s by default, 10 s to 1 h; its
+// parents polled with 10 s waits.
+const waitMin = time.Minute
 
 // waitNote is a timed-out wait's note: the agents are fine, wait again.
 const waitNote = "No agent finished during this wait. They are still working, and nothing is wrong: call wait_agent again to keep waiting. A message does not make an agent finish sooner."
@@ -42,16 +38,16 @@ const waitNote = "No agent finished during this wait. They are still working, an
 type tool struct {
 	name        string
 	description func(m *Manager) string
-	schema      string
+	schema      func(m *Manager) string
 	run         func(ctx context.Context, m *Manager, call engine.AgentCall) (any, error)
 }
 
 var tools = []tool{
-	{ToolSpawn, func(m *Manager) string { return spawnDescription(m.cfg.Roles) }, spawnSchema, runSpawn},
-	{ToolSend, fixed(sendDescription), sendSchema, runSend},
-	{ToolWait, fixed(waitDescription), waitSchema, runWait},
-	{ToolClose, fixed(closeDescription), closeSchema, runClose},
-	{ToolResume, fixed(resumeDescription), resumeSchema, runResume},
+	{ToolSpawn, func(m *Manager) string { return spawnDescription(m.cfg.Roles) }, fixed(spawnSchema), runSpawn},
+	{ToolSend, fixed(sendDescription), fixed(sendSchema), runSend},
+	{ToolWait, func(m *Manager) string { return waitDescription(m.cfg.MaxWait) }, func(m *Manager) string { return waitSchema(m.cfg.MaxWait) }, runWait},
+	{ToolClose, fixed(closeDescription), fixed(closeSchema), runClose},
+	{ToolResume, fixed(resumeDescription), fixed(resumeSchema), runResume},
 }
 
 func fixed(s string) func(*Manager) string { return func(*Manager) string { return s } }
@@ -74,7 +70,7 @@ func (m *Manager) definitions() []engine.AgentTool {
 	out := make([]engine.AgentTool, 0, len(tools))
 	for _, t := range tools {
 		var params map[string]any
-		if err := json.Unmarshal([]byte(t.schema), &params); err != nil {
+		if err := json.Unmarshal([]byte(t.schema(m)), &params); err != nil {
 			panic(fmt.Sprintf("invalid %s schema: %v", t.name, err)) // a constant
 		}
 		out = append(out, engine.AgentTool{Name: t.name, Description: t.description(m), Parameters: params})
@@ -181,19 +177,40 @@ func runWait(ctx context.Context, m *Manager, call engine.AgentCall) (any, error
 	if err != nil {
 		return nil, err
 	}
-	if len(a.Targets) == 0 {
-		return nil, errors.New("agent ids must be non-empty")
-	}
-	timeout := waitDefault
-	if a.TimeoutMS != nil {
-		if *a.TimeoutMS <= 0 {
-			return nil, errors.New("timeout_ms must be greater than zero")
-		}
-		timeout = min(max(time.Duration(*a.TimeoutMS)*time.Millisecond, waitMin), waitMax)
+	timeout, err := m.waitTimeout(a)
+	if err != nil {
+		return nil, err
 	}
 	statuses, timedOut, err := m.wait(ctx, parentID, a.Targets, timeout)
 
 	return newWaitResult(statuses, timedOut), err
+}
+
+// waitTimeout is how long a wait_agent call with these arguments waits:
+// max_wait, or timeout_ms within waitMin and max_wait.
+func (m *Manager) waitTimeout(a waitArgs) (time.Duration, error) {
+	if len(a.Targets) == 0 {
+		return 0, errors.New("agent ids must be non-empty")
+	}
+	if a.TimeoutMS != nil && *a.TimeoutMS <= 0 {
+		return 0, errors.New("timeout_ms must be greater than zero")
+	}
+
+	return engine.WaitTimeout(a.TimeoutMS, waitMin, m.cfg.MaxWait), nil
+}
+
+// WaitTimeout is how long a wait_agent call waits (engine.Subagents).
+func (m *Manager) WaitTimeout(tool string, args json.RawMessage) (time.Duration, bool) {
+	if tool != ToolWait {
+		return 0, false
+	}
+	a, err := decode[waitArgs](args)
+	if err != nil {
+		return 0, false
+	}
+	timeout, err := m.waitTimeout(a)
+
+	return timeout, err == nil
 }
 
 // newWaitResult is wait_agent's result; a timed-out one says the agents

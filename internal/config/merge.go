@@ -17,6 +17,7 @@ func merge(base, over Config) Config {
 	set(&base.Model, over.Model)
 	set(&base.Effort, over.Effort)
 	set(&base.MaxDisk, over.MaxDisk)
+	set(&base.MaxWait, over.MaxWait)
 	if over.BlockStateInWorkspace != nil {
 		base.BlockStateInWorkspace = over.BlockStateInWorkspace
 	}

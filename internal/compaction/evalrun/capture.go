@@ -2,6 +2,7 @@ package evalrun
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -188,6 +189,8 @@ func (noSubagents) Interrupt(string)                             {}
 func (noSubagents) Call(context.Context, engine.AgentCall) (string, error) {
 	return "", errors.New("the evaluation runs no subagents")
 }
+
+func (noSubagents) WaitTimeout(string, json.RawMessage) (time.Duration, bool) { return 0, false }
 
 // stubSkill puts one skill in the scratch workspace, so the engine always
 // offers SkillUse: a recorded SkillUse call must find its tool to be

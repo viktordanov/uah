@@ -58,7 +58,7 @@ func TestExplainSources(t *testing.T) {
 				"projects.<workspace>.trusted": "default",
 			},
 			vals: map[string]string{
-				"workspace": "/cwd", "provider": "openai-codex", "model": "gpt-6-sol", "effort": "high", "max_disk": "5G", "request_max_attempts": "10",
+				"workspace": "/cwd", "provider": "openai-codex", "model": "gpt-6-sol", "effort": "high", "max_disk": "5G", "max_wait": "1h0m0s", "request_max_attempts": "10",
 				"sandbox_mode": "workspace-write", "approval_policy": "on-request", "approvals_reviewer": "user",
 				"review.model": "codex-auto-review", "auto_compact_percent": "90", "project_root_markers": "[.git]",
 				"shell_environment_policy.set": "{}", "approvals.allow": "[]",

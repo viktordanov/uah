@@ -74,3 +74,47 @@ func TestAgents_ChildWaitingOnAnApprovalIsNotStalled(t *testing.T) {
 	assert.Equal(t, "done", ev.finished().Answer)
 	assert.Contains(t, answers(e), `{"completed":"fetched"}`)
 }
+
+// TestAgents_ChildWaitingOnAShellIsNotStalled keeps a child whose
+// wait_shell sends no event for longer than StallAfter: the wait ends by
+// its own timeout.
+func TestAgents_ChildWaitingOnAShellIsNotStalled(t *testing.T) {
+	e := newEnv(t, agents.Config{StallAfter: 300 * time.Millisecond},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-B build"}`)}},
+		callWith("wait_agent", `{"targets":["ID"]}`),
+		fakellm.Reply{Text: "done"},
+	)
+	e.llm.Route("CHILD-B",
+		fakellm.Reply{Calls: []fakellm.Call{call("Bash", `{"command":"sleep 1; echo built","background":true}`)}},
+		fakellm.Reply{Calls: []fakellm.Call{call("wait_shell", `{"shell_ids":["shell-1"]}`)}},
+		fakellm.Reply{Text: "built"},
+	)
+	s, ev := e.open(t, false)
+
+	_, err := s.Submit("delegate a build")
+	require.NoError(t, err)
+	assert.Equal(t, "done", ev.finished().Answer)
+	assert.Contains(t, answers(e), `{"completed":"built"}`)
+}
+
+// TestAgents_LongWaitIsNotWoken: a wait_agent that outlives the wake hold
+// returns the child's answer without a model request in between.
+func TestAgents_LongWaitIsNotWoken(t *testing.T) {
+	gate := make(chan struct{})
+	e := newEnv(t, agents.Config{},
+		fakellm.Reply{Calls: []fakellm.Call{call("spawn_agent", `{"message":"CHILD-L work"}`)}},
+		callWith("wait_agent", `{"targets":["ID"]}`),
+		fakellm.Reply{Text: "done"},
+	)
+	e.llm.Route("CHILD-L", fakellm.Reply{Gate: gate, Text: "worked"})
+	s, ev := e.open(t, false, shortHold)
+
+	_, err := s.Submit("delegate")
+	require.NoError(t, err)
+	awaitRequests(t, e, "CHILD-L", 1)
+	time.AfterFunc(time.Second, func() { close(gate) }) // five times the hold
+	assert.Equal(t, "done", ev.finished().Answer)
+	assert.Contains(t, answers(e), `{"completed":"worked"}`)
+	assert.NotContains(t, answers(e), "Still running")
+	assert.Len(t, e.llm.Requests(), 4, "three of the parent's and the child's one")
+}

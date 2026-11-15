@@ -56,22 +56,18 @@ uah's `Bash` never blocks a turn, but a command cannot outlive the run that star
 ### Hearing that it ended
 
 - **A notice when it exits.** `<background_shell_notification>` with the shell ID, the command, the exit code, how long it ran, and the last lines of the log. It goes through `Session.Inject`, as a subagent's notice does: into a live run as a developer message, which cancels no request; with no run, it starts one (as built; the plan held it for the next message).
-- **`wait_shell` to wait for one.** As `wait_agent` does for a child: it blocks until one of the named shells exits or the wait ends (4.5 minutes by default and at most, under the wake hold), returns its notice, and withdraws the held copy. Nothing sleeps or ticks; the wait is on the exit.
+- **`wait_shell` to wait for one.** As `wait_agent` does for a child: it blocks until one of the named shells exits or the wait ends (`max_wait`, one hour by default, at most; see below), returns its notice, and withdraws the held copy. Nothing sleeps or ticks; the wait is on the exit.
 
-### Deliberately waiting on a long job
+### Waiting on a long job
 
-When the agent has nothing else to do until a job ends, it can call
-`wait_shell` with `timeout_ms` up to 3,600,000 and `allow_long_wait: true`.
-Without the explicit opt-in the cap stays 270,000 ms; the default stays
-270,000 ms even with the opt-in. The minimum stays 1,000 ms.
+Waits used to stop at 4.5 minutes, just under the 5-minute wake hold, so an agent with nothing to do but wait for a long build waited again every few minutes, and each wait was a model request ([#10](https://github.com/viktordanov/uah/issues/10)). Now:
 
-The opt-in also extends that call's coordinator hold and suppresses its
-automatic tool heartbeats. Otherwise the five-minute wake valve and
-ten-minute heartbeat would wake the model anyway, adding repeated
-still-running turns to its context. User input, other calls' wakeups,
-completion, cancellation, and session shutdown remain responsive. The
-hold has 30 seconds of slack after the requested timeout so that the
-wait's timeout result can arrive before a progress wakeup.
+- **`max_wait` bounds a wait.** `wait_shell` and `wait_agent` without `timeout_ms` wait until a shell or an agent ends, or `max_wait` passes (`1h` by default, at most `24h`). `timeout_ms` is only to check back sooner: it is clamped to the tool's least wait (1 s for `wait_shell`, 1 minute for `wait_agent`) and `max_wait`, and a `max_wait` below the least wins. The number is clamped before it becomes a duration, so a huge one cannot overflow. The tool descriptions show the configured value.
+- **The hold follows the wait.** The coordinator asks the wake policy for each call's own hold (`CallHold`). For a wait it is the wait's timeout plus 30 s, for its result to come back, when that is longer than the wake hold; the call sends no heartbeat until then. The wait and the hold read the timeout with the same function (`shellWaitTimeout`, `agents.Manager.WaitTimeout`), so they cannot disagree. A user message, another call's wake, and the wait's own end still wake the model.
+- **Only jobs that end on their own.** `wait_shell`'s description says not to wait on a server or watcher.
+- **A child that waits is not stalled.** A subagent's running `wait_shell` keeps it from being stopped after 20 minutes without an event.
+
+The design came from Mark Wotton's PR [#11](https://github.com/viktordanov/uah/pull/11), which added an `allow_long_wait` flag for waits up to an hour, and uah-core PR [#1](https://github.com/viktordanov/uah-core/pull/1), the per-call hold.
 
 ### Stopping one
 

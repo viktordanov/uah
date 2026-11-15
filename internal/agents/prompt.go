@@ -3,6 +3,7 @@ package agents
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // The tool descriptions, parameter schemas, and spawn_agent guidance are
@@ -81,10 +82,6 @@ const (
 		`"message":{"type":"string","description":"Message to send to the agent."},` +
 		`"interrupt":{"type":"boolean","description":"True interrupts the current task and handles this message immediately; false or omitted queues it."}` +
 		`},"required":["target","message"],"additionalProperties":false}`
-	waitSchema = `{"type":"object","properties":{` +
-		`"targets":{"type":"array","items":{"type":"string"},"description":"Agent ids to wait on. Pass multiple ids to wait for whichever finishes first."},` +
-		`"timeout_ms":{"type":"number","description":"Timeout in milliseconds; omit it. Defaults to and at most 270000 (4.5 minutes), min 60000. A shorter wait does not make an agent finish sooner."}` +
-		`},"required":["targets"],"additionalProperties":false}`
 	closeSchema = `{"type":"object","properties":{` +
 		`"target":{"type":"string","description":"Agent id to close (from spawn_agent)."}` +
 		`},"required":["target"],"additionalProperties":false}`
@@ -93,6 +90,23 @@ const (
 		`},"required":["id"],"additionalProperties":false}`
 )
 
+// waitSchema is wait_agent's parameter schema, Codex's v1, with
+// max_wait as its default and longest timeout.
+func waitSchema(maxWait time.Duration) string {
+	return `{"type":"object","properties":{` +
+		`"targets":{"type":"array","items":{"type":"string"},"description":"Agent ids to wait on. Pass multiple ids to wait for whichever finishes first."},` +
+		fmt.Sprintf(`"timeout_ms":{"type":"number","description":"Timeout in milliseconds; omit it. Defaults to and at most %d (%s), min %d. A shorter wait does not make an agent finish sooner."}`,
+			maxWait.Milliseconds(), minutes(maxWait), min(waitMin, maxWait).Milliseconds()) +
+		`},"required":["targets"],"additionalProperties":false}`
+}
+
+// waitDescription is wait_agent's description, Codex's v1, with max_wait.
+func waitDescription(maxWait time.Duration) string {
+	return "Wait for agents to reach a final status. Returns as soon as one of the targets finishes, with the status of each finished one; a completed status includes the agent's final answer. " +
+		"Without timeout_ms it waits until one finishes, at most " + minutes(maxWait) + ". " +
+		"A timeout means only that the agents are still working and nothing is wrong: wait again. Other work continues while you wait. An agent that finishes while you are not waiting sends you a <subagent_notification> with the same status."
+}
+
 // userAgentNote ends the descriptions of the tools that reach a running
 // agent: a /review's reviewer is the user's (reviewagent.go).
 const userAgentNote = " An agent a /review started (role review) is the user's: leave it alone unless the user asks you to act on it."
@@ -100,7 +114,6 @@ const userAgentNote = " An agent a /review started (role review) is the user's: 
 // The other tools' descriptions, Codex's v1, with userAgentNote.
 const (
 	sendDescription   = "Send a message to an existing agent. A running agent needs no check-ins: its final answer comes to you, so do not message it for status, to hurry it, or to repeat its task. Message a running agent only to pass on new information from the user, to answer its question, or to stop a clear failure; interrupt=true stops its current work for the message, so use it only for a failure. Reuse a finished agent with send_input when a new task depends on the context of its previous one." + userAgentNote
-	waitDescription   = "Wait for agents to reach a final status. Returns as soon as one of the targets finishes, with the status of each finished one; a completed status includes the agent's final answer. Without timeout_ms it waits as long as one call can, 4.5 minutes. A timeout means only that the agents are still working and nothing is wrong: wait again. Other work continues while you wait. An agent that finishes while you are not waiting sends you a <subagent_notification> with the same status."
 	closeDescription  = "Close an agent and any open descendants when they are no longer needed, and return the target agent's previous status before shutdown was requested. Completed agents remain open and count toward the concurrency limit until closed. Don't keep agents open for too long if they are not needed anymore. Closing a /review's reviewer stops the review." + userAgentNote
 	resumeDescription = "Resume a previously closed agent by id so it can receive send_input and wait_agent calls. Agents from an earlier session of this conversation must be resumed before other calls reach them."
 )

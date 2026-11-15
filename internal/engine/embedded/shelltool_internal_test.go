@@ -17,55 +17,55 @@ type shellPlanContext struct {
 
 func (c *shellPlanContext) Submit(spec operation.Spec) operation.ID {
 	c.specs = append(c.specs, spec)
+
 	return "wait-1"
 }
 
-func TestShellWaitOptIn(t *testing.T) {
+// TestShellWaitTimeout: the wait's plan and the wake policy read the same
+// timeout, max_wait without timeout_ms.
+func TestShellWaitTimeout(t *testing.T) {
 	for _, tt := range []struct {
 		name, extra string
+		maxWait     time.Duration
 		want        time.Duration
-		quiet       bool
 	}{
-		{"default", ``, 270 * time.Second, false},
-		{"old cap", `,"timeout_ms":3600000`, 270 * time.Second, false},
-		{"explicit false", `,"timeout_ms":3600000,"allow_long_wait":false`, 270 * time.Second, false},
-		{"one hour", `,"timeout_ms":3600000,"allow_long_wait":true`, time.Hour, true},
-		{"long cap", `,"timeout_ms":7200000,"allow_long_wait":true`, time.Hour, true},
-		{"twenty minutes", `,"timeout_ms":1200000,"allow_long_wait":true`, 20 * time.Minute, true},
-		{"opt in alone", `,"allow_long_wait":true`, 270 * time.Second, false},
-		{"short opt in", `,"timeout_ms":2000,"allow_long_wait":true`, 2 * time.Second, false},
-		{"minimum", `,"timeout_ms":-1,"allow_long_wait":true`, time.Second, false},
-		{"huge number", `,"timeout_ms":1e100,"allow_long_wait":true`, time.Hour, true},
+		{"default", ``, time.Hour, time.Hour},
+		{"sooner", `,"timeout_ms":120000`, time.Hour, 2 * time.Minute},
+		{"minimum", `,"timeout_ms":-1`, time.Hour, time.Second},
+		{"above max_wait", `,"timeout_ms":7200000`, time.Hour, time.Hour},
+		{"huge number", `,"timeout_ms":1e100`, time.Hour, time.Hour},
+		{"configured max_wait", ``, 10 * time.Minute, 10 * time.Minute},
+		{"max_wait below the minimum", `,"timeout_ms":1`, 500 * time.Millisecond, 500 * time.Millisecond},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			call := llm.ToolCall{Name: toolWaitShell, Arguments: `{"shell_ids":["shell-1"]` + tt.extra + `}`}
 			ctx := &shellPlanContext{}
-			status := (shellTranslator{name: toolWaitShell, offered: true}).Translate(ctx, call)
+			status := (shellTranslator{name: toolWaitShell, offered: true, maxWait: tt.maxWait}).Translate(ctx, call)
 			require.Empty(t, status.Error)
 			require.Len(t, ctx.specs, 1)
-			// The remote job's durable plan must use the same duration as
-			// the wake policy; these checks do not wait on a real timer.
 			op := operation.Operation{Type: ctx.specs[0].Type, Version: ctx.specs[0].Version, State: ctx.specs[0].State, MaxOutputLength: ctx.specs[0].MaxOutputLength}
 			state, err := operation.DecodeRemoteJobState(op)
 			require.NoError(t, err)
 			var plan shellPlan
 			require.NoError(t, json.Unmarshal(state.Plan.Data, &plan))
 			assert.Equal(t, tt.want.Milliseconds(), plan.TimeoutMS)
-			if tt.quiet {
-				assert.Equal(t, tt.want+30*time.Second, quietShellWait(call))
-			} else {
-				assert.Zero(t, quietShellWait(call))
-			}
+			timeout, ok := shellWaitTimeout(call, tt.maxWait)
+			assert.True(t, ok)
+			assert.Equal(t, tt.want, timeout)
 		})
 	}
 }
 
-func TestQuietShellWaitIgnoresOtherOrInvalidCalls(t *testing.T) {
+// TestShellWaitTimeoutIgnoresOtherOrInvalidCalls: a call the translator
+// would refuse is not a wait.
+func TestShellWaitTimeoutIgnoresOtherOrInvalidCalls(t *testing.T) {
 	for _, call := range []llm.ToolCall{
-		{Name: toolKillShell, Arguments: `{"shell_ids":["shell-1"],"timeout_ms":3600000,"allow_long_wait":true}`},
-		{Name: toolWaitShell, Arguments: `{"timeout_ms":3600000,"allow_long_wait":true}`},
-		{Name: toolWaitShell, Arguments: `{"shell_ids":["shell-1"],"allow_long_wait":"true"}`},
+		{Name: toolKillShell, Arguments: `{"shell_ids":["shell-1"],"timeout_ms":3600000}`},
+		{Name: toolWaitShell, Arguments: `{"timeout_ms":3600000}`},
+		{Name: toolWaitShell, Arguments: `{"shell_ids":["shell-1"],"timeout_ms":"long"}`},
+		{Name: toolWaitShell, Arguments: `not json`},
 	} {
-		assert.Zero(t, quietShellWait(call))
+		_, ok := shellWaitTimeout(call, time.Hour)
+		assert.False(t, ok, call.Arguments)
 	}
 }

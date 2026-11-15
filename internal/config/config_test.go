@@ -78,6 +78,22 @@ func TestLoad(t *testing.T) {
 		assert.Equal(t, config.Review{Model: "m", Effort: "low", Timeout: "30s"}, cfg.Review)
 	})
 
+	t.Run("max_wait, and the project file overrides it", func(t *testing.T) {
+		root := t.TempDir()
+		ws := filepath.Join(root, "ws")
+		user := filepath.Join(root, "config.toml")
+		write(t, user, "max_wait = \"2h\"\n[projects.\""+ws+"\"]\ntrusted = true\n")
+
+		cfg, _, err := config.Load(user, ws)
+		require.NoError(t, err)
+		assert.Equal(t, "2h", cfg.MaxWait)
+
+		write(t, config.ProjectFile(ws), "max_wait = \"15m\"\n")
+		cfg, _, err = config.Load(user, ws)
+		require.NoError(t, err)
+		assert.Equal(t, "15m", cfg.MaxWait)
+	})
+
 	t.Run("unknown keys are errors", func(t *testing.T) {
 		user := filepath.Join(t.TempDir(), "config.toml")
 		write(t, user, "efort = \"low\"\n")

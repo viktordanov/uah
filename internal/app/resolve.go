@@ -107,6 +107,9 @@ type Resolved struct {
 	// StreamIdle is how long a model stream may send no data before its
 	// request is retried (stream_idle_timeout_ms; 0: the engine's default).
 	StreamIdle time.Duration
+	// MaxWait is how long wait_shell and wait_agent wait at most
+	// (max_wait).
+	MaxWait time.Duration
 	// WebSocket reports whether openai-codex requests go over the
 	// Responses WebSocket (responses_websocket).
 	WebSocket bool
@@ -214,7 +217,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 	if err := s.Validate(); err != nil {
 		return Resolved{}, usage(err)
 	}
-	maxDisk, err := pickMaxDisk(in, cfg)
+	maxDisk, maxWait, err := pickRunLimits(in, cfg)
 	if err != nil {
 		return Resolved{}, err
 	}
@@ -266,7 +269,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 	}
 
 	return Resolved{
-		Settings: s, MaxDisk: maxDisk, StreamIdle: streamIdle, WebSocket: cfg.ResponsesWebSocketOn(), Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
+		Settings: s, MaxDisk: maxDisk, MaxWait: maxWait, StreamIdle: streamIdle, WebSocket: cfg.ResponsesWebSocketOn(), Instructions: !in.NoInstructions && cfg.InstructionsEnabled(), ContextPreparation: prepare, EffortUpdates: updates, RequestUserInput: tools.questions,
 		Sandbox: policy, Env: envPolicy, Compaction: compact, CompactPromptFile: promptFile, Approval: approvalPolicy, Rules: configured,
 		ApprovalsReviewer: reviewer, Review: reviewCfg, Agents: agentSettings, WebSearch: webSearch, Verbosity: verbosity, DefaultModel: defaulted,
 		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills, NoSkillMentions: !cfg.TUI.SkillMentionsOn(), NoToolBridge: !tools.bridge,
@@ -429,6 +432,31 @@ func pickMaxAttempts(in Inputs, cfg config.Config) (int, error) {
 	}
 
 	return engine.DefaultMaxAttempts, nil
+}
+
+// pickRunLimits are max_disk (pickMaxDisk) and max_wait (pickMaxWait).
+func pickRunLimits(in Inputs, cfg config.Config) (int64, time.Duration, error) {
+	maxDisk, err := pickMaxDisk(in, cfg)
+	if err != nil {
+		return 0, 0, err
+	}
+	maxWait, err := pickMaxWait(cfg)
+
+	return maxDisk, maxWait, err
+}
+
+// pickMaxWait is max_wait, else engine.DefaultMaxWait: above 0 and at
+// most engine.MaxWaitLimit.
+func pickMaxWait(cfg config.Config) (time.Duration, error) {
+	if cfg.MaxWait == "" {
+		return engine.DefaultMaxWait, nil
+	}
+	v, err := time.ParseDuration(cfg.MaxWait)
+	if err != nil || v <= 0 || v > engine.MaxWaitLimit {
+		return 0, usage(fmt.Errorf("invalid max_wait %q (want a duration above 0 and at most %s, such as 30m)", cfg.MaxWait, engine.MaxWaitLimit))
+	}
+
+	return v, nil
 }
 
 // pickMaxDisk is the max-disk flag when given, else the configured limit,

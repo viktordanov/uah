@@ -46,11 +46,8 @@ const (
 	// pipeGrace is how long a shell's output pipe may stay open after its
 	// process exits before it is closed.
 	pipeGrace = 2 * time.Second
-	// maxShellWait is the default wait_shell cap, under the wake hold.
-	maxShellWait = 270 * time.Second
+	// minShellWait is the shortest wait_shell; max_wait is the longest.
 	minShellWait = time.Second
-	// maxLongShellWait requires allow_long_wait on the individual call.
-	maxLongShellWait = time.Hour
 )
 
 var errUnknownShell = errors.New("no such background shell in this session; shells do not survive a restart of uah")

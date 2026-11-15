@@ -163,7 +163,7 @@ These keys pick the provider, the model, and its thinking level, and tune how ea
 
 ### 2.2 Model requests and the disk limit
 
-These keys bound a run: how often a model request is retried, how it goes out, and how much tool output its session may keep.
+These keys bound a run: how often a model request is retried, how it goes out, how much tool output its session may keep, and how long the agent's waits last.
 
 | Key | Type | Default | Flag, env | Merge | Meaning |
 | --- | --- | --- | --- | --- | --- |
@@ -171,6 +171,7 @@ These keys bound a run: how often a model request is retried, how it goes out, a
 | `responses_websocket` | boolean | `true` | | override | On openai-codex, send a run's turn requests over the Responses WebSocket, as Codex does: one connection for each session, kept across its runs, on which a request that extends the last one sends only its new input with `previous_response_id`. A request that does not, the first on a new connection, and one whose previous response the server lost send the whole input. Compaction summaries and reviews, and a session whose server refused the upgrade (426) or whose WebSocket failed three times in a row, go over HTTP, compressed with zstd. `false` sends every request over HTTP. Each request's line in `stderr.log` records `transport`, `send` (`full` or `incremental`), and `send_reason` |
 | `request_max_attempts` | integer | 10 | `--max-attempts`, `UAH_LLM_MAX_ATTEMPTS` | override | How many times a model request is sent before the run fails. A lost connection, a timeout, a 429, or most 5xx statuses are retried after 2 s, then 4, 8, and 16 s, and then every 30 s (less up to a fifth of jitter, or the server's `Retry-After` up to 30 s): 10 attempts wait about 3 minutes in all. The runner's own default is 5 |
 | `max_disk` | size | `5G` | `--max-disk` | override | Stop a run when the tool output its session keeps exceeds this size (`500M`, `5G`, bytes without a suffix); `0` disables it. It counts the files under `sessions/operations/<session-id>/` from all of the session's runs, not only the current one, and leaves out the session's scratch directories: `tmp` (the commands' `$TMPDIR`, which holds build caches) and `review-tmp` (the auto-reviewer's). uagent measures it every 5 s |
+| `max_wait` | duration | `1h` | | override | How long `wait_shell` and `wait_agent` wait when the agent passes no `timeout_ms`, and the longest `timeout_ms` they take; above 0 and at most `24h`. The model is not woken while such a wait runs: it gets the result when a shell or agent ends or the wait times out. A `max_wait` below a tool's least wait (1 s for `wait_shell`, 1 minute for `wait_agent`) is also its least ([background shells](design/background-shells.md#waiting-on-a-long-job)) |
 | `block_state_in_workspace` | bool | `false` | | override, can unset | Refuse a session whose workspace holds the state directory, such as one in `~` with `~/.uah` under it. Off, such a session runs, and the transcript does not warn about it on each run (`uah doctor` still names it); the state directory's `.ignore`, which uah writes, keeps `rg`, `fd`, and `ag` out of its sessions, runs, and logs even with `--hidden` (`grep -r` and `find` do not read it) |
 
 <sub>[↑ Back to top](#configuration-reference)</sub>
@@ -795,6 +796,7 @@ max_disk = "5G"                    # tool output the session keeps; "0" disables
 block_state_in_workspace = false   # true: refuse a session in ~ or another directory holding ~/.uah
 request_max_attempts = 10          # per model request; a lost connection is retried with backoff
 stream_idle_timeout_ms = 90000     # a model stream quiet this long is retried
+max_wait = "1h"                    # the longest wait_shell and wait_agent
 responses_websocket = true         # openai-codex: requests over the Responses WebSocket
 fast = false                       # priority processing
 web_search = "live"                # or disabled: the provider's hosted web search

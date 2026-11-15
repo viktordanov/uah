@@ -26,6 +26,10 @@ type Subagents interface {
 	// the model. It blocks as long as the tool needs (a wait); ctx ends
 	// when the call is canceled or the run stops.
 	Call(ctx context.Context, call AgentCall) (string, error)
+	// WaitTimeout is how long a call of the tool with these arguments
+	// waits, as Call would wait; false when it is not a wait or its
+	// arguments are refused. The engine holds such a call that long.
+	WaitTimeout(tool string, args json.RawMessage) (time.Duration, bool)
 	// Interrupt stops the live runs of the parent's children and their
 	// own children, because the user interrupted the parent.
 	Interrupt(parentID string)

@@ -69,6 +69,9 @@ type Config struct {
 	// WakeHold is how long a turn's results wait for a call still running
 	// before it wakes the model (wake.go); 0 is 5 minutes. Tests shorten it.
 	WakeHold time.Duration
+	// MaxWait is how long wait_shell waits without a timeout, and the
+	// longest timeout it takes (max_wait; 0: engine.DefaultMaxWait).
+	MaxWait time.Duration
 	// StreamIdleTimeout is how long a model stream may send no data line
 	// before the request is retried; 0 is DefaultStreamIdleTimeout.
 	StreamIdleTimeout time.Duration
@@ -207,6 +210,9 @@ func New(cfg Config) *Engine {
 	}
 	if cfg.Approver == nil {
 		cfg.Approver = approval.New(approval.Config{})
+	}
+	if cfg.MaxWait <= 0 {
+		cfg.MaxWait = engine.DefaultMaxWait
 	}
 	e := &Engine{cfg: cfg, models: catalog}
 	if cfg.ReturnMemory {

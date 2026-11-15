@@ -79,6 +79,10 @@ type child struct {
 	// stopped, its error until it is sent work again.
 	asking  int
 	stalled string
+	// waits are its running wait_shell calls, by call ID, which also keep
+	// it from being stalled: such a wait sends no event until it ends, by
+	// its timeout at the latest (max_wait).
+	waits map[string]bool
 	// unstalled is closed once a stall's interrupt is in: the next message
 	// waits for it (a session that cannot take the interrupt cannot take
 	// the message either), so the interrupt cannot stop the message's run,
@@ -111,7 +115,7 @@ type child struct {
 func newChild(id, parent, role, nickname string) *child {
 	c := &child{
 		id: id, parent: parent, role: role, nickname: nickname, started: time.Now(), opened: time.Now(), status: Status{State: engine.AgentRunning},
-		pending: map[string]bool{}, early: map[string]bool{},
+		pending: map[string]bool{}, early: map[string]bool{}, waits: map[string]bool{},
 	}
 	c.asks, c.cancel = context.WithCancel(context.Background())
 
@@ -270,6 +274,7 @@ func (m *Manager) watch(c *child) {
 		quiet.Reset(m.cfg.StallAfter)
 		m.mu.Lock()
 		c.active = time.Now()
+		c.trackWaits(e)
 		changed, check := m.observe(c, e)
 		c.record(e)
 		m.mu.Unlock()
@@ -311,6 +316,20 @@ func (c *child) woken() bool {
 	c.status, c.stalled = Status{State: engine.AgentRunning}, "" // on an event, which restarted the stall clock
 
 	return true
+}
+
+// trackWaits keeps the child's running wait_shell calls. It holds m.mu.
+func (c *child) trackWaits(e core.Event) {
+	switch e := e.(type) {
+	case core.ToolCalled:
+		if e.Name == toolWaitShell {
+			c.waits[e.CallID] = true
+		}
+	case core.ToolFinished:
+		delete(c.waits, e.CallID)
+	case core.RunFinished:
+		clear(c.waits)
+	}
 }
 
 // observe folds one event into the child and reports whether its status
@@ -504,8 +523,8 @@ func (m *Manager) forward(c *child, e core.Event) {
 // no approval open: its work ends as an error, so its parent's waits and
 // the parent's status stop waiting for it, and it is interrupted, which
 // waits on its loop in a goroutine of its own, since a stalled loop may
-// never answer. A child that is not running, waits on an approval, or
-// runs its SubagentStop hooks (which time out on their own, and whose
+// never answer. A child that is not running, waits on an approval or a
+// wait_shell, or runs its SubagentStop hooks (which time out on their own, and whose
 // result would race the stall) is checked again later, as is one whose clock an event or an approval
 // restarted while the timer fired.
 func (m *Manager) stall(c *child) {
@@ -521,7 +540,7 @@ func (m *Manager) stall(c *child) {
 
 		return
 	}
-	if c.status.State != engine.AgentRunning || c.review || c.asking > 0 || c.stopCheck != 0 || c.s == nil {
+	if c.status.State != engine.AgentRunning || c.review || c.asking > 0 || len(c.waits) > 0 || c.stopCheck != 0 || c.s == nil {
 		c.quiet.Reset(m.cfg.StallAfter)
 		m.mu.Unlock()
 

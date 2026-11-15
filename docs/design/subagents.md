@@ -239,7 +239,7 @@ The parent model sees no status line while its children run; the TUI's agent lin
 
 - The notification goes into the parent's live run as a developer message (`Session.Inject`), and is held only when the parent is idle. A wait that returns a status the parent was already told about says so, and does not repeat the answer.
 - A child's completed status keeps every answer since it was last idle.
-- `wait_agent` waits 4.5 minutes without `timeout_ms`, and that is also the most it allows. This stays just under the engine's 5-minute wake hold, which would otherwise wake the parent only to say that the wait still runs. The least is one minute. A timeout adds a note: the agents are still working, nothing is wrong, wait again.
+- `wait_agent` waited 4.5 minutes without `timeout_ms`, and that was also the most it allowed, to stay just under the engine's 5-minute wake hold, which would otherwise wake the parent only to say that the wait still runs. Since v1.17.0 it waits up to `max_wait` (one hour by default), and the engine holds the call that long ([background shells](background-shells.md#waiting-on-a-long-job)). The least is one minute. A timeout adds a note: the agents are still working, nothing is wrong, wait again.
 - The descriptions: do your own part, then call `wait_agent` once with every agent's ID. A finished agent's answer comes on its own. Message a running agent only to pass on news from the user, to answer its question, or to stop a clear failure. Do not read its files. `send_input` says the same, and keeps `interrupt` for a failure.
 
 ### A/B

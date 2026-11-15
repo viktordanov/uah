@@ -240,7 +240,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 		LLM:                   comp,
 		Tools:                 registry,
 		Operations:            operations,
-		Wake:                  wakePolicy(w.e.cfg.WakeHold),
+		Wake:                  wakePolicy(w.e.cfg.WakeHold, w.e.cfg.MaxWait, w.e.cfg.Subagents),
 		EffortUpdate:          sw.effortUpdate,
 		Continue:              continueWith(opts.Continue),
 	})

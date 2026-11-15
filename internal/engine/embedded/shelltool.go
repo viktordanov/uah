@@ -14,6 +14,8 @@ import (
 	"github.com/viktordanov/uah-core/harness/llm"
 	"github.com/viktordanov/uah-core/harness/operation"
 	"github.com/viktordanov/uah-core/harness/tool"
+
+	"github.com/viktordanov/uah/internal/engine"
 )
 
 // The remote job plan a background shell's start, wait_shell, and
@@ -40,7 +42,7 @@ const backgroundDescription = "true starts the command as a background shell and
 
 const waitShellDescription = "Wait for background shells to exit. Returns once one of them has exited or the timeout passes, " +
 	"with each shell's state, exit code, and the end of its output. Use it only when you have nothing else to do until a shell ends; " +
-	"its notification comes anyway."
+	"its notification comes anyway. A server or watcher never ends on its own, so a wait on one lasts until its timeout."
 
 const killShellDescription = "Stop a background shell: its whole process group gets SIGTERM, then SIGKILL after 3 seconds. Returns how it ended."
 
@@ -129,9 +131,10 @@ func shellJobResult(callID string, status tool.CallStatus, ops []operation.Opera
 
 // withShells offers Bash's background argument and the shell tools, and
 // resolves the tools' names also when they are not offered, so a session
-// with past calls resumes where they are not.
-func withShells(r tool.Registry, offered bool, disallowed []string) tool.Registry {
-	return shellRegistry{Registry: r, offered: offered, disallowed: disallowed}
+// with past calls resumes where they are not. A wait lasts at most
+// maxWait.
+func withShells(r tool.Registry, offered bool, disallowed []string, maxWait time.Duration) tool.Registry {
+	return shellRegistry{Registry: r, offered: offered, disallowed: disallowed, maxWait: maxWait}
 }
 
 type shellRegistry struct {
@@ -139,6 +142,7 @@ type shellRegistry struct {
 
 	offered    bool
 	disallowed []string
+	maxWait    time.Duration
 }
 
 func (r shellRegistry) StaticDefinitions() []tool.Definition {
@@ -152,9 +156,9 @@ func (r shellRegistry) StaticDefinitions() []tool.Definition {
 		}
 	}
 	waitParams := objectSchema(map[string]any{
-		"shell_ids":       property("array", "The background shells to wait for, such as [\"shell-1\"].", "items", map[string]any{schemaType: jsonString}),
-		"timeout_ms":      property("number", fmt.Sprintf("How long to wait, in milliseconds: %d by default, %d at least. Maximum %d, or %d with allow_long_wait=true.", maxShellWait.Milliseconds(), minShellWait.Milliseconds(), maxShellWait.Milliseconds(), maxLongShellWait.Milliseconds())),
-		"allow_long_wait": property("boolean", "Explicitly allow timeout_ms up to one hour (3600000 ms) when deliberately blocked on a long job with nothing else to do. Suppresses periodic wakeups for this wait. Defaults to false; does not change the default timeout."),
+		"shell_ids": property("array", "The background shells to wait for, such as [\"shell-1\"].", "items", map[string]any{schemaType: jsonString}),
+		"timeout_ms": property("number", fmt.Sprintf("How long to wait, in milliseconds: until a shell ends, %d by default and at most, %d at least. Pass it only to check back sooner.",
+			r.maxWait.Milliseconds(), min(minShellWait, r.maxWait).Milliseconds())),
 	}, "shell_ids")
 	killParams := objectSchema(map[string]any{
 		"shell_id": property(jsonString, "The background shell to stop, such as \"shell-1\"."),
@@ -194,13 +198,14 @@ func (r shellRegistry) Resolve(name string) (tool.Translator, bool) {
 		return r.Registry.Resolve(name)
 	}
 
-	return shellTranslator{name: name, offered: r.offered && !slices.Contains(r.disallowed, name)}, true
+	return shellTranslator{name: name, offered: r.offered && !slices.Contains(r.disallowed, name), maxWait: r.maxWait}, true
 }
 
 // shellTranslator submits a wait_shell or kill_shell call as a shell job.
 type shellTranslator struct {
 	name    string
 	offered bool
+	maxWait time.Duration
 }
 
 func (t shellTranslator) Translate(tc tool.Context, call llm.ToolCall) tool.CallStatus {
@@ -209,6 +214,7 @@ func (t shellTranslator) Translate(tc tool.Context, call llm.ToolCall) tool.Call
 	}
 	var args struct {
 		shellWaitArgs
+
 		ID string `json:"shell_id"`
 	}
 	if err := json.Unmarshal([]byte(call.Arguments), &args); err != nil {
@@ -224,45 +230,36 @@ func (t shellTranslator) Translate(tc tool.Context, call llm.ToolCall) tool.Call
 	if len(args.IDs) == 0 {
 		return tool.ErrorStatus(`"shell_ids" must name at least one shell`, 0)
 	}
-	timeout := args.timeout()
+	timeout := args.timeout(t.maxWait)
 
 	return submitShellPlan(tc, shellPlan{Op: shellOpWait, IDs: args.IDs, TimeoutMS: timeout.Milliseconds()})
 }
 
-// shellWaitArgs is shared by the translator and the wake policy so that
-// the wait's duration and its quiet deadline always agree.
+// shellWaitArgs are wait_shell's arguments, which the translator and the
+// wake policy read the same way, so the wait and its hold agree.
 type shellWaitArgs struct {
-	IDs           []string `json:"shell_ids"`
-	TimeoutMS     *float64 `json:"timeout_ms"`
-	AllowLongWait bool     `json:"allow_long_wait"`
+	IDs       []string `json:"shell_ids"`
+	TimeoutMS *float64 `json:"timeout_ms"`
 }
 
-func (a shellWaitArgs) timeout() time.Duration {
-	if a.TimeoutMS == nil {
-		return maxShellWait
-	}
-	limit := maxShellWait
-	if a.AllowLongWait {
-		limit = maxLongShellWait
-	}
-	// Clamp before conversion so that huge JSON numbers cannot overflow.
-	ms := min(max(*a.TimeoutMS, float64(minShellWait.Milliseconds())), float64(limit.Milliseconds()))
-	return time.Duration(ms) * time.Millisecond
+// timeout is how long the wait lasts: maxWait, or timeout_ms within
+// minShellWait and maxWait.
+func (a shellWaitArgs) timeout(maxWait time.Duration) time.Duration {
+	return engine.WaitTimeout(a.TimeoutMS, minShellWait, maxWait)
 }
 
-func quietShellWait(call llm.ToolCall) time.Duration {
+// shellWaitTimeout is how long a wait_shell call waits; false for another
+// tool or arguments its translator refuses.
+func shellWaitTimeout(call llm.ToolCall, maxWait time.Duration) (time.Duration, bool) {
 	if call.Name != toolWaitShell {
-		return 0
+		return 0, false
 	}
 	var args shellWaitArgs
-	if json.Unmarshal([]byte(call.Arguments), &args) != nil || len(args.IDs) == 0 || !args.AllowLongWait {
-		return 0
+	if json.Unmarshal([]byte(call.Arguments), &args) != nil || len(args.IDs) == 0 {
+		return 0, false
 	}
-	if timeout := args.timeout(); timeout > maxShellWait {
-		// Leave time for the timeout's result to reach the coordinator.
-		return timeout + 30*time.Second
-	}
-	return 0
+
+	return args.timeout(maxWait), true
 }
 
 func (t shellTranslator) TranslateResult(callID string, status tool.CallStatus, ops []operation.Operation) (llm.ToolResult, error) {
