@@ -46,13 +46,13 @@ A `Source` lists one provider's models for one login. `NewSource` builds it from
 
 | Provider | Request | Notes |
 | --- | --- | --- |
-| openai-codex | `GET {base}/models?client_version=0.159.1` | The ChatGPT backend, as Codex asks it for a ChatGPT login. It sends the engine's headers: `Authorization: Bearer`, `ChatGPT-Account-ID`, `originator` and `User-Agent` set to `uah-core`. The credentials come from `internal/engine/codexauth`, as for the engine: its transport sets them on each request and renews them once after a 401. The base URL must be the backend or a loopback address. |
+| openai-codex | `GET {base}/models?client_version=0.169.0` | The ChatGPT backend, as Codex asks it for a ChatGPT login. It sends the engine's headers: `Authorization: Bearer`, `ChatGPT-Account-ID`, `originator` and `User-Agent` set to `uah-core`. The credentials come from `internal/engine/codexauth`, as for the engine: its transport sets them on each request and renews them once after a 401. The base URL must be the backend or a loopback address. |
 | openai | `GET {base}/models` (`/v1/models`) | Bearer key. The list has no metadata, so the bundled catalog fills it for known IDs, as Codex merges a list over its bundled models. |
 | openrouter | `GET {base}/models` (`/api/v1/models`) | Reads `context_length`. The key is optional because the list is public. |
 | fireworks | `GET {base}/models` (`/inference/v1/models`) | Bearer key. Reads `context_length` when the list has it. |
 | ollama | `GET {host}/api/tags` | The models pulled locally. The base URL loses its `/v1`. |
 
-`client_version` is the Codex release that the bundled catalog came from, because Codex sends its own version (`client_version_to_whole`). No request follows a redirect, so credentials go only to the configured host. The ETag comes from the response header.
+`client_version` is pinned independently of the bundled catalog, because the backend can gate new models on it; Codex sends its own version (`client_version_to_whole`). The bundled catalog remains from rust-v0.159.1. No request follows a redirect, so credentials go only to the configured host. The ETag comes from the response header.
 <!-- /memoria:section -->
 
 <!-- memoria:section id="cache" files="cache.go manager.go" -->

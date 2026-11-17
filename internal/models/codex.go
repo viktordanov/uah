@@ -19,9 +19,10 @@ import (
 var bundledJSON []byte
 
 // CodexClientVersion is the client_version uah sends to the ChatGPT backend's
-// models endpoint: the Codex release the bundled catalog came from. Codex
-// sends its own version (client_version_to_whole in models-manager/src/lib.rs).
-const CodexClientVersion = "0.159.1"
+// models endpoint. Keep it current independently of the bundled catalog:
+// the backend can gate new models on this version. Codex sends its own
+// version (client_version_to_whole in models-manager/src/lib.rs).
+const CodexClientVersion = "0.169.0"
 
 // codexModels is Codex's ModelsResponse (codex-rs/protocol/src/openai_models.rs).
 type codexModels struct {
