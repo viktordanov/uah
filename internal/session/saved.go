@@ -27,6 +27,7 @@ type Saved struct {
 	Provider       string        `json:"provider,omitempty"`
 	Model          string        `json:"model,omitempty"`
 	Effort         string        `json:"effort,omitempty"`
+	ServiceTier    string        `json:"service_tier,omitempty"`
 	Fast           bool          `json:"fast"`
 	AdaptiveEffort string        `json:"adaptive_effort,omitempty"`
 	Mode           approval.Mode `json:"permission_mode,omitempty"`
@@ -35,7 +36,7 @@ type Saved struct {
 // savedOf is what the sidecar keeps of the settings.
 func savedOf(s Settings) Saved {
 	return Saved{
-		Provider: s.Provider, Model: s.Model, Effort: s.Effort, Fast: s.ServiceTier != "",
+		Provider: s.Provider, Model: s.Model, Effort: s.Effort, Fast: s.ServiceTier == tierPriority, ServiceTier: s.ServiceTier,
 		AdaptiveEffort: cmp.Or(s.AdaptiveEffort, AdaptiveOff), Mode: s.Mode,
 	}
 }
@@ -56,6 +57,7 @@ func (in *Info) ApplySidecar(sc Sidecar) {
 	sv := sc.Settings
 	in.Saved = true
 	in.Provider, in.Model, in.Effort = cmp.Or(sv.Provider, in.Provider), cmp.Or(sv.Model, in.Model), cmp.Or(sv.Effort, in.Effort)
+	in.ServiceTier = sv.ServiceTier
 	fast := sv.Fast
 	in.Fast, in.AdaptiveEffort, in.Mode = &fast, sv.AdaptiveEffort, sv.Mode
 }

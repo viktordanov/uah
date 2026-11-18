@@ -196,6 +196,7 @@ func (s *State) applyModel(id, effort string) []Effect {
 	}
 	next := s.Settings
 	next.Model, next.Effort = id, effort
+	s.constrainSpeed(&next)
 	if err := next.Validate(); err != nil {
 		s.notice(session.LevelError, err.Error())
 
@@ -249,4 +250,14 @@ func (s State) modelLevels(id string) (levels []string, def string, help map[str
 	}
 
 	return session.Efforts, "", nil
+}
+
+func (s *State) constrainSpeed(next *session.Settings) {
+	if next.ServiceTier == "ultrafast" {
+		c, _ := s.catalog()
+		if !c.OffersTier(next.Model, next.ServiceTier) {
+			next.ServiceTier = ""
+			s.notice(session.LevelInfo, "Switched to standard speed: ultrafast is not offered for "+next.Model)
+		}
+	}
 }

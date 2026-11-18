@@ -23,7 +23,7 @@ func merge(base, over Config) Config {
 	}
 	set(&base.WebSearch, over.WebSearch)
 	set(&base.ModelVerbosity, over.ModelVerbosity)
-	base.Fast = base.Fast || over.Fast
+	mergeSpeed(&base, over)
 	base.TUI = mergeTUI(base.TUI, over.TUI)
 	set(&base.History.Persistence, over.History.Persistence)
 	if over.History.MaxBytes != nil {
@@ -41,6 +41,9 @@ func merge(base, over Config) Config {
 	mergeToolPolicy(&base.Tools, over.Tools)
 	if over.Skills.Enabled != nil {
 		base.Skills.Enabled = over.Skills.Enabled
+	}
+	if over.Features.UltrafastMode != nil {
+		base.Features.UltrafastMode = over.Features.UltrafastMode
 	}
 	if over.Features.Goals != nil {
 		base.Features.Goals = over.Features.Goals
@@ -237,4 +240,12 @@ func mergeCompaction(base *Config, over Config) {
 	if over.RemoteCompaction != nil {
 		base.RemoteCompaction = over.RemoteCompaction
 	}
+}
+
+func mergeSpeed(base *Config, over Config) {
+	if over.Fast {
+		base.ServiceTier = ""
+	}
+	set(&base.ServiceTier, over.ServiceTier)
+	base.Fast = base.Fast || over.Fast
 }

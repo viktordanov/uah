@@ -52,6 +52,8 @@ A `Source` lists one provider's models for one login. `NewSource` builds it from
 | fireworks | `GET {base}/models` (`/inference/v1/models`) | Bearer key. Reads `context_length` when the list has it. |
 | ollama | `GET {host}/api/tags` | The models pulled locally. The base URL loses its `/v1`. |
 
+The Codex catalog is also the authority for `/speed ultrafast`: the exact model must advertise the tier for this login. For a workspace or unknown plan, uah reads the authenticated `/wham/config/bundle` requirements before offering it; a failed policy check removes Ultrafast but leaves the other speeds available. The cache identity includes the reported plan and client version.
+
 `client_version` is pinned independently of the bundled catalog, because the backend can gate new models on it; Codex sends its own version (`client_version_to_whole`). The bundled catalog remains from rust-v0.159.1. No request follows a redirect, so credentials go only to the configured host. The ETag comes from the response header.
 <!-- /memoria:section -->
 

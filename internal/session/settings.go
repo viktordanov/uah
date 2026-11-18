@@ -53,15 +53,22 @@ func FollowUpEffort(effort, value string) string {
 }
 
 // Providers are the backends the runner supports.
-var Providers = []string{"openai", "openai-codex", "openrouter", "fireworks", "ollama"}
+const (
+	tierUltraFast = "ultrafast"
+	tierPriority  = "priority"
+	providerCodex = "openai-codex"
+)
+
+var Providers = []string{"openai", providerCodex, "openrouter", "fireworks", "ollama"}
 
 // Settings are what a session sends with every run. Changing them applies
 // live when the engine supports it, and otherwise from the next run.
 type Settings struct {
-	Provider    string
-	Model       string
-	Effort      string
-	ServiceTier string // "" or "priority"
+	Provider         string
+	Model            string
+	Effort           string
+	DisableUltrafast bool
+	ServiceTier      string // "" or tierPriority
 	// AdaptiveEffort is AdaptiveOff, AdaptiveOneStep, or AdaptiveTwoSteps
 	// ("": off).
 	AdaptiveEffort string
@@ -100,8 +107,17 @@ func (s Settings) Validate() error {
 	if err := validateModel(s.Model); err != nil {
 		return err
 	}
-	if s.ServiceTier != "" && s.ServiceTier != "priority" {
-		return fmt.Errorf("invalid service tier %q (want priority or empty)", s.ServiceTier)
+	if s.ServiceTier == tierUltraFast && s.DisableUltrafast {
+		return errors.New("ultrafast is disabled by workspace configuration")
+	}
+	if s.ServiceTier == tierUltraFast && s.Provider != providerCodex {
+		return errors.New("ultrafast requires openai-codex")
+	}
+	if s.ServiceTier == tierPriority && s.Provider != "openai" && s.Provider != providerCodex {
+		return errors.New("priority requires an OpenAI provider")
+	}
+	if s.ServiceTier != "" && s.ServiceTier != tierPriority && s.ServiceTier != tierUltraFast {
+		return fmt.Errorf("invalid service tier %q (want standard, priority or ultrafast)", s.ServiceTier)
 	}
 	if s.AdaptiveEffort != "" && !slices.Contains(AdaptiveEfforts, s.AdaptiveEffort) {
 		return fmt.Errorf("invalid adaptive effort %q (want off, 1-step, or 2-steps)", s.AdaptiveEffort)

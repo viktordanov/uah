@@ -56,6 +56,7 @@ type Inputs struct {
 	MaxDiskSet bool
 	// MaxAttempts is --max-attempts or its environment variable (0: unset).
 	MaxAttempts int
+	ServiceTier string
 	Fast        bool
 	FastSet     bool
 	// AdaptiveEffort is --adaptive-effort or its environment variable
@@ -198,6 +199,7 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 		// The flag, the resumed session's, or the configured default.
 		AdaptiveEffort: first(in.AdaptiveEffort, resumed.AdaptiveEffort, cfg.AdaptiveEffort, session.AdaptiveOff),
 	}
+	s.DisableUltrafast = cfg.Features.UltrafastMode != nil && !*cfg.Features.UltrafastMode
 	s.Model = pickModel(in, resumed, cfg)
 	defaulted := s.Model == "" && fallbackModels[s.Provider] != ""
 	if defaulted {
@@ -208,11 +210,9 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 	if s.MaxAttempts, streamIdle, err = pickRequestLimits(in, cfg); err != nil {
 		return Resolved{}, err
 	}
-	if pickFast(in, resumed, cfg) {
-		if !embedded.Priority(s.Provider) {
-			return Resolved{}, usage(errors.New("--fast needs the openai or openai-codex provider"))
-		}
-		s.ServiceTier = "priority"
+	s.ServiceTier, err = pickServiceTier(in, resumed, cfg, s.Provider)
+	if err != nil {
+		return Resolved{}, err
 	}
 	if err := s.Validate(); err != nil {
 		return Resolved{}, usage(err)
@@ -511,4 +511,29 @@ func ParseSize(s string) (int64, error) {
 	}
 
 	return int64(v * float64(mult)), nil
+}
+
+func pickServiceTier(in Inputs, resumed session.Info, cfg config.Config, provider string) (string, error) {
+	tier := cfg.ServiceTier
+	if sessionFast(in, resumed, cfg) {
+		tier = resumed.ServiceTier
+	}
+	if in.FastSet {
+		tier = ""
+	}
+	if in.ServiceTier != "" {
+		tier = in.ServiceTier
+	}
+	if tier != "" {
+		if tier != "standard" {
+			return tier, nil
+		}
+	} else if pickFast(in, resumed, cfg) {
+		if !embedded.Priority(provider) {
+			return "", usage(errors.New("--fast needs the openai or openai-codex provider"))
+		}
+		return "priority", nil
+	}
+
+	return "", nil
 }

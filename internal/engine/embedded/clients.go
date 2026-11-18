@@ -86,7 +86,10 @@ func newClient(hc *http.Client, c ClientConfig, config responsesapi.Config) (rem
 	if config.Extensions == nil {
 		config.Extensions = map[string]jsontext.Value{}
 	}
-	if c.Priority {
+	switch c.ServiceTier {
+	case "ultrafast":
+		config.Extensions["service_tier"] = jsontext.Value(`"ultrafast"`)
+	case tierPriority:
 		config.Extensions["service_tier"] = jsontext.Value(`"priority"`)
 	}
 	if c.Ultra {

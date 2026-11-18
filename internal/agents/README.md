@@ -192,6 +192,8 @@ The manager knows only the children of the current process. `resume_agent(id)` r
 
 Agent types are Codex role files and Markdown agent files, loaded by `LoadRoles` from `~/.uah/agents` and a trusted workspace's `.uah/agents` (recursive `*.toml` and `*.md`). A later directory replaces a role of the same name; within one directory, a Markdown file replaces a TOML file of the same name, with a warning. The subset read from TOML is `name`, `description`, `nickname_candidates`, `model`, `model_reasoning_effort`, `service_tier`, `developer_instructions`, and uah's `tools` and `approve`, with Codex's validation. `tools` and `service_tier` take the forms a Markdown file's do (the `nameList` and `tierValue` types in `markdown.go`). Other keys produce a warning, and a malformed file is skipped with one. The `spawn_agent` description lists the roles of both formats alike.
 
+A child inherits Ultrafast only when it keeps the parent model; a different model starts without Ultrafast.
+
 `service_tier` is Codex's key: `"priority"` (or its legacy name `"fast"`) runs the role's agents with priority processing when the provider offers it, `"default"` runs them without it, and an absent key follows the parent. A bool works as `fast` does: `true` is `"priority"`, `false` is `"default"`. `"flex"`, which no provider of uah's serves, is ignored with a warning. Codex rust-v0.156.1 reads the key into the role's config layer but then sets every child's tier to the root's (`apply_spawn_agent_service_tier`); uah applies the role's tier, so a role can turn fast mode on for its agents alone.
 <!-- /memoria:section -->
 

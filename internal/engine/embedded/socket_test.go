@@ -53,6 +53,24 @@ func (ev *events) send(t *testing.T, msg string) core.Result {
 	return result
 }
 
+func TestCodexUltrafastRequest(t *testing.T) {
+	for _, ws := range []bool{false, true} {
+		t.Run(strconv.FormatBool(ws), func(t *testing.T) {
+			c, eng := socketLogin(t, ws, fakellm.Reply{Text: "done"})
+			settings := session.Settings{Provider: codexauth.Provider, Model: "catalog-model", Effort: "high", ServiceTier: "ultrafast", Workspace: c.Workspace, BaseURL: c.llm.URL}
+			s, err := session.Open(t.Context(), eng, session.Options{Settings: settings})
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = s.Close() })
+			ev := events{t: t, s: s}
+			require.Equal(t, core.StatusOK, ev.send(t, "hello").Status)
+			reqs := c.llm.Requests()
+			require.Len(t, reqs, 1)
+			assert.Equal(t, "ultrafast", reqs[0].ServiceTier)
+			assert.Equal(t, "high", reqs[0].Effort)
+		})
+	}
+}
+
 // attemptLines are the model attempts' diagnostics lines of every run.
 func attemptLines(t *testing.T, c *codexLogin) []map[string]any {
 	t.Helper()

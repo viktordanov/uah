@@ -128,7 +128,7 @@ func (a *agent) SetModel(model string) error {
 	return nil
 }
 
-func (a *agent) SetServiceTier(tier string) error { return a.llm.setPriority(tier == tierPriority) }
+func (a *agent) SetServiceTier(tier string) error { return a.llm.setTier(tier) }
 
 func (a *agent) SetAdaptiveEffort(value string) error {
 	a.llm.setAdaptive(session.AdaptiveSteps(value))

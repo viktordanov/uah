@@ -29,6 +29,7 @@ func Commands() []Command {
 	return []Command{
 		{Name: "model", Args: "[id] [effort]", Help: "choose the model, then its effort; /model <id> <effort> sets both at once", WhileBusy: true, Bare: true, run: cmdModel},
 		{Name: "effort", Args: "<level>", Help: "set the thinking level: " + strings.Join(session.Efforts, ", "), WhileBusy: true, run: cmdEffort},
+		{Name: "speed", Args: "[tier]", Help: "show or set processing speed", WhileBusy: true, run: cmdSpeed},
 		{Name: "fast", Help: "priority processing (needs the embedded engine)", WhileBusy: true, run: cmdFast},
 		{Name: "adaptive", Args: "[off|1-step|2-steps]", Help: "adaptive effort: think one or two effort levels less on follow-up turns after tool results; alone, the next value", WhileBusy: true, run: cmdAdaptive},
 		{Name: "resume", Args: "[id]", Help: "open the session picker, or resume a session by ID prefix", run: cmdResume},
@@ -132,6 +133,49 @@ func cmdEffort(s *State, args string) []Effect {
 	}
 	next := s.Settings
 	next.Effort = args
+
+	return []Effect{EffSetSettings{Settings: next}}
+}
+
+const speedStandard = "standard"
+
+func (s *State) speeds() []string {
+	c, _ := s.catalog()
+	choices := []string{speedStandard}
+	if s.Priority && c.OffersTier(s.Settings.Model, "priority") {
+		choices = append(choices, "priority")
+	}
+	if !s.Settings.DisableUltrafast && s.Settings.Provider == "openai-codex" && c.OffersTier(s.Settings.Model, "ultrafast") {
+		choices = append(choices, "ultrafast")
+	}
+
+	return choices
+}
+
+func cmdSpeed(s *State, args string) []Effect {
+	if args != speedStandard {
+		s.Menu.pendingSpeed = &args
+		if s.Menu.modelsLoading {
+			return nil
+		}
+		s.Menu.modelsLoading = true
+		return []Effect{EffLoadModels{Provider: s.Settings.Provider}}
+	}
+
+	return applySpeed(s, args)
+}
+
+func applySpeed(s *State, args string) []Effect {
+	choices := s.speeds()
+	if !slices.Contains(choices, args) {
+		s.notice(session.LevelInfo, "Speed: "+cmp.Or(s.Settings.ServiceTier, speedStandard)+". Available: "+strings.Join(choices, ", "))
+		return nil
+	}
+	next := s.Settings
+	next.ServiceTier = args
+	if args == speedStandard {
+		next.ServiceTier = ""
+	}
 
 	return []Effect{EffSetSettings{Settings: next}}
 }

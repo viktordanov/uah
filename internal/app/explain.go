@@ -209,7 +209,8 @@ func sessionSettings(in Inputs, o Origins, r Resolved, cfg config.Config) []Sett
 		one("max_disk", maxDisk, pick(given(in.MaxDiskSet), overrides(l, func(c config.Config) any { return c.MaxDisk }), FromDefault)),
 		overridden(l, "max_wait", r.MaxWait.String(), func(c config.Config) any { return c.MaxWait }),
 		overridden(l, "block_state_in_workspace", cfg.BlockStateInWorkspaceOn(), func(c config.Config) any { return c.BlockStateInWorkspace }),
-		{Key: "fast", Value: s.ServiceTier != "", Sources: fastSources(in, o, cfg)},
+		one("service_tier", cmp.Or(s.ServiceTier, "standard"), pick(given(in.ServiceTier != "" || in.FastSet), tierSessionSource(in, resumed, cfg), overrides(l, func(c config.Config) any { return c.ServiceTier != "" || c.Fast }), FromDefault)),
+		{Key: "fast", Value: s.ServiceTier == "priority", Sources: fastSources(in, o, cfg)},
 		one("adaptive_effort", s.AdaptiveEffort, pick(input(in.AdaptiveEffort, EnvAdaptiveEffort, env), sessionValue(resumed.AdaptiveEffort),
 			overrides(l, func(c config.Config) any { return c.AdaptiveEffort }), FromDefault)),
 		one("context_preparation", r.ContextPreparation, pick(input(in.ContextPreparation, EnvContextPreparation, env),
@@ -289,6 +290,13 @@ func fastSources(in Inputs, o Origins, cfg config.Config) []Source {
 	}
 
 	return orSources(given(in.FastSet), adds(o.Layers, func(c config.Config) any { return c.Fast }))
+}
+
+func tierSessionSource(in Inputs, resumed session.Info, cfg config.Config) Source {
+	if sessionFast(in, resumed, cfg) {
+		return FromSession
+	}
+	return ""
 }
 
 // modeSource is the permission mode's source, and the sandbox mode's that

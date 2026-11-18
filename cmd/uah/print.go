@@ -38,6 +38,9 @@ func (p *printer) print(event core.Event) { //nolint:gocyclo // a dispatch switc
 		fast := ""
 		if e.Settings.ServiceTier != "" {
 			fast = " · fast"
+			if e.Settings.ServiceTier == "ultrafast" {
+				fast = " · ultrafast"
+			}
 		}
 		if session.AdaptiveSteps(e.Settings.AdaptiveEffort) > 0 {
 			fast += " · adaptive effort " + e.Settings.AdaptiveEffort

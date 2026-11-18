@@ -22,8 +22,8 @@ type ClientConfig struct {
 	APIKey      string
 	BaseURL     string
 	MaxAttempts int
-	// Priority asks for priority processing (service_tier "priority").
-	Priority bool
+	// ServiceTier is the processing tier sent independently of reasoning effort.
+	ServiceTier string
 	// Ultra sends reasoning effort ultra (see variant).
 	Ultra  bool
 	Getenv func(string) string
@@ -87,7 +87,7 @@ func DefaultProviders() []Provider {
 // noPriority refuses priority processing, for a provider without it.
 func noPriority(build func(ClientConfig) (Client, error)) func(ClientConfig) (Client, error) {
 	return func(c ClientConfig) (Client, error) {
-		if c.Priority {
+		if c.ServiceTier != "" {
 			return nil, errNoPriority
 		}
 

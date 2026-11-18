@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/viktordanov/uah/internal/engine/codexauth"
+
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/session"
@@ -180,6 +182,9 @@ func (s *State) showUsage(err error, now time.Time) {
 	b.WriteString("usage")
 	if snap.Plan != "" {
 		b.WriteString(" · " + snap.Plan + " plan")
+		if kind := codexauth.AccountKind(snap.Plan); kind != "" {
+			b.WriteString(" · ChatGPT " + kind)
+		}
 	}
 	if snap.Stale(now) {
 		fmt.Fprintf(&b, " · stale, read %s ago", now.Sub(snap.CapturedAt).Round(time.Minute))

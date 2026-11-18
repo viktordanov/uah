@@ -81,7 +81,10 @@ type switcher struct {
 // variant is what a client is built for: priority processing, and effort
 // ultra, which the runner cannot carry (llm.ReasoningEffort stops at max),
 // so the ultra client sends the reasoning field itself.
-type variant struct{ priority, ultra bool }
+type variant struct {
+	ultra bool
+	tier  string
+}
 
 func newSwitcher(model string, v variant, maxAttempts int, build func(variant) (Client, error)) (*switcher, error) {
 	s := &switcher{build: build, model: model, max: maxAttempts, clients: map[variant]Client{}}
@@ -196,10 +199,10 @@ func (s *switcher) setAdaptive(steps int) {
 	s.adaptive.steps = steps
 }
 
-// setPriority switches priority processing on or off.
-func (s *switcher) setPriority(priority bool) error {
+// setTier selects processing speed without changing reasoning effort.
+func (s *switcher) setTier(tier string) error {
 	v := s.current()
-	v.priority = priority
+	v.tier = tier
 
 	return s.use(v)
 }
@@ -237,8 +240,8 @@ func (s *switcher) clientLocked(v variant) (Client, error) {
 	}
 	c, err := s.build(v)
 	if err != nil {
-		if v.priority {
-			return nil, fmt.Errorf("failed to enable priority processing: %w", err)
+		if v.tier != "" {
+			return nil, fmt.Errorf("failed to enable %s processing: %w", v.tier, err)
 		}
 
 		return nil, err
@@ -275,8 +278,11 @@ func (s *switcher) directKind(kind string) llm.Adapter {
 	return adapterFunc(func(ctx context.Context, req llm.Request, opts llm.RequestOptions) (llm.Response, error) {
 		s.mu.Lock()
 		v, model := s.variant, s.model
+		if req.Model.ID != "" && req.Model.ID != model && v.tier == "ultrafast" {
+			v.tier = ""
+		}
 		if kind == kindReview {
-			v.priority = false
+			v.tier = ""
 		}
 		// At ultra the runner's effort is max: a call that kept it goes at
 		// ultra, one that picked its own effort does not, unless it picked

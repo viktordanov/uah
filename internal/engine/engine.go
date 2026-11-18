@@ -88,7 +88,7 @@ type Rewinder interface {
 
 // Options are run settings that core.Request does not carry.
 type Options struct {
-	// ServiceTier is "" or "priority" (needs Engine.Priority).
+	// ServiceTier is empty for standard, priority, or ultrafast.
 	ServiceTier string
 	// AdaptiveEffort is "1-step" or "2-steps": a follow-up request after
 	// tool results goes that many effort levels below the session's, and a

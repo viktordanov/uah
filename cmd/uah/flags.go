@@ -48,6 +48,7 @@ func sessionFlags() []cli.Flag {
 			Name: "state-dir", Usage: "sessions, logs, and run records; must be outside the workspace",
 			Value: home.Dir(), Sources: cli.EnvVars(home.EnvStateDir), TakesFile: true,
 		},
+		&cli.StringFlag{Name: "service-tier", Usage: "processing speed: standard, priority, or ultrafast"},
 		&cli.BoolFlag{Name: "fast", Usage: "priority processing (service_tier priority; openai and openai-codex)"},
 		&cli.StringFlag{
 			Name: "adaptive-effort", Usage: "think less on follow-up turns after tool results: off, 1-step, or 2-steps (effort levels down)",
@@ -175,6 +176,7 @@ func inputs(cmd *cli.Command) app.Inputs {
 		MaxDisk:        cmd.String("max-disk"),
 		MaxDiskSet:     cmd.IsSet("max-disk"),
 		MaxAttempts:    cmd.Int("max-attempts"),
+		ServiceTier:    cmd.String("service-tier"),
 		Fast:           cmd.Bool("fast"),
 		FastSet:        cmd.IsSet("fast"),
 		AdaptiveEffort: cmd.String("adaptive-effort"),

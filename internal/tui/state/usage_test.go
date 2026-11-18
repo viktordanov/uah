@@ -75,7 +75,7 @@ func TestUsage_StatusRows(t *testing.T) {
 	n := len(s.Items)
 
 	s, _ = apply(s, state.UsageLoaded{Reason: state.UsageStatus, Snapshot: weekly(22), At: t0})
-	assert.Equal(t, []string{"usage · pro plan\n" +
+	assert.Equal(t, []string{"usage · pro plan · ChatGPT personal\n" +
 		"5h     [██████████████████░░] 90% left (resets 14:00)\n" +
 		"weekly [███████████████░░░░░] 78% left (resets 15:00 on 25 Sep)"}, notices(s, n))
 
@@ -85,7 +85,7 @@ func TestUsage_StatusRows(t *testing.T) {
 	got := notices(s, n)
 	require.Len(t, got, 2)
 	assert.Equal(t, "usage: the usage request returned 502 Bad Gateway", got[0])
-	assert.Contains(t, got[1], "usage · pro plan · stale, read 20m0s ago\n")
+	assert.Contains(t, got[1], "usage · pro plan · ChatGPT personal · stale, read 20m0s ago\n")
 }
 
 func TestUsage_Warnings(t *testing.T) {
@@ -150,7 +150,7 @@ func TestUsage_Command(t *testing.T) {
 	assert.Equal(t, []state.Effect{state.EffLoadUsage{Reason: state.UsageStatus}, state.EffLoadCache{SessionID: "sess-1"}}, effects)
 	n := len(s.Items)
 	s, _ = apply(s, state.UsageLoaded{Reason: state.UsageStatus, Snapshot: weekly(22), At: t0})
-	assert.Contains(t, notices(s, n)[0], "usage · pro plan\n")
+	assert.Contains(t, notices(s, n)[0], "usage · pro plan · ChatGPT personal\n")
 	assert.Contains(t, s.Suggestions("/us")[0].Label, "usage", "the menu offers it")
 }
 

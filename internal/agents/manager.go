@@ -330,6 +330,9 @@ func (m *Manager) childOptions(p engine.AgentParent, c *child, role Role, rec re
 		s.Model = first(rec.Model, role.Model, m.cfg.Model, s.Model)
 		s.Effort = first(rec.Effort, role.Effort, m.cfg.Effort, s.Effort)
 	}
+	if s.ServiceTier == "ultrafast" && s.Model != live.Model {
+		s.ServiceTier = ""
+	}
 	s.SystemPrompt = first(s.SystemPrompt, instructions.DefaultPrompt)
 	if role.DeveloperInstructions != "" {
 		s.SystemPrompt += "\n\n" + strings.TrimSpace(role.DeveloperInstructions)
@@ -359,6 +362,9 @@ func (m *Manager) restore(s *session.Settings, saved session.Saved) {
 	}
 	s.Effort = first(saved.Effort, s.Effort)
 	s.ServiceTier = ""
+	if saved.ServiceTier == "ultrafast" && saved.Provider == s.Provider {
+		s.ServiceTier = saved.ServiceTier
+	}
 	if saved.Fast && m.eng != nil && m.eng.Priority() {
 		s.ServiceTier = TierPriority
 	}

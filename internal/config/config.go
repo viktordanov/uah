@@ -41,7 +41,8 @@ type Config struct {
 	// Responses WebSocket, as Codex does (on by default).
 	ResponsesWebSocket *bool `toml:"responses_websocket"`
 	// Fast asks for priority processing.
-	Fast bool `toml:"fast"`
+	Fast        bool   `toml:"fast"`
+	ServiceTier string `toml:"service_tier"`
 	// SandboxMode is read-only or workspace-write (the default); the names
 	// match Codex's. Codex's danger-full-access is yolo mode, which only
 	// --yolo gives.
@@ -224,6 +225,7 @@ func (c Config) SkillsEnabled() bool { return c.Skills.Enabled == nil || *c.Skil
 
 // Features is Codex's [features] table, with the one feature uah reads.
 type Features struct {
+	UltrafastMode *bool `toml:"ultrafast_mode"`
 	// Goals is /goal and the goal tools (true by default, as Codex's).
 	Goals *bool `toml:"goals"`
 }

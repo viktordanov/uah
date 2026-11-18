@@ -157,6 +157,8 @@ The model and effort change from the next model request, even mid-run, and a ses
 | One launch | `uah -m gpt-6-luna -e medium` | `-e`, in the same command; `--fast` adds priority processing |
 | Every session | `model` in the [configuration](../README.md#configuration) | `effort` |
 
+Run `/speed` to see the processing speeds for the current model. Select one with `/speed standard`, `/speed priority` (Fast), or `/speed ultrafast`. On the Codex backend, Ultrafast appears only when the model catalog for your login and the workspace policy allow it. You can also start with `--service-tier ultrafast` or save `service_tier = "ultrafast"` in your configuration. Speed does not change reasoning effort.
+
 - **Defaults:** gpt-6.1-sol on openai-codex when your login's model list has it, else gpt-6-sol (OpenAI rolls new models out by account); on openai, gpt-6.1-sol when listed, else gpt-6-astra. Effort `high`; the levels are low, medium, high, xhigh, max, and ultra, where the model accepts them.
 - **What the provider offers:** `uah models` (`--json`, `--refresh`), `/model ` then tab, or tab after `-m`. `/model` refuses a model the provider does not list, with the nearest names ("gpt-luna-6 is not available on openai-codex; did you mean gpt-6-luna?"), and `uah doctor` warns about one. `-m` and the configuration are not checked: the model goes to the provider as written.
 - **The prompt cache survives an effort change** on gpt-6.1-sol and the other gpt-6 models, because uah sends the change as an update in the conversation rather than in the request, as Codex does. A backend that rejects the update gets the request again without it, and the session then changes the effort per request, with a one-line notice.

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/viktordanov/uah/internal/engine/codexauth"
 )
@@ -37,15 +38,15 @@ func newCodexSource(base string, getenv func(string) string) (Source, error) {
 	client := noRedirects()
 	client.Transport = login.Transport(http.DefaultTransport)
 
-	return httpSource{
+	return codexTierSource{
 		client:   client,
 		url:      base + "/models?" + url.Values{"client_version": {CodexClientVersion}}.Encode(),
-		identity: identity(ProviderCodex, base, creds.AccountID),
+		identity: identity(ProviderCodex, base, creds.AccountID, creds.PlanHint(), CodexClientVersion, "speed-policy-1"),
 		headers: map[string]string{
 			"originator": codexOriginator,
 			"User-Agent": codexOriginator,
 		},
-		parse: parseCodex,
+		parse: parseCodex, personal: codexauth.AccountKind(creds.PlanHint()) == "personal", policyURL: strings.TrimSuffix(base, "/codex") + "/wham/config/bundle",
 	}, nil
 }
 
@@ -133,6 +134,10 @@ func enrich(provider string, list []Model) []Model {
 			continue
 		}
 		if b, ok, _ := bundled.Lookup(m.ID); ok {
+			if m.ServiceTiers != nil {
+				b.ServiceTiers = m.ServiceTiers
+				b.DefaultServiceTier = m.DefaultServiceTier
+			}
 			list[i] = b
 		}
 	}

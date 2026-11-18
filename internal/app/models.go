@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/viktordanov/uah/internal/models"
@@ -53,6 +54,9 @@ func ModelLine(m models.Model) string {
 	}
 	if m.SupportsPriority() {
 		parts = append(parts, "fast")
+	}
+	if slices.Contains(m.ServiceTiers, "ultrafast") {
+		parts = append(parts, "ultrafast")
 	}
 	if m.Hidden {
 		parts = append(parts, "hidden")

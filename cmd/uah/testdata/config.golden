@@ -13,6 +13,7 @@ request_max_attempts                              10                            
 max_disk                                          1G                            flag
 max_wait                                          1h0m0s                        default
 block_state_in_workspace                          false                         default
+service_tier                                      priority                      user file
 fast                                              true                          user file
 adaptive_effort                                   off                           default
 context_preparation                               true                          default

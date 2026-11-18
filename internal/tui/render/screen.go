@@ -533,7 +533,11 @@ func (st *Styles) compactFooter(s state.State, w int) string {
 func footerRest(s state.State) string {
 	var b strings.Builder
 	if s.Settings.ServiceTier != "" {
-		b.WriteString(" · fast")
+		if s.Settings.ServiceTier == "ultrafast" {
+			b.WriteString(" · ultrafast")
+		} else {
+			b.WriteString(" · fast")
+		}
 	}
 	for _, p := range []string{modeText(s), home(s.Home, s.Settings.Workspace)} {
 		if p != "" {

@@ -57,6 +57,9 @@ func (s *State) settingsChanged(e session.SettingsChanged) {
 	fast := ""
 	if e.Settings.ServiceTier != "" {
 		fast = " · fast"
+		if e.Settings.ServiceTier == "ultrafast" {
+			fast = " · ultrafast"
+		}
 	}
 	s.notice(session.LevelInfo, fmt.Sprintf("%s/%s · effort %s%s, applies %s", e.Settings.Provider, e.Settings.Model, e.Settings.Effort, fast, when))
 }

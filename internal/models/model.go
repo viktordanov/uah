@@ -95,6 +95,15 @@ func (c Catalog) Authoritative() bool {
 	return (c.Origin == OriginLive || c.Origin == OriginCached) && len(c.Models) > 0
 }
 
+// OffersTier checks the exact model in a catalog returned for this login.
+func (c Catalog) OffersTier(id, tier string) bool {
+	if !c.Authoritative() || c.Err != nil {
+		return false
+	}
+	m, ok, _ := c.Lookup(id)
+	return ok && slices.Contains(m.ServiceTiers, tier)
+}
+
 // Visible are the models menus offer: not hidden, in priority order.
 func (c Catalog) Visible() []Model {
 	out := make([]Model, 0, len(c.Models))

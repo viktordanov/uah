@@ -3,6 +3,7 @@ package models_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -148,6 +149,41 @@ func TestNewSource_Errors(t *testing.T) {
 	require.ErrorContains(t, err, "loopback", "the token goes only to the ChatGPT backend or a local test server")
 	_, err = models.NewSource(models.ProviderOpenRouter, "", env(nil))
 	require.NoError(t, err, "OpenRouter's list is public")
+}
+
+func TestUltrafastUsesModelCatalogAndWorkspacePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name, fragment string
+		want           bool
+	}{
+		{"allowed", "", true},
+		{"disabled", "[features]\nultrafast_mode=false", false},
+		{"legacy disable", "[features]\nfast_mode=false", false},
+		{"unreadable", "[broken", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/models":
+					_, _ = w.Write([]byte(`{"models":[{"slug":"future","service_tiers":[{"id":"priority"},{"id":"ultrafast"}]},{"slug":"other","service_tiers":[{"id":"priority"}]}]}`))
+				case "/wham/config/bundle":
+					require.NotEmpty(t, r.Header.Get("Authorization"))
+					_ = json.NewEncoder(w).Encode(map[string]any{"requirements_toml": map[string]any{"enterprise_managed": []map[string]string{{"id": "rbac-fast-mode", "contents": tc.fragment}}}})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			src, err := models.NewSource(models.ProviderCodex, srv.URL, env(map[string]string{"CODEX_HOME": codexHome(t, "workspace")}))
+			require.NoError(t, err)
+			f, err := src.Fetch(t.Context(), "")
+			require.NoError(t, err)
+			c := models.Catalog{Origin: models.OriginLive, Models: f.Models}
+			assert.Equal(t, tc.want, c.OffersTier("future", "ultrafast"))
+			assert.False(t, c.OffersTier("other", "ultrafast"))
+			assert.True(t, c.OffersTier("future", "priority"))
+		})
+	}
 }
 
 // TestNewSource_Identity changes with the provider, base URL, and account,

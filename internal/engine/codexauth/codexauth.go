@@ -107,3 +107,37 @@ func codexTokenClaims(token string) (accountID string, expires int64, err error)
 func HeaderValue(value string) bool {
 	return value != "" && !strings.ContainsFunc(value, func(r rune) bool { return r <= ' ' || r > '~' })
 }
+
+// AccountKind describes known Codex plan families without guessing for unknown SKUs.
+func AccountKind(plan string) string {
+	switch plan {
+	case "free", "go", "plus", "pro", "prolite", "promax":
+		return "personal"
+	case "business", "enterprise", "edu", "team", "self_serve_business_prolite", "self_serve_business_usage_based", "ent26", "enterprise_cbp_automation", "enterprise_cbp_usage_based", "hc", "education", "edu_plus", "edu_pro", "sci", "sci_plus":
+		return "workspace"
+	}
+
+	return ""
+}
+
+// PlanHint is account metadata, not a model entitlement.
+func (c Creds) PlanHint() string {
+	p := strings.Split(c.AccessToken, ".")
+	if len(p) != 3 {
+		return ""
+	}
+	b, e := base64.RawURLEncoding.DecodeString(p[1])
+	if e != nil {
+		return ""
+	}
+	var v struct {
+		Auth struct {
+			Plan string `json:"chatgpt_plan_type"`
+		} `json:"https://api.openai.com/auth"`
+	}
+	if json.Unmarshal(b, &v) != nil {
+		return ""
+	}
+
+	return v.Auth.Plan
+}

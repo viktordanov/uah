@@ -35,6 +35,22 @@ func levels(rows []state.EffortRow) []string {
 	return out
 }
 
+func TestSpeedChecksCatalogAndResetsOnModelChange(t *testing.T) {
+	c := pickerCatalog()
+	c.Models[0].ServiceTiers = []string{"priority", "ultrafast"}
+	s, effects := apply(opened(), state.Submit{Text: "/speed ultrafast"})
+	require.Equal(t, []state.Effect{state.EffLoadModels{Provider: c.Provider}}, effects)
+	s, effects = apply(s, state.ModelsLoaded{Catalog: c})
+	require.Len(t, effects, 1)
+	selected := effects[0].(state.EffSetSettings).Settings
+	require.Equal(t, "ultrafast", selected.ServiceTier)
+	require.Equal(t, s.Settings.Effort, selected.Effort)
+	s.Settings = selected
+	_, effects = apply(s, state.Submit{Text: "/model gpt-6-luna medium"})
+	require.Len(t, effects, 1)
+	assert.Empty(t, effects[0].(state.EffSetSettings).Settings.ServiceTier)
+}
+
 func modelIDs(list []models.Model) []string {
 	out := make([]string, 0, len(list))
 	for _, m := range list {

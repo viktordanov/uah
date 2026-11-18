@@ -42,7 +42,7 @@ func TestSession_SavesSettingsInTheSidecar(t *testing.T) {
 	sc, _, err = session.ReadSidecar(dir, s.ID())
 	require.NoError(t, err)
 	assert.Equal(t, session.SourceTUI, sc.Source)
-	assert.Equal(t, session.Saved{Provider: next.Provider, Model: next.Model, Effort: "low", Fast: true, AdaptiveEffort: "2-steps", Mode: approval.ModeAuto}, *sc.Settings)
+	assert.Equal(t, session.Saved{Provider: next.Provider, Model: next.Model, Effort: "low", Fast: true, ServiceTier: "priority", AdaptiveEffort: "2-steps", Mode: approval.ModeAuto}, *sc.Settings)
 
 	var info session.Info
 	info.ApplySidecar(sc)

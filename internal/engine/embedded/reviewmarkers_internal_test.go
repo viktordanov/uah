@@ -25,7 +25,7 @@ func TestReviewMarkers(t *testing.T) {
 			for _, kind := range []string{kindTurn, kindDirect, kindReview} {
 				t.Run(provider+"/"+kind+"/"+map[bool]string{true: "on", false: "off"}[enabled], func(t *testing.T) {
 					var built variant
-					sw, err := newSwitcher("m", variant{priority: true}, 1, func(v variant) (Client, error) {
+					sw, err := newSwitcher("m", variant{tier: tierPriority}, 1, func(v variant) (Client, error) {
 						built = v
 						return markerClient{adapterFunc(func(ctx context.Context, _ llm.Request, _ llm.RequestOptions) (llm.Response, error) {
 							c, ok := ctx.Value(callKey{}).(*modelCall)
@@ -87,7 +87,7 @@ func TestReviewMarkers(t *testing.T) {
 					}
 					_, err = adapter.Respond(t.Context(), llm.Request{}, llm.RequestOptions{})
 					require.NoError(t, err)
-					assert.Equal(t, kind != kindReview, built.priority)
+					assert.Equal(t, kind != kindReview, built.tier == tierPriority)
 					want := "next"
 					if kind == kindReview {
 						want = "latest"

@@ -32,6 +32,7 @@ type Menu struct {
 	// Models is the provider's model list for /model, loaded on first use.
 	Models        *models.Catalog
 	modelsLoading bool
+	pendingSpeed  *string
 	// Review is the branches and commits for /review (reviewmenu.go).
 	Review        *ReviewTargetsLoaded
 	reviewLoading bool
@@ -140,6 +141,8 @@ func (s State) argSuggestions(name, arg string) []Suggestion {
 		return s.modelSuggestions(arg)
 	case cmdReviewName:
 		return s.reviewSuggestions(arg)
+	case "speed":
+		values = s.speeds()
 	case "effort":
 		values = session.Efforts
 	case "adaptive":
@@ -275,7 +278,13 @@ func (s *State) onMenu(ev any) (effects []Effect, ok bool) {
 	case ModelsLoaded:
 		s.Menu.Models, s.Menu.modelsLoading = &e.Catalog, false
 
-		return s.modelsArrived(), true
+		effects := s.modelsArrived()
+		if arg := s.Menu.pendingSpeed; arg != nil {
+			s.Menu.pendingSpeed = nil
+			effects = append(effects, applySpeed(s, *arg)...)
+		}
+
+		return effects, true
 	case MenuMove:
 		if n := min(len(s.Suggestions(e.Draft)), menuSize); n > 0 {
 			s.Menu.Index = ((s.Menu.Index+e.Delta)%n + n) % n

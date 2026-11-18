@@ -39,8 +39,9 @@ type Info struct {
 	Parent string
 	// Fast and Mode are the fast mode and the permission mode the session
 	// last used, from its sidecar (nil and "" when it does not record them).
-	Fast *bool
-	Mode approval.Mode
+	Fast        *bool
+	ServiceTier string
+	Mode        approval.Mode
 	// AdaptiveEffort is the adaptive effort the session last used, from
 	// its sidecar ("" when it does not record it).
 	AdaptiveEffort string

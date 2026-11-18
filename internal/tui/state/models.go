@@ -20,7 +20,7 @@ func (EffLoadModels) effect() {}
 // loadModels starts loading the model list when the draft is /model and
 // the current provider's list is neither loaded nor loading.
 func (s *State) loadModels(draft string) Effect {
-	if !strings.HasPrefix(draft, "/model") || s.Menu.modelsLoading {
+	if (!strings.HasPrefix(draft, "/model") && !strings.HasPrefix(draft, "/speed")) || s.Menu.modelsLoading {
 		return nil
 	}
 	if s.Menu.Models != nil && s.Menu.Models.Provider == s.Settings.Provider {
@@ -76,6 +76,10 @@ func ModelHelp(m models.Model) string {
 	}
 	if m.SupportsPriority() {
 		parts = append(parts, "/fast")
+	}
+
+	if slices.Contains(m.ServiceTiers, "ultrafast") {
+		parts = append(parts, "ultrafast")
 	}
 
 	return strings.Join(parts, " · ")

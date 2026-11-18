@@ -22,8 +22,8 @@ func TestTurnState_SharedByTheRunsClients(t *testing.T) {
 	claims := `{"exp":` + strconv.FormatInt(time.Now().Add(time.Hour).Unix(), 10) + `,"https://api.openai.com/auth":{"chatgpt_account_id":"acct-1"}}`
 	env := map[string]string{"OPENAI_CODEX_ACCESS_TOKEN": "x." + base64.RawURLEncoding.EncodeToString([]byte(claims)) + ".y"}
 	state := new(atomic.Pointer[string])
-	for _, priority := range []bool{false, true} {
-		c, err := codexClient(ClientConfig{BaseURL: srv.URL, MaxAttempts: 1, Priority: priority, Getenv: func(k string) string { return env[k] }, turnState: state})
+	for _, tier := range []string{"", tierPriority} {
+		c, err := codexClient(ClientConfig{BaseURL: srv.URL, MaxAttempts: 1, ServiceTier: tier, Getenv: func(k string) string { return env[k] }, turnState: state})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = c.Close() })
 		_, err = c.Respond(t.Context(), llm.Request{

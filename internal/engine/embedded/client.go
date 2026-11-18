@@ -42,17 +42,17 @@ func (w *wiring) client(req core.Request, opts engine.Options) (string, *switche
 	if err != nil {
 		return "", nil, err
 	}
-	start := variant{priority: opts.ServiceTier == tierPriority, ultra: req.Effort == effortUltra}
+	start := variant{tier: opts.ServiceTier, ultra: req.Effort == effortUltra}
 	turnState := new(atomic.Pointer[string])
 	var socket *responsesapi.WebSocketTransport
 	if p.Name == codexauth.Provider && w.e.cfg.ResponsesWebSocket {
 		socket = w.e.socket(req.SessionID, baseURL)
 	}
 	sw, err := newSwitcher(model, start, maxAttempts, func(v variant) (Client, error) {
-		if v.priority && !p.Priority {
+		if v.tier != "" && !p.Priority {
 			return nil, errNoPriority
 		}
-		c, err := p.NewClient(ClientConfig{APIKey: apiKey, BaseURL: baseURL, MaxAttempts: maxAttempts, Priority: v.priority, Ultra: v.ultra, Getenv: w.getenv, transports: &w.e.transports, turnState: turnState, socket: socket})
+		c, err := p.NewClient(ClientConfig{APIKey: apiKey, BaseURL: baseURL, MaxAttempts: maxAttempts, ServiceTier: v.tier, Ultra: v.ultra, Getenv: w.getenv, transports: &w.e.transports, turnState: turnState, socket: socket})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create the %s client: %w", p.Name, err)
 		}

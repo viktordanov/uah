@@ -196,6 +196,7 @@ File paths in the transcript are links, as `[tui] file_links` says (`peek` by de
 | `/model [id] [effort]` | Choose the model, then its effort, in the picker; `/model <id>` opens the picker at that model's efforts, and `/model <id> <effort>` sets both without it | Yes |
 | `/effort <level>` | Set the thinking level: low, medium, high, xhigh, max, ultra (only those the model lists, once `/model` has loaded the list) | Yes |
 | `/fast` | Toggle priority processing; needs the embedded engine and the openai or openai-codex provider | Yes |
+| `/speed [tier]` | Show or select a processing speed for this model and login. Standard, priority and ultrafast are independent of reasoning effort. |
 | `/adaptive [off\|1-step\|2-steps]` | Set adaptive effort, or alone step to the next value: think one or two effort levels less on follow-up turns after tool results ([engine README](../engine/README.md#adaptive-effort)). The menu lists the three values with the effort follow-ups get at the session's effort (`follow-ups after tool results at low`) and marks the current one (`adaptiveSuggestions`); a short form also works (`1`, `one`, `2`, `two`, `0`, `no`). Another word shows the current value | Yes |
 | `/resume [id]` | Open the picker, or resume a session by ID prefix | No |
 | `/new` | Start a new session | No |

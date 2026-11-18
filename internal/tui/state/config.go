@@ -199,6 +199,7 @@ func (s *State) save(key string, value any) []Effect {
 	switch key {
 	case keyModel:
 		next.Model, _ = value.(string)
+		s.constrainSpeed(&next)
 	case keyEffort:
 		next.Effort, _ = value.(string)
 	case keyFast:

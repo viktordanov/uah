@@ -104,12 +104,8 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	env := instructions.LocalEnvironment(in.Workspace, RealShell(), time.Now(), os.Getenv)
 	r.Settings.SystemPrompt = instructions.HostPrompt(questionText(base, r), text, env.String())
 	catalog := NewModels(stateDir, r.Settings, os.Getenv)
-	if r.DefaultModel {
-		// As Codex picks its default: the provider's list, cached for five
-		// minutes, with the refresh bounded to five seconds.
-		r.SettleModel(catalog.Catalog(ctx, catalog.Provider(), models.OnlineIfUncached))
-	} else {
-		catalog.Catalog(ctx, catalog.Provider(), models.Offline) // the cache only, no network
+	if err := loadCatalog(ctx, &r, catalog); err != nil {
+		return Result{}, err
 	}
 	opts.Settings, opts.Yolo, opts.Goals, opts.Tools = r.Settings, in.Yolo, r.Goals, r.Tools
 	opts.Notices = append(opts.Notices, modelNotices(catalog.Cached(r.Settings.Provider), r)...)
@@ -392,4 +388,24 @@ func loadInstructions(workspace string, cfg config.Config) (*session.Instruction
 	}
 
 	return &session.InstructionsLoaded{Files: paths, Bytes: len(text), Truncated: truncated}, text, nil
+}
+
+func loadCatalog(ctx context.Context, r *Resolved, catalog *models.Manager) error {
+	if r.Settings.ServiceTier == "ultrafast" {
+		c := catalog.Catalog(ctx, catalog.Provider(), models.OnlineIfUncached)
+		if r.DefaultModel {
+			r.SettleModel(c)
+		}
+		if !c.OffersTier(r.Settings.Model, "ultrafast") {
+			return fmt.Errorf("ultrafast is not offered for %s by the current login", r.Settings.Model)
+		}
+	} else if r.DefaultModel {
+		// As Codex picks its default: the provider's list, cached for five
+		// minutes, with the refresh bounded to five seconds.
+		r.SettleModel(catalog.Catalog(ctx, catalog.Provider(), models.OnlineIfUncached))
+	} else {
+		catalog.Catalog(ctx, catalog.Provider(), models.Offline) // the cache only, no network
+	}
+
+	return nil
 }
