@@ -105,11 +105,13 @@ func (m *Manager) unwatch(c *child, next chan core.Event) {
 // fell a whole queue behind is closed rather than holding up the child.
 // It holds m.mu.
 func (c *child) record(e core.Event) {
-	c.log = append(c.log, e)
-	// Trimmed in steps of a quarter, so a long child does not copy the
-	// whole log on every event.
-	if len(c.log) > maxLogged+maxLogged/4 {
-		c.log = slices.Clone(c.log[len(c.log)-maxLogged:])
+	if _, transient := e.(session.AgentFocusRequested); !transient {
+		c.log = append(c.log, e)
+		// Trimmed in steps of a quarter, so a long child does not copy the
+		// whole log on every event.
+		if len(c.log) > maxLogged+maxLogged/4 {
+			c.log = slices.Clone(c.log[len(c.log)-maxLogged:])
+		}
 	}
 	c.subs = slices.DeleteFunc(c.subs, func(next chan core.Event) bool {
 		select {

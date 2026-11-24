@@ -293,3 +293,10 @@ func TestRun_BackgroundProcessKeepsOutput(t *testing.T) {
 	assert.True(t, d.Block)
 	assert.Equal(t, "no", d.Reason)
 }
+
+func TestRun_ChildOnlyReturnDoesNotCancelRootFocus(t *testing.T) {
+	d, _ := run(t, hooks.Input{Event: hooks.PostToolUse},
+		user(hooks.PostToolUse, `echo '{"hookSpecificOutput":{"agentFocus":{"target":"subagent-123"}}}'`),
+		user(hooks.PostToolUse, `echo '{"hookSpecificOutput":{"agentFocus":{}}}'`))
+	assert.Equal(t, &hooks.AgentFocus{Target: "subagent-123"}, d.AgentFocus)
+}

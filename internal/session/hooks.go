@@ -157,7 +157,16 @@ func (s *Session) onStopChecked(m evStopChecked) {
 	s.goIdle(false)
 }
 
-// postToolUse runs PostToolUse hooks for a finished tool; they only observe.
+// AgentFocusRequested is a transient request from this session's hook.
+// An empty target asks to return to the parent.
+type AgentFocusRequested struct {
+	At     time.Time
+	Target string
+}
+
+func (e AgentFocusRequested) OccurredAt() time.Time { return e.At }
+
+// postToolUse runs PostToolUse hooks for a finished tool.
 func (s *Session) postToolUse(f core.ToolFinished) {
 	called, ok := s.hooks.tools[f.CallID]
 	if !ok || !s.hooks.runner.Has(hooks.PostToolUse, called.Name) || refused(s.policy, called.Name, f) {
@@ -172,7 +181,12 @@ func (s *Session) postToolUse(f core.ToolFinished) {
 		in.ToolInput = json.RawMessage(called.Arguments)
 	}
 	in.ToolResponse = &hooks.ToolResponse{Success: f.OK, Detail: f.Detail, Stdout: f.OutPath, Stderr: f.ErrPath}
-	s.hooks.jobs <- func() { s.hooks.runner.Run(s.ctx, in) }
+	s.hooks.jobs <- func() {
+		d := s.hooks.runner.Run(s.ctx, in)
+		if f.OK && !d.Block && d.AgentFocus != nil {
+			s.notify(AgentFocusRequested{At: time.Now(), Target: d.AgentFocus.Target})
+		}
+	}
 }
 
 // refused reports whether the tool policy refused the call, so it never

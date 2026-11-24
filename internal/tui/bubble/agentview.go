@@ -11,7 +11,13 @@ import (
 // Messages of the agent view: a watch that opened, and a batch of the
 // watched agent's events. gen drops batches of a watch that ended.
 type (
-	agentOpenedMsg struct{ w *session.AgentWatch }
+	agentOpenedMsg struct {
+		w           *session.AgentWatch
+		err         error
+		gen, intent int
+		focus       bool
+		id          string
+	}
 	agentEventsMsg struct {
 		gen     int
 		id      string
@@ -40,25 +46,45 @@ func (m Model) onAgentMsg(msg term.Msg) (term.Model, term.Cmd) {
 }
 
 // watchAgent starts following an agent of the session.
-func (m Model) watchAgent(id string) term.Cmd {
+func (m *Model) watchAgent(id string, focus bool) term.Cmd {
 	sess := m.sess
+	m.watchIntent++
+	m.watchPending = true
+	gen, intent := m.gen, m.watchIntent
 
 	return func() term.Msg {
 		if sess == nil {
-			return state.Failed{Err: errNoSession}
+			return agentOpenedMsg{err: errNoSession, id: id, gen: gen, intent: intent, focus: focus}
 		}
 		w, err := sess.WatchAgent(id)
-		if err != nil {
-			return state.Failed{Err: err}
-		}
 
-		return agentOpenedMsg{w: w}
+		return agentOpenedMsg{w: w, err: err, id: id, gen: gen, intent: intent, focus: focus}
 	}
 }
 
 // onAgentOpened shows the agent's transcript and follows its events, in
 // batches as the session's are.
 func (m Model) onAgentOpened(msg agentOpenedMsg) (term.Model, term.Cmd) {
+	current := msg.gen == m.gen && msg.intent == m.watchIntent
+	if current {
+		m.watchPending = false
+	}
+	if !current || (msg.focus && (m.st.View != nil || !m.canChangeAgentFocus() ||
+		msg.w == nil || msg.w.Closed || !m.st.WorkingAgent(msg.w.ID))) {
+		if msg.w != nil {
+			msg.w.Stop()
+		}
+
+		return m, nil
+	}
+	if msg.err != nil {
+		var retry term.Cmd
+		if m.st.View != nil && m.watch == nil && m.st.View.ID != msg.id {
+			retry = m.watchAgent(m.st.View.ID, false)
+		}
+		updated, cmd := m.dispatch(state.Failed{Err: msg.err})
+		return updated, term.Batch(cmd, retry)
+	}
 	m.stopWatch()
 	m.watch = msg.w
 	m.watchGen++
@@ -77,8 +103,24 @@ func (m Model) onAgentEvents(msg agentEventsMsg) (term.Model, term.Cmd) {
 		return m, nextAgent(msg.gen, msg.id, msg.batches)
 	}
 	m.st, _ = state.Reduce(m.st, state.AgentEvents{ID: msg.id, Events: msg.events})
+	for _, e := range msg.events {
+		if req, ok := e.(session.AgentFocusRequested); ok && req.Target == "" && !m.watchPending &&
+			m.st.View != nil && m.st.View.ID == msg.id && m.canChangeAgentFocus() {
+			nextModel, cmd := m.dispatch(state.CloseAgentView{})
+
+			return nextModel, term.Batch(cmd, nextAgent(msg.gen, msg.id, msg.batches))
+		}
+	}
 
 	return m, term.Batch(m.afterChange(), nextAgent(msg.gen, msg.id, msg.batches))
+}
+
+func (m Model) canChangeAgentFocus() bool {
+	return m.composer.Value() == "" && len(m.st.Attached) == 0 &&
+		m.st.Mode == state.ModeChat && !m.st.Shell && !m.st.Quitting &&
+		len(m.st.Approvals) == 0 && len(m.st.Questions) == 0 &&
+		m.st.Config == nil && m.st.ModelPicker == nil && m.st.Peek == nil &&
+		m.st.Find == nil && m.st.Backtrack == nil && m.st.History.Search == nil
 }
 
 // onAgentWatchEnded reopens the view when the watch closed while it was
@@ -91,7 +133,14 @@ func (m Model) onAgentWatchEnded(msg agentWatchEndedMsg) (term.Model, term.Cmd) 
 		return m, nil
 	}
 
-	return m, m.watchAgent(msg.id)
+	if m.watchPending {
+		// If the switch fails, the visible view will need a fresh watch.
+		m.stopWatch()
+		return m, nil
+	}
+	cmd := m.watchAgent(msg.id, false)
+
+	return m, cmd
 }
 
 // nextAgent waits for the watched agent's next batch, and reports when its

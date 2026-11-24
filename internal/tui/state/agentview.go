@@ -98,6 +98,12 @@ func cmdAgents(s *State, args string) []Effect {
 	return nil
 }
 
+// WorkingAgent reports whether id names a working direct child.
+func (s State) WorkingAgent(id string) bool {
+	i, ok := s.index["agent:"+id]
+	return ok && working(s.Items[i])
+}
+
 // agentNames are the nicknames /agents completes.
 func (s State) agentNames() []string {
 	var names []string

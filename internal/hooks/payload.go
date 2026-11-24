@@ -79,4 +79,11 @@ type SpecificOutput struct {
 	UpdatedInput             json.RawMessage `json:"updatedInput,omitempty"`
 	// UserPromptSubmit and SessionStart: text added to the prompt.
 	AdditionalContext string `json:"additionalContext,omitempty"`
+	// PostToolUse: request a child by ID, or return to the
+	// parent when target is omitted. The TUI decides whether to switch.
+	AgentFocus *AgentFocus `json:"agentFocus,omitempty"`
+}
+
+type AgentFocus struct {
+	Target string `json:"target,omitempty"`
 }
