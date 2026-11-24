@@ -371,14 +371,8 @@ func (d *Decision) add(in Input, res Result) {
 
 		return
 	}
-	if s := out.HookSpecificOutput; s != nil && d.addSpecific(*s) {
+	if s := out.HookSpecificOutput; s != nil && d.addSpecific(in, *s) {
 		return
-	}
-	if s := out.HookSpecificOutput; event == PostToolUse && s != nil && s.AgentFocus != nil {
-		root := in.ParentSessionID == ""
-		if (root && s.AgentFocus.Target != "") || (!root && s.AgentFocus.Target == "") {
-			d.AgentFocus = s.AgentFocus
-		}
 	}
 	if (event == UserPromptSubmit || event == SessionStart) && out == (Output{}) && strings.TrimSpace(res.Stdout) != "" {
 		d.Context = append(d.Context, strings.TrimSpace(res.Stdout)) // plain stdout is context, as in Claude Code
@@ -386,7 +380,7 @@ func (d *Decision) add(in Input, res Result) {
 }
 
 // addSpecific applies hookSpecificOutput and reports whether it blocked.
-func (d *Decision) addSpecific(s SpecificOutput) bool {
+func (d *Decision) addSpecific(in Input, s SpecificOutput) bool {
 	switch s.PermissionDecision {
 	case "deny", "ask":
 		d.Block, d.Reason = true, firstNonEmpty(s.PermissionDecisionReason, "denied by a hook")
@@ -394,6 +388,12 @@ func (d *Decision) addSpecific(s SpecificOutput) bool {
 		return true
 	case "allow":
 		d.Allow = true
+	}
+	if in.Event == PostToolUse && s.AgentFocus != nil {
+		root := in.ParentSessionID == ""
+		if (root && s.AgentFocus.Target != "") || (!root && s.AgentFocus.Target == "") {
+			d.AgentFocus = s.AgentFocus
+		}
 	}
 	if len(s.UpdatedInput) > 0 {
 		d.UpdatedInput = s.UpdatedInput

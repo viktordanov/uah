@@ -154,6 +154,8 @@ Hooks come from `Config.Hooks`, the session's runner:
 - `Closed`: whether the child's session had closed. `Next` is then closed from the start;
 - `Stop`: the end of the watch.
 
+Agent focus requests go only to live watchers through `Next`; they are omitted from `Events` so reopening a watch cannot repeat a view switch.
+
 `TestAgents_WatchClosed` checks that a closed child's watch is closed and brings the run from this process from disk. The TUI's `/agents <name>` view is built on it (see the TUI README).
 <!-- /memoria:section -->
 
