@@ -138,6 +138,9 @@ type Model struct {
 	// once it ends.
 	watch    *session.AgentWatch
 	watchGen int
+	// watchIntent orders asynchronous opens, including hook requests.
+	watchIntent  int
+	watchPending bool
 	// prompts appends to the history file in order (nil without one).
 	prompts *history.Recorder
 	// calls keeps the session calls in the order Update made them.
@@ -286,23 +289,7 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 	case term.PasteMsg:
 		return m.now().cancelLink().onPaste(msg)
 	case eventsMsg:
-		if msg.gen != m.gen {
-			return m, next(msg.gen, msg.batches) // drain a closed session's last events
-		}
-		cmds := []term.Cmd{next(m.gen, msg.batches)}
-		for _, e := range msg.events {
-			var effects []state.Effect
-			m.st, effects = state.Reduce(m.st, e)
-			for _, eff := range effects { // such as reading the usage after a run
-				cmds = append(cmds, m.run(eff))
-			}
-		}
-		// The agent's questions change the composer's hint.
-		m.composer.Placeholder = render.ShellPlaceholder(m.st)
-		// After the events: a batch that starts a run starts the clock.
-		cmds = append(cmds, m.afterChange())
-
-		return m, term.Batch(cmds...)
+		return m.onSessionEvents(msg)
 	case sessionClosedMsg:
 		if msg.gen == m.gen {
 			m.sess = nil
@@ -336,9 +323,39 @@ func (m Model) update(msg term.Msg) (term.Model, term.Cmd) {
 	return m, nil
 }
 
+func (m Model) onSessionEvents(msg eventsMsg) (term.Model, term.Cmd) {
+	if msg.gen != m.gen {
+		return m, next(msg.gen, msg.batches) // drain a closed session's last events
+	}
+	cmds := []term.Cmd{next(m.gen, msg.batches)}
+	var focus string
+	for _, e := range msg.events {
+		if req, ok := e.(session.AgentFocusRequested); ok {
+			focus = req.Target
+
+			continue
+		}
+		var effects []state.Effect
+		m.st, effects = state.Reduce(m.st, e)
+		for _, eff := range effects { // such as reading the usage after a run
+			cmds = append(cmds, m.run(eff))
+		}
+	}
+	if focus != "" && !m.watchPending && m.st.View == nil && m.canChangeAgentFocus() && m.st.WorkingAgent(focus) {
+		cmds = append(cmds, m.watchAgent(focus, true))
+	}
+	// The agent's questions change the composer's hint.
+	m.composer.Placeholder = render.ShellPlaceholder(m.st)
+	// After the events: a batch that starts a run starts the clock.
+	cmds = append(cmds, m.afterChange())
+
+	return m, term.Batch(cmds...)
+}
+
 func (m Model) onOpened(msg openedMsg) (term.Model, term.Cmd) {
 	m.gen++
 	m.stopWatch()
+	m.watchPending = false
 	m.sess = msg.sess
 	m.st.Priority = msg.sess.Priority()
 	m.st.Yolo = msg.sess.Yolo()
@@ -389,7 +406,14 @@ func (m Model) dispatch(intent any) (term.Model, term.Cmd) {
 			continue
 		}
 		if _, ok := e.(state.EffCloseAgentView); ok {
+			m.watchIntent++
+			m.watchPending = false
 			m.stopWatch()
+
+			continue
+		}
+		if v, ok := e.(state.EffViewAgent); ok {
+			cmds = append(cmds, m.watchAgent(v.ID, false))
 
 			continue
 		}

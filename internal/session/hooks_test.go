@@ -129,6 +129,29 @@ func TestHooks_SessionStartContextAndPostToolUse(t *testing.T) {
 	assert.Contains(t, string(data), `"tool_response":{"success":true,"detail":"exit 0"}`)
 }
 
+func TestHooks_AgentFocusRequiresSuccessfulTool(t *testing.T) {
+	h := withHooks(t, hooks.Hook{
+		Event: hooks.PostToolUse, Matcher: "mcp__agent_focus__focus_agent",
+		Command: `echo '{"hookSpecificOutput":{"agentFocus":{"target":"subagent-123"}}}'`,
+	})
+	_, err := h.s.Submit("handoff")
+	require.NoError(t, err)
+	run := h.nextRun()
+	for _, id := range []string{"failed", "passed"} {
+		run.sink(core.ToolCalled{At: time.Now(), CallID: id, Name: "mcp__agent_focus__focus_agent"})
+		run.sink(core.ToolFinished{At: time.Now(), CallID: id, OK: id == "passed"})
+	}
+	finished := 0
+	e := h.until(func(e core.Event) bool {
+		if r, ok := e.(session.HookRan); ok && r.Outcome == "ok" {
+			finished++
+		}
+		return isType[session.AgentFocusRequested](e)
+	}).(session.AgentFocusRequested)
+	assert.Equal(t, 2, finished, "the failed tool's hook must not switch views")
+	assert.Equal(t, "subagent-123", e.Target)
+}
+
 // TestHooks_ANotificationHeldBehindABlockedPromptStartsItsRun: a
 // notification that arrives while a prompt's hooks run waits for them, and
 // when the hook blocks the prompt, it starts its run.

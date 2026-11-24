@@ -233,8 +233,6 @@ func (m Model) run(e state.Effect) term.Cmd { //nolint:gocyclo // a dispatch swi
 
 			return nil
 		}
-	case state.EffViewAgent:
-		return m.watchAgent(e.ID)
 	case state.EffAgentSend:
 		return m.sendToAgent(e.Text, e.When)
 	case state.EffAgentSteerQueued:

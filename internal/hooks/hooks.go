@@ -297,7 +297,7 @@ func (r *Runner) Run(ctx context.Context, in Input) Decision {
 		if report != nil {
 			report(res)
 		}
-		d.add(in.Event, res)
+		d.add(in, res)
 		if d.Block {
 			break
 		}
@@ -342,10 +342,12 @@ type Decision struct {
 	// Context is text to add to a prompt (UserPromptSubmit, SessionStart).
 	Context []string
 	// Messages are systemMessage texts to show the user.
-	Messages []string
+	Messages   []string
+	AgentFocus *AgentFocus
 }
 
-func (d *Decision) add(event Event, res Result) {
+func (d *Decision) add(in Input, res Result) {
+	event := in.Event
 	if res.Output.SystemMessage != "" {
 		d.Messages = append(d.Messages, res.Output.SystemMessage)
 	}
@@ -371,6 +373,12 @@ func (d *Decision) add(event Event, res Result) {
 	}
 	if s := out.HookSpecificOutput; s != nil && d.addSpecific(*s) {
 		return
+	}
+	if s := out.HookSpecificOutput; event == PostToolUse && s != nil && s.AgentFocus != nil {
+		root := in.ParentSessionID == ""
+		if (root && s.AgentFocus.Target != "") || (!root && s.AgentFocus.Target == "") {
+			d.AgentFocus = s.AgentFocus
+		}
 	}
 	if (event == UserPromptSubmit || event == SessionStart) && out == (Output{}) && strings.TrimSpace(res.Stdout) != "" {
 		d.Context = append(d.Context, strings.TrimSpace(res.Stdout)) // plain stdout is context, as in Claude Code
