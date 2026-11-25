@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/viktordanov/uah/internal/cmdparse"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/tui/state"
 )
 
@@ -160,10 +161,13 @@ func failTail(it state.Item) string {
 	return ""
 }
 
-// toolNote is one of a call's second lines.
+// toolNote is one of a call's second lines; full, when set, is the text
+// the detailed view wraps in its place, lines and all: the advisor's
+// advice.
 type toolNote struct {
 	text  string
 	style interface{ Render(...string) string }
+	full  string
 }
 
 // toolNotes are a call's second lines, in order: why it failed, an MCP
@@ -177,17 +181,26 @@ func (st *Styles) toolNotes(it state.Item) []toolNote {
 			why = it.Detail // a reason too long for the line's end
 		}
 		if why != "" {
-			out = append(out, toolNote{oneLine(why), st.bad})
+			n := toolNote{text: oneLine(why), style: st.bad}
+			if it.Name == engine.AdvisorToolName {
+				n.full = it.Result // what the agent read: why, with the command's stderr
+			}
+			out = append(out, n)
 		}
 	}
 	if it.Result != "" && it.Tool == state.ToolOK {
-		out = append(out, toolNote{oneLine(it.Result), st.comment})
+		n := toolNote{text: oneLine(it.Result), style: st.comment}
+		if it.Name == engine.AdvisorToolName {
+			first, _, _ := strings.Cut(it.Result, "\n")
+			n.text, n.full = oneLine(first), it.Result
+		}
+		out = append(out, n)
 	}
 	for _, a := range it.Answers {
-		out = append(out, toolNote{a, st.comment})
+		out = append(out, toolNote{text: a, style: st.comment})
 	}
 	if it.Note != "" {
-		out = append(out, toolNote{oneLine(it.Note), st.notice})
+		out = append(out, toolNote{text: oneLine(it.Note), style: st.notice})
 	}
 
 	return out

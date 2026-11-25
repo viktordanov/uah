@@ -207,6 +207,43 @@ func TestExplainSources(t *testing.T) {
 			vals: map[string]string{"agents.max_concurrent_threads_per_session": "2"},
 		},
 		{
+			name: "advisor.model from a file, which UAH_ADVISOR=on leaves as it is",
+			in:   func(in *app.Inputs) { in.Advisor = "on" },
+			o:    app.Origins{Env: map[string]string{app.EnvAdvisor: "on"}, Layers: config.Layers{User: config.Config{Advisor: config.Advisor{Model: "gpt-6.1-sol", MaxUses: new(2)}}}},
+			want: map[string]string{"advisor.model": "user file", "advisor.max_uses": "user file", "advisor.timeout": "default"},
+			vals: map[string]string{"advisor.model": "gpt-6.1-sol", "advisor.max_uses": "2", "advisor.timeout": "10m0s", "advisor.effort": "the session's"},
+		},
+		{
+			name: "UAH_ADVISOR=off turns advisor.model off",
+			in:   func(in *app.Inputs) { in.Advisor = "off" },
+			o:    app.Origins{Env: map[string]string{app.EnvAdvisor: "off"}, Layers: config.Layers{User: config.Config{Advisor: config.Advisor{Model: "gpt-6.1-sol"}}}},
+			want: map[string]string{"advisor.model": "env"},
+			vals: map[string]string{"advisor.model": "off"},
+		},
+		{
+			name: "a project's advisor.command replaces the user file's model, which has no source then",
+			in:   func(in *app.Inputs) { in.Workspace = "/ws" },
+			o: app.Origins{Layers: trusted(
+				config.Config{Advisor: config.Advisor{Model: "gpt-6.1-sol", Effort: "xhigh", MaxUses: new(2)}},
+				config.Config{Advisor: config.Advisor{Command: []string{"/opt/advise.sh", "--note", "two words"}, Input: "json"}},
+			)},
+			want: map[string]string{
+				"advisor.model": "default", "advisor.effort": "default", "advisor.command": "project file", "advisor.input": "project file",
+				"advisor.max_input_tokens": "default", "advisor.max_uses": "user file",
+			},
+			vals: map[string]string{
+				"advisor.model": "none", "advisor.effort": "the session's", "advisor.command": `/opt/advise.sh --note "two words"`, "advisor.input": "json",
+				"advisor.max_input_tokens": "150000",
+			},
+		},
+		{
+			name: "UAH_ADVISOR=off turns advisor.command off",
+			in:   func(in *app.Inputs) { in.Advisor = "off" },
+			o:    app.Origins{Env: map[string]string{app.EnvAdvisor: "off"}, Layers: config.Layers{User: config.Config{Advisor: config.Advisor{Command: []string{"claude"}}}}},
+			want: map[string]string{"advisor.command": "env"},
+			vals: map[string]string{"advisor.command": "off"},
+		},
+		{
 			name: "no model_instructions_file keeps uah's default prompt",
 			want: map[string]string{"model_instructions_file": "default"},
 			vals: map[string]string{"model_instructions_file": "uah's default prompt"},

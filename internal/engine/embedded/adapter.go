@@ -32,8 +32,10 @@ type switcher struct {
 	model   string
 	variant variant
 	clients map[variant]Client
-	// seen, when set, sees each request sent and the usage reported for it.
-	seen func(llm.Request, llm.Usage)
+	// seen, when set, sees each turn request sent, its response, the
+	// session's effort for it, before adaptive effort lowered it, and the
+	// remote compaction item that went in place of its placeholder.
+	seen func(llm.Request, llm.Response, string, remoteItem)
 	// cacheKey, when set, replaces the session's ID as the prompt cache key.
 	cacheKey string
 	// tools, when set, rewrites each request's tools, such as Bash for the
@@ -110,6 +112,10 @@ func (s *switcher) respond(ctx context.Context, req llm.Request, opts llm.Reques
 	_, retry := ctx.Value(noUpdatesKey{}).(bool)
 	s.mu.Lock()
 	v, model := s.variant, s.model
+	effort := string(req.Model.ReasoningEffort) // the session's, before updates or adaptive effort lower it
+	if v.ultra {
+		effort = effortUltra
+	}
 	line := effortLine{}
 	if !retry && s.updatingLocked(req.Model.ID) {
 		// The history's updates set the effort; the request keeps the base,
@@ -161,7 +167,8 @@ func (s *switcher) respond(ctx context.Context, req llm.Request, opts llm.Reques
 	resp, err = client.Respond(ctx, req, opts)
 	err = done(err)
 	if err == nil && s.seen != nil && !compacting {
-		s.seen(req, resp.Usage)
+		item, _ := ctx.Value(remoteItemsKey{}).(remoteItem)
+		s.seen(req, resp, effort, item)
 	}
 
 	return resp, updates, err
@@ -286,8 +293,9 @@ func (s *switcher) directKind(kind string) llm.Adapter {
 		}
 		// At ultra the runner's effort is max: a call that kept it goes at
 		// ultra, one that picked its own effort does not, unless it picked
-		// ultra (compact_effort).
-		v.ultra = req.Model.ReasoningEffort == effortUltra || v.ultra && req.Model.ReasoningEffort == llm.ReasoningEffortMax
+		// ultra (compact_effort). The advisor's effort is always its own.
+		kept := v.ultra && req.Model.ReasoningEffort == llm.ReasoningEffortMax && kind != kindAdvisor
+		v.ultra = req.Model.ReasoningEffort == effortUltra || kept
 		client, err := s.clientLocked(v)
 		s.mu.Unlock()
 		if err != nil {

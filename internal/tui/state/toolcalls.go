@@ -50,6 +50,8 @@ func (s *State) toolCall(e core.ToolCalled) Item {
 		it.Parts = mcpParts(e.Name, e.Arguments)
 	case e.Name == engine.QuestionToolName:
 		it.Verb, it.Parts = "ASK", []cmdparse.Part{{Text: questionParts(e.Arguments)}}
+	case e.Name == engine.AdvisorToolName:
+		it.Parts = []cmdparse.Part{{Text: engine.AdvisorToolName}}
 	}
 
 	return it
@@ -115,10 +117,17 @@ func (s *State) unmerge(key string) {
 }
 
 // onToolOutput puts a finished call's output on its line: the line that
-// says why a command failed, or an MCP call's result or error.
+// says why a command failed, an MCP call's result or error, or the
+// advisor's advice, whole, which the detailed view shows (failed, why it
+// got none, with the command's stderr).
 func (s *State) onToolOutput(e engine.ToolOutput) {
 	s.update("call:"+e.CallID, func(it *Item) {
 		switch {
+		case it.Name == engine.AdvisorToolName:
+			it.Result = displayText(e.Result)
+			if e.Error != "" {
+				it.ErrorLine = errorLine(e)
+			}
 		case e.Error != "" || e.Output != "":
 			it.ErrorLine = errorLine(e)
 		case isMCP(it.Name):
@@ -128,13 +137,13 @@ func (s *State) onToolOutput(e engine.ToolOutput) {
 }
 
 // errorLine is why a call failed: the last line of its error, else of its
-// output.
+// output, without control characters, which could act on the terminal.
 func errorLine(e engine.ToolOutput) string {
 	if e.Error != "" {
-		return lastLine(e.Error)
+		return displayText(lastLine(e.Error))
 	}
 
-	return lastLine(e.Output)
+	return displayText(lastLine(e.Output))
 }
 
 // attachApproval puts the auto-reviewer's approval under the call it

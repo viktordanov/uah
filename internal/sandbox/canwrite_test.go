@@ -88,3 +88,17 @@ func TestCanWriteAliases(t *testing.T) {
 	}
 	assert.False(t, p.CanWrite(filepath.Join(nfd, "sh-0123")), "the same directory under another normalization")
 }
+
+// TestPolicy_Changeable: a file a sandboxed command could change or swap:
+// in the workspace, or reached through a link in it, also to a directory
+// outside; one outside every writable root is not.
+func TestPolicy_Changeable(t *testing.T) {
+	ws := t.TempDir()
+	p := sandbox.Policy{Mode: sandbox.WorkspaceWrite, Workspace: ws}
+	require.NoError(t, os.Symlink("/usr/bin", filepath.Join(ws, "tools")))
+
+	assert.True(t, p.Changeable(filepath.Join(ws, "prog")))
+	assert.True(t, p.Changeable(filepath.Join(ws, "tools", "env")), "the link is the workspace's")
+	assert.False(t, p.Changeable("/usr/bin/env"))
+	assert.True(t, sandbox.Policy{Mode: sandbox.FullAccess}.Changeable("/usr/bin/env"), "with no sandbox, anything")
+}

@@ -155,6 +155,21 @@ func lastLine(text string) string {
 	return ""
 }
 
+// displayText is a model's text as the transcript shows it whole: without
+// escape sequences or control characters but line breaks and tabs, which
+// could act on the terminal.
+func displayText(text string) string {
+	text = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+			return r
+		}
+
+		return -1
+	}, ansi.Strip(text))
+
+	return strings.TrimSpace(text)
+}
+
 // firstLine is the first line that says something.
 func firstLine(text string) string {
 	for l := range strings.SplitSeq(ansi.Strip(text), "\n") {

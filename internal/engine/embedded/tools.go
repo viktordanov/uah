@@ -25,7 +25,7 @@ import (
 
 // tools builds the registry the coordinator runs: Bash, ViewImage, and
 // workspace skills, as the runner registers them, MCP tools, and Codex's
-// apply_patch, the agent tools, request_user_input, and the goal tools, with PreToolUse
+// apply_patch, the agent tools, request_user_input, the goal tools, and the advisor, with PreToolUse
 // hooks around them and the tool policy around those (policy.go). Its static definitions are the tools the model is offered,
 // so a tool added or changed here reaches both. approvals bounds the hooks
 // and approvals of the calls: the run's context, ended early by an
@@ -91,6 +91,8 @@ func (w *wiring) tools(ctx, approvals context.Context, req core.Request, session
 	registry = w.withAgents(registry, req)
 	registry = withQuestions(registry, questionTranslator{offered: w.offersQuestions(req), root: !isSubagent(req.SessionID), ctx: approvals, ask: w.askUser})
 	registry = withGoals(registry, goalTranslator{offered: w.offersGoals(req), root: !isSubagent(req.SessionID), ctx: approvals, goal: w.goal})
+	offered, refused := w.offersAdvisor(req)
+	registry = withAdvisor(registry, advisorTranslator{offered: offered, refused: refused}, w.e.cfg.Advisor.maxUses())
 
 	registry = withPreToolUse(approvals, registry, w.e.cfg.Hooks, req, w.l.SessionsDir)
 

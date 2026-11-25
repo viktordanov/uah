@@ -31,7 +31,8 @@ const elideMinTokens = 100
 
 // Elidable are the call IDs of the outputs in view that the rules elide
 // now, in order, without those already elided. SkillUse outputs are never
-// elided: a skill's body is instructions the model follows, not data.
+// elided: a skill's body is instructions the model follows, not data; nor
+// are the advisor's, whose advice the agent goes on following.
 func (e Elision) Elidable(view []llm.Item, elided []string) []string {
 	if e.AfterCalls <= 0 {
 		return nil
@@ -51,7 +52,7 @@ func (e Elision) Elidable(view []llm.Item, elided []string) []string {
 	for _, item := range view {
 		r, ok := item.Data.(llm.ToolResult)
 		call, known := calls[r.CallID]
-		if !ok || !known || call.Name == toolSkillUse || done[r.CallID] {
+		if !ok || !known || call.Name == toolSkillUse || call.Name == toolAdvisor || done[r.CallID] {
 			continue
 		}
 		age, tokens := n-1-after[r.CallID], EstimateTokens([]llm.Item{item})

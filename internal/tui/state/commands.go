@@ -32,6 +32,7 @@ func Commands() []Command {
 		{Name: "speed", Args: "[tier]", Help: "show or set processing speed", WhileBusy: true, run: cmdSpeed},
 		{Name: "fast", Help: "priority processing (needs the embedded engine)", WhileBusy: true, run: cmdFast},
 		{Name: "adaptive", Args: "[off|1-step|2-steps]", Help: "adaptive effort: think one or two effort levels less on follow-up turns after tool results; alone, the next value", WhileBusy: true, run: cmdAdaptive},
+		{Name: "advisor", Args: "[off|on|command|<model> [effort]]", Help: "the advisor, a stronger model or a command the agent asks for advice at key moments: show it, turn it off or on for the session, go back to the configured command, or pick its model", WhileBusy: true, Bare: true, run: cmdAdvisor},
 		{Name: "resume", Args: "[id]", Help: "open the session picker, or resume a session by ID prefix", run: cmdResume},
 		{Name: "new", Help: "start a new session", run: func(*State, string) []Effect { return []Effect{EffOpenSession{}} }},
 		{Name: "stop", Help: "interrupt the live run; queued messages stay", WhileBusy: true, run: func(s *State, _ string) []Effect { return s.interrupt() }},

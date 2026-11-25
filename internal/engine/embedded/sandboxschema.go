@@ -9,10 +9,11 @@ import (
 	"github.com/viktordanov/uah/internal/sandbox"
 )
 
-// jsonString is the JSON schema type of a string; schemaType is the key
-// that names a type.
+// jsonString and jsonObject are the JSON schema types of a string and an
+// object; schemaType is the key that names a type.
 const (
 	jsonString = "string"
+	jsonObject = "object"
 	schemaType = "type"
 )
 

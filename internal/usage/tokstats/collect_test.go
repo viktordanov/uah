@@ -16,6 +16,7 @@ import (
 	"github.com/viktordanov/uagent/testing/fixtures"
 
 	"github.com/viktordanov/uah/internal/compaction"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/usage/tokstats"
 	"github.com/viktordanov/uah/testing/harnesstest"
@@ -95,4 +96,34 @@ func TestCollect_WorkspaceFromRuns(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 2)
 	assert.Equal(t, env.Workspace, entries[1].Workspace)
+}
+
+// TestCollect_Advisor: a model call in the advisor log counts under the
+// source advisor; a command's call, which has no usage, and a line that
+// does not decode do not.
+func TestCollect_Advisor(t *testing.T) {
+	stateDir := t.TempDir()
+	sessionsDir := filepath.Join(stateDir, "sessions")
+	require.NoError(t, os.MkdirAll(sessionsDir, 0o700))
+	const id = "3f2a1b2c-0000-4000-8000-000000000003"
+	at := time.Date(2026, 11, 24, 10, 0, 0, 0, time.UTC)
+	var lines []byte
+	for _, rec := range []engine.AdvisorRecord{
+		{At: at, CallID: "c1", Model: "gpt-6.2-sol", Effort: "high", DurationMS: 6000, Usage: engine.AdvisorUsage{Input: 9000, Cached: 8000, Output: 300}},
+		{At: at, CallID: "c2", Model: engine.AdvisorCommandPrefix + "claude", DurationMS: 20000},
+	} {
+		line, err := json.Marshal(rec)
+		require.NoError(t, err)
+		lines = append(append(lines, line...), '\n')
+	}
+	lines = append(lines, "not json\n"...)
+	require.NoError(t, os.WriteFile(filepath.Join(sessionsDir, id+engine.AdvisorLogSuffix), lines, 0o600))
+
+	entries, err := tokstats.Collect(context.Background(), stateDir)
+
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the command's call has no tokens to count")
+	assert.Equal(t, tokstats.SourceAdvisor, entries[0].Source)
+	assert.Equal(t, "gpt-6.2-sol", entries[0].Model)
+	assert.Equal(t, int64(9000), entries[0].Tokens.InputTokens)
 }

@@ -160,6 +160,9 @@ type Config struct {
 	MCPOAuthCallbackURL      string `toml:"mcp_oauth_callback_url"`
 	// Agents configures subagents, as Codex's [agents].
 	Agents Agents `toml:"agents"`
+	// Advisor configures the advisor tool: a stronger model the agent asks
+	// for advice (docs/design/advisor.md).
+	Advisor Advisor `toml:"advisor"`
 
 	// Projects are keyed by absolute workspace path.
 	Projects map[string]Project `toml:"projects"`
@@ -254,6 +257,27 @@ type Context struct {
 	// Modules are module ids to turn on that ship turned off, such as the
 	// library's "go" (internal/contextprep).
 	Modules []string `toml:"modules"`
+}
+
+// Advisor is the [advisor] table. The advisor is on when Model or Command
+// is set, never both. Model is the model backend's: a model on the
+// openai-codex subscription, at Effort (the session's when unset).
+// Command is the command backend's: a program and its arguments that read
+// the transcript on stdin, as Input ("text" when unset, or "json"), cut to
+// MaxInputTokens (150000 when unset). Timeout is how long a call waits
+// ("10m" when unset), MaxUses how many calls a run makes (5 when unset),
+// and Subagents offers it to subagents too (off when unset). A file that
+// sets one backend drops the other one's keys from the files before it
+// (mergeAdvisor); an empty Command drops an earlier file's.
+type Advisor struct {
+	Model          string   `toml:"model"`
+	Effort         string   `toml:"effort"`
+	Timeout        string   `toml:"timeout"`
+	MaxUses        *int     `toml:"max_uses"`
+	Subagents      *bool    `toml:"subagents"`
+	Command        []string `toml:"command"`
+	Input          string   `toml:"input"`
+	MaxInputTokens *int64   `toml:"max_input_tokens"`
 }
 
 // Agents configures subagents with Codex's [agents] keys. Unset values

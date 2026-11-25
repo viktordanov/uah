@@ -19,6 +19,8 @@ const (
 	toolViewImage = "ViewImage"
 	toolSpawn     = "spawn_agent"
 	toolClose     = "close_agent"
+	// toolAdvisor's outputs, like SkillUse's, are never elided (Elidable).
+	toolAdvisor = "advisor"
 )
 
 // Facts are what a stretch of history established that later turns rely

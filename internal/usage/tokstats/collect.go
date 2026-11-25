@@ -1,8 +1,10 @@
 package tokstats
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,6 +14,7 @@ import (
 	"github.com/viktordanov/uagent/core"
 
 	"github.com/viktordanov/uah/internal/compaction"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/session"
 	"github.com/viktordanov/uah/internal/store"
 )
@@ -24,8 +27,9 @@ type sessionInfo struct {
 }
 
 // Collect reads every session's tokens in the state directory: each
-// finished run's from the session index, and each compaction call's from
-// the sessions' compaction logs, which no run's totals hold.
+// finished run's from the session index, and each compaction and advisor
+// call's from the sessions' compaction and advisor logs, which no run's
+// totals hold.
 func Collect(ctx context.Context, stateDir string) ([]Entry, error) {
 	runs, err := store.TokensIn(ctx, stateDir)
 	if err != nil {
@@ -61,8 +65,45 @@ func Collect(ctx context.Context, stateDir string) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	advisors, err := advisorEntries(sessionsDir, info)
+	if err != nil {
+		return nil, err
+	}
 
-	return append(entries, compactions...), nil
+	return slices.Concat(entries, compactions, advisors), nil
+}
+
+// advisorEntries are the advisor calls in the sessions' advisor logs
+// (engine.AdvisorRecord); a line that does not decode is skipped.
+func advisorEntries(sessionsDir string, info func(string) sessionInfo) ([]Entry, error) {
+	files, err := os.ReadDir(sessionsDir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	var out []Entry
+	for _, f := range files {
+		id, ok := strings.CutSuffix(f.Name(), engine.AdvisorLogSuffix)
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(sessionsDir, f.Name()))
+		if err != nil {
+			return nil, err
+		}
+		for line := range bytes.SplitSeq(data, []byte("\n")) {
+			var rec engine.AdvisorRecord
+			if json.Unmarshal(line, &rec) != nil || rec.Usage.Input+rec.Usage.Output == 0 {
+				continue
+			}
+			u := rec.Usage
+			out = append(out, Entry{
+				At: rec.At, Session: id, Model: rec.Model, Workspace: info(id).workspace, Source: SourceAdvisor,
+				Tokens: core.Tokens{InputTokens: u.Input, CachedInputTokens: u.Cached, OutputTokens: u.Output, ReasoningTokens: u.Reasoning},
+			})
+		}
+	}
+
+	return out, nil
 }
 
 // compactionEntries are the summary calls in the sessions' compaction

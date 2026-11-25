@@ -50,6 +50,7 @@ Design:
 32. [Scripted tool calls](design/tool-bridge.md): the tool bridge: why code mode is built on the shell, how `uah tool` reaches the session's MCP tools through a socket in `$TMPDIR` with the same policy, hooks, and approvals, what the model is told in Bash's description and the prepared context, and the planned A/B test.
 33. [Program status](design/program-status.md): OSC 7501, the program status protocol: what the TUI reports for the session and each subagent (idle, working, blocked on an approval, a question, or a login, done, error), how a report goes out in the frame's write, and what was left out (progress, feature detection, tmux).
 34. [Token statistics](design/token-stats.md): `uah stats`, the tokens of every session by day, week, month, model, workspace, or source, with descriptive statistics; what uah records, what TokScale does, the gaps (runs across midnight, auto-review), and the open decisions.
+35. [The advisor](design/advisor.md): how Claude Code's advisor tool works (the server tool, what it forwards, the system prompt's section on when to call it), and uah's `advisor`: a stronger model on the openai-codex subscription, or any program that reads the conversation on stdin, such as `claude -p` or `uah exec -`; the limits, the trust rules, and what the real runs found
 
 Reference:
 

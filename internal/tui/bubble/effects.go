@@ -207,6 +207,15 @@ func (m Model) run(e state.Effect) term.Cmd { //nolint:gocyclo // a dispatch swi
 
 			return state.MCPListed{Servers: servers, Supported: ok, Verbose: e.Verbose}
 		}
+	case state.EffAdvisor:
+		return m.calls.next(func() term.Msg { // in order with the messages, whose runs it decides
+			if sess == nil {
+				return fail(errNoSession)
+			}
+			status, ok, err := sess.Advisor(e.Arg)
+
+			return state.AdvisorShown{Status: status, OK: ok, Err: err}
+		})
 	case state.EffContext:
 		return func() term.Msg {
 			if sess == nil {

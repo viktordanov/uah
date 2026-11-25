@@ -52,7 +52,10 @@ type Provider struct {
 	// RemoteCompaction says whether the provider compacts a history into an
 	// encrypted item (remotecompact.go), as Codex's OpenAI providers do.
 	RemoteCompaction bool
-	NewClient        func(ClientConfig) (Client, error)
+	// Advisor says whether the advisor's model backend runs on the
+	// provider (advisor.go): the subscription's models on openai-codex.
+	Advisor   bool
+	NewClient func(ClientConfig) (Client, error)
 }
 
 var errNoPriority = errors.New("this provider has no priority processing")
@@ -69,6 +72,19 @@ func Priority(name string) bool {
 	return false
 }
 
+// AdvisorProvider reports whether the named provider of DefaultProviders
+// runs the advisor's model backend, for checks made before an engine
+// exists.
+func AdvisorProvider(name string) bool {
+	for _, p := range DefaultProviders() {
+		if p.Name == name {
+			return p.Advisor
+		}
+	}
+
+	return false
+}
+
 // DefaultProviders are the runner's providers, with clients whose retries
 // the engine can watch (clients.go).
 func DefaultProviders() []Provider {
@@ -78,7 +94,7 @@ func DefaultProviders() []Provider {
 			Name: "openai", BaseURL: "https://api.openai.com/v1", DefaultModel: "gpt-6-astra",
 			APIKeyEnv: "OPENAI_API_KEY", Priority: true, WebSearch: true, RemoteCompaction: true, NewClient: openaiClient,
 		},
-		{Name: "openai-codex", BaseURL: openaicodex.BaseURL, Priority: true, WebSearch: true, RemoteCompaction: true, NewClient: codexClient},
+		{Name: "openai-codex", BaseURL: openaicodex.BaseURL, Priority: true, WebSearch: true, RemoteCompaction: true, Advisor: true, NewClient: codexClient},
 		{Name: "openrouter", BaseURL: "https://openrouter.ai/api/v1", APIKeyEnv: "OPENROUTER_API_KEY", NewClient: noPriority(openrouterClient)},
 		{Name: "fireworks", BaseURL: "https://api.fireworks.ai/inference/v1", APIKeyEnv: "FIREWORKS_API_KEY", NewClient: noPriority(fireworksClient)},
 	}

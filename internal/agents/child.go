@@ -79,9 +79,10 @@ type child struct {
 	// stopped, its error until it is sent work again.
 	asking  int
 	stalled string
-	// waits are its running wait_shell calls, by call ID, which also keep
-	// it from being stalled: such a wait sends no event until it ends, by
-	// its timeout at the latest (max_wait).
+	// waits are its running wait_shell and advisor calls, by call ID,
+	// which also keep it from being stalled: such a call sends no event
+	// until it ends, by its timeout at the latest (max_wait, the
+	// advisor's timeout).
 	waits map[string]bool
 	// unstalled is closed once a stall's interrupt is in: the next message
 	// waits for it (a session that cannot take the interrupt cannot take
@@ -318,11 +319,12 @@ func (c *child) woken() bool {
 	return true
 }
 
-// trackWaits keeps the child's running wait_shell calls. It holds m.mu.
+// trackWaits keeps the child's running wait_shell and advisor calls. It
+// holds m.mu.
 func (c *child) trackWaits(e core.Event) {
 	switch e := e.(type) {
 	case core.ToolCalled:
-		if e.Name == toolWaitShell {
+		if e.Name == toolWaitShell || e.Name == engine.AdvisorToolName {
 			c.waits[e.CallID] = true
 		}
 	case core.ToolFinished:
@@ -523,8 +525,8 @@ func (m *Manager) forward(c *child, e core.Event) {
 // no approval open: its work ends as an error, so its parent's waits and
 // the parent's status stop waiting for it, and it is interrupted, which
 // waits on its loop in a goroutine of its own, since a stalled loop may
-// never answer. A child that is not running, waits on an approval or a
-// wait_shell, or runs its SubagentStop hooks (which time out on their own, and whose
+// never answer. A child that is not running, waits on an approval, a
+// wait_shell, or an advisor call, or runs its SubagentStop hooks (which time out on their own, and whose
 // result would race the stall) is checked again later, as is one whose clock an event or an approval
 // restarted while the timer fired.
 func (m *Manager) stall(c *child) {

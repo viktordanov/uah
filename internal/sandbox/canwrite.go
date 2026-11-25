@@ -45,6 +45,25 @@ func (p Policy) CanWriteResolved(path string) bool {
 	return inside
 }
 
+// Changeable reports whether a sandboxed command could change the file at
+// path or put another in its place: the file or its directory is writable
+// (with symlinks resolved), or a symlink on the way lies in a directory
+// that is, so a command could point it elsewhere. A program that runs
+// outside the sandbox must not be changeable.
+func (p Policy) Changeable(path string) bool {
+	path = filepath.Clean(path)
+	if p.CanWrite(path) || p.CanWrite(filepath.Dir(path)) {
+		return true
+	}
+	for dir := path; filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
+		if info, err := os.Lstat(dir); err == nil && info.Mode()&os.ModeSymlink != 0 && p.CanWrite(filepath.Dir(dir)) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // Protects reports whether path is, or is inside, a path the policy keeps
 // read-only: a protected path of one of its writable roots, or one of its
 // ReadOnly paths, also under another name. A writable root there would

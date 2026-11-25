@@ -187,6 +187,7 @@ func TestToolPolicy_KnowsEveryTool(t *testing.T) {
 	names := append([]string{engine.QuestionToolName, "web_search", "Bash", "ViewImage", "SkillUse", patch.ToolName}, goal.ToolNames...)
 	names = append(names, mcp.ListResourcesTool, mcp.ListResourceTemplatesTool, mcp.ReadResourceTool)
 	names = append(names, embedded.ShellToolNames...)
+	names = append(names, engine.AdvisorToolName)
 	for _, n := range agents.ToolNames() {
 		if n != "wait" { // wait_agent's old name: resolved for old sessions, never offered
 			names = append(names, n)

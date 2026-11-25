@@ -245,12 +245,34 @@ func (r Record) summaryItems() []llm.Item {
 
 // RemoteMarker identifies a remote compaction's placeholder in a request
 // body. It needs no escaping in JSON.
-func RemoteMarker(r Record) string { return "uah-remote-compaction:" + r.Hash[:min(16, len(r.Hash))] }
+func RemoteMarker(r Record) string { return remoteMarkerPrefix + r.Hash[:min(16, len(r.Hash))] }
+
+const remoteMarkerPrefix = "uah-remote-compaction:"
+
+// remotePlaceholderText follows the marker in a RemotePlaceholder.
+const remotePlaceholderText = "The earlier conversation was compacted by the provider into an encrypted item that this model cannot read."
+
+// IsRemotePlaceholder reports whether the item is the message that stands
+// for a remote compaction's item (RemotePlaceholder), whole: a user
+// message that only starts with a marker is not.
+func IsRemotePlaceholder(item llm.Item) bool {
+	m, ok := item.Data.(llm.Message)
+	if !ok || !IsUserMessage(item) {
+		return false
+	}
+	marker, ok := strings.CutPrefix(m.Text, "[")
+	if !ok {
+		return false
+	}
+	marker, ok = strings.CutSuffix(marker, "] "+remotePlaceholderText)
+
+	return ok && strings.HasPrefix(marker, remoteMarkerPrefix) && !strings.ContainsAny(marker, " []\n")
+}
 
 // RemotePlaceholder is the message that stands for a remote compaction's
 // item. A provider that cannot take the item reads it as is.
 func RemotePlaceholder(r Record) string {
-	return "[" + RemoteMarker(r) + "] The earlier conversation was compacted by the provider into an encrypted item that this model cannot read."
+	return "[" + RemoteMarker(r) + "] " + remotePlaceholderText
 }
 
 // SummaryText is what the summary message carries after the prefix: the

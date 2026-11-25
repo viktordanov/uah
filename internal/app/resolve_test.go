@@ -15,6 +15,7 @@ import (
 	"github.com/viktordanov/uah/internal/compaction"
 	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/engine"
+	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/goal"
 	"github.com/viktordanov/uah/internal/review"
 	"github.com/viktordanov/uah/internal/rules"
@@ -54,6 +55,34 @@ func TestResolve(t *testing.T) {
 			name: "max_wait bounds the waits",
 			cfg:  config.Config{MaxWait: "20m"},
 			want: func(r *app.Resolved) { r.MaxWait = 20 * time.Minute },
+		},
+		{
+			name: "[advisor]: a model, its effort, a timeout, a limit, and subagents",
+			cfg:  config.Config{Advisor: config.Advisor{Model: "gpt-6.1-sol", Effort: "xhigh", Timeout: "2s", MaxUses: new(1), Subagents: new(true)}},
+			want: func(r *app.Resolved) {
+				r.Advisor = embedded.Advisor{
+					Model: "gpt-6.1-sol", Effort: "xhigh", Input: engine.AdvisorInputText, MaxInputTokens: engine.DefaultAdvisorMaxInputTokens,
+					Timeout: 2 * time.Second, MaxUses: 1, Subagents: true,
+				}
+			},
+		},
+		{
+			name: "[advisor]: a command, its input, and its token limit",
+			cfg:  config.Config{Advisor: config.Advisor{Command: []string{"claude", "-p"}, Input: "json", MaxInputTokens: new(int64(80000))}},
+			want: func(r *app.Resolved) {
+				r.Advisor.Command, r.Advisor.Input, r.Advisor.MaxInputTokens = []string{"claude", "-p"}, engine.AdvisorInputJSON, 80000
+			},
+		},
+		{
+			name: "[advisor]: an empty command is none",
+			cfg:  config.Config{Advisor: config.Advisor{Command: []string{}}},
+			want: func(*app.Resolved) {},
+		},
+		{
+			name: "UAH_ADVISOR=off turns the advisor off",
+			in:   func(in *app.Inputs) { in.Advisor = "off" },
+			cfg:  config.Config{Advisor: config.Advisor{Model: "gpt-6.1-sol"}},
+			want: func(r *app.Resolved) { r.Advisor.Model, r.Advisor.Off = "gpt-6.1-sol", true },
 		},
 		{
 			name: "max_wait may be as long as a day",
@@ -457,6 +486,10 @@ func TestResolve(t *testing.T) {
 				Agents:            app.Agents{Enabled: true, MaxThreads: 6, MaxDepth: 1, ReviewLimits: defaultReviewLimits},
 				WebSearch:         app.WebSearchLive,
 				Goals:             goal.Settings{MaxContinuations: goal.DefaultMaxContinuations, TurnsPerRun: goal.DefaultTurnsPerRun},
+				Advisor: embedded.Advisor{
+					Input: engine.AdvisorInputText, MaxInputTokens: engine.DefaultAdvisorMaxInputTokens,
+					Timeout: engine.DefaultAdvisorTimeout, MaxUses: engine.DefaultAdvisorMaxUses,
+				},
 			}
 			tt.want(&want)
 			// No test names a fallback model itself.
@@ -506,6 +539,16 @@ func TestResolveUsageErrors(t *testing.T) {
 		{name: "invalid adaptive_effort", cfg: config.Config{AdaptiveEffort: "on"}, want: `invalid adaptive effort "on" (want off, 1-step, or 2-steps)`},
 		{name: "invalid approvals_reviewer", cfg: config.Config{ApprovalsReviewer: "robot"}, want: `invalid approvals_reviewer "robot"`},
 		{name: "invalid review effort", cfg: config.Config{Review: config.Review{Effort: "huge"}}, want: `invalid review.effort "huge"`},
+		{name: "invalid advisor effort", cfg: config.Config{Advisor: config.Advisor{Effort: "huge"}}, want: `invalid advisor.effort "huge"`},
+		{name: "invalid advisor timeout", cfg: config.Config{Advisor: config.Advisor{Timeout: "0s"}}, want: `invalid advisor.timeout "0s"`},
+		{name: "invalid advisor max_uses", cfg: config.Config{Advisor: config.Advisor{MaxUses: new(0)}}, want: "invalid advisor.max_uses 0 (want 1 or more)"},
+		{name: "advisor model and command", cfg: config.Config{Advisor: config.Advisor{Model: "m", Command: []string{"claude"}}}, want: "advisor.model and advisor.command are both set; set one"},
+		{name: "advisor effort with a command", cfg: config.Config{Advisor: config.Advisor{Effort: "high", Command: []string{"claude"}}}, want: "advisor.effort is for advisor.model"},
+		{name: "advisor command with a relative program", cfg: config.Config{Advisor: config.Advisor{Command: []string{"./advise.sh"}}}, want: `advisor.command: "./advise.sh" is a relative path`},
+		{name: "advisor command without a program", cfg: config.Config{Advisor: config.Advisor{Command: []string{" ", "-p"}}}, want: "advisor.command starts with an empty program name"},
+		{name: "invalid advisor input", cfg: config.Config{Advisor: config.Advisor{Command: []string{"claude"}, Input: "xml"}}, want: `invalid advisor.input "xml" (want text or json)`},
+		{name: "invalid advisor max_input_tokens", cfg: config.Config{Advisor: config.Advisor{MaxInputTokens: new(int64(0))}}, want: "invalid advisor.max_input_tokens 0 (want 1 or more)"},
+		{name: "invalid UAH_ADVISOR", in: func(in *app.Inputs) { in.Advisor = "maybe" }, want: `invalid UAH_ADVISOR "maybe" (want on or off)`},
 		{name: "invalid review timeout", cfg: config.Config{Review: config.Review{Timeout: "-1s"}}, want: `invalid review.timeout "-1s"`},
 		{name: "relative review policy_file", cfg: config.Config{Review: config.Review{PolicyFile: "review.md"}}, want: `invalid review.policy_file "review.md"`},
 		{name: "invalid agents.max_concurrent_threads_per_session", cfg: config.Config{Agents: config.Agents{MaxConcurrentThreadsPerSession: new(0)}}, want: "invalid agents.max_concurrent_threads_per_session 0"},

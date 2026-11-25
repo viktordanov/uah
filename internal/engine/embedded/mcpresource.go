@@ -30,7 +30,7 @@ const argServer = "server"
 // resourceTools are the tools' definitions in Codex's order.
 func resourceTools() []tool.Definition {
 	object := func(props map[string]any, required ...string) map[string]any {
-		out := map[string]any{schemaType: "object", "properties": props, "additionalProperties": false}
+		out := map[string]any{schemaType: jsonObject, "properties": props, "additionalProperties": false}
 		if len(required) > 0 {
 			out["required"] = required
 		}

@@ -121,7 +121,8 @@ type Item struct {
 	Verb  string
 	Parts []cmdparse.Part
 	// ErrorLine says why the call failed; Result sums up an MCP call's
-	// result; Note is the auto-reviewer's approval of it (toolcalls.go).
+	// result, or is the advisor's advice; Note is the auto-reviewer's
+	// approval of it (toolcalls.go).
 	ErrorLine, Result, Note string
 	// Answers are what the user answered to a request_user_input call, a
 	// line per question (questions.go).

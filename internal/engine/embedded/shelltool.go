@@ -178,7 +178,7 @@ const schemaProperties = "properties"
 // objectSchema is a JSON schema object with these properties and one
 // required.
 func objectSchema(props map[string]any, required string) map[string]any {
-	return map[string]any{schemaType: "object", schemaProperties: props, "required": []any{required}}
+	return map[string]any{schemaType: jsonObject, schemaProperties: props, "required": []any{required}}
 }
 
 // bashWithBackground is Bash with the background argument.

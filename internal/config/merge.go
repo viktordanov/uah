@@ -80,6 +80,7 @@ func merge(base, over Config) Config {
 	mergeEnv(&base.ShellEnvironmentPolicy, over.ShellEnvironmentPolicy)
 	mergeInstructions(&base, over)
 	mergeAgents(&base.Agents, over.Agents)
+	mergeAdvisor(&base.Advisor, over.Advisor)
 	base.Hooks = mergeMap(base.Hooks, over.Hooks, func(a, b []Hook) []Hook { return slices.Concat(a, b) })
 	base.MCPServers = mergeMap(base.MCPServers, over.MCPServers, func(_, b mcp.ServerConfig) mcp.ServerConfig { return b })
 	set(&base.MCPOAuthCredentialsStore, over.MCPOAuthCredentialsStore)
@@ -212,6 +213,36 @@ func mergeAgents(base *Agents, over Agents) {
 	}
 	set(&base.DefaultSubagentModel, over.DefaultSubagentModel)
 	set(&base.DefaultSubagentReasoningEffort, over.DefaultSubagentReasoningEffort)
+}
+
+// mergeAdvisor merges a file's [advisor] over the files before it. A file
+// that sets model drops their command backend's keys, and one that sets a
+// command their model and effort, so a project's command replaces the
+// user file's model rather than conflicting with it. An empty command
+// drops only an earlier command.
+func mergeAdvisor(base *Advisor, over Advisor) {
+	switch {
+	case over.Model != "":
+		base.Command, base.Input, base.MaxInputTokens = nil, "", nil
+	case len(over.Command) > 0:
+		base.Model, base.Effort = "", ""
+	}
+	set(&base.Model, over.Model)
+	set(&base.Effort, over.Effort)
+	set(&base.Timeout, over.Timeout)
+	set(&base.Input, over.Input)
+	if over.MaxUses != nil {
+		base.MaxUses = over.MaxUses
+	}
+	if over.Subagents != nil {
+		base.Subagents = over.Subagents
+	}
+	if over.Command != nil {
+		base.Command = over.Command
+	}
+	if over.MaxInputTokens != nil {
+		base.MaxInputTokens = over.MaxInputTokens
+	}
 }
 
 func mergeCompaction(base *Config, over Config) {

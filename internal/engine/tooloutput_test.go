@@ -48,6 +48,17 @@ func TestToolOutputFromItem(t *testing.T) {
 
 	_, ok = engine.ToolOutputFromItem(item(`{"ID":"o","Type":"remote_job","Status":"completed","State":{"Plan":{"Type":"uah.apply_patch"}}}`))
 	assert.False(t, ok, "a patch is PatchApplied's")
+
+	advice := strings.Repeat("a", 5000) + "end"
+	out, ok = engine.ToolOutputFromItem(item(`{"ID":"o","Type":"remote_job","Status":"completed","State":{"Plan":{"Type":"uah.advisor"},"TerminalResult":"` + advice + `"}}`))
+	assert.True(t, ok)
+	assert.Equal(t, advice, out.Result, "the advice whole")
+
+	out, ok = engine.ToolOutputFromItem(item(`{"ID":"o","Type":"remote_job","Status":"failed","State":{"Plan":{"Type":"uah.advisor"},` +
+		`"TerminalResult":"The advisor is unavailable (timeout after 10m); go on without it.","TerminalError":"timeout after 10m"}}`))
+	assert.True(t, ok)
+	assert.Equal(t, "timeout after 10m", out.Error, "a call that got no advice: why")
+	assert.Equal(t, "The advisor is unavailable (timeout after 10m); go on without it.", out.Result, "what the agent read, for the detailed view")
 }
 
 // TestToolOutputFromItem_Skips: the quick test before the parse passes

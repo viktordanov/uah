@@ -15,18 +15,20 @@ import (
 )
 
 // The sources an Entry comes from: a session's (the TUI, uah exec, a
-// subagent, a /review's reviewer), or a compaction's summary call.
+// subagent, a /review's reviewer), a compaction's summary call, or an
+// advisor call.
 const (
 	SourceTUI        = "tui"
 	SourceExec       = "exec"
 	SourceSubagent   = "subagent"
 	SourceReview     = "review"
 	SourceCompaction = "compaction"
+	SourceAdvisor    = "advisor"
 	SourceUnknown    = "unknown"
 )
 
-// Entry is one run's tokens, or one compaction call's (Run false), at the
-// time it started.
+// Entry is one run's tokens, or one compaction or advisor call's (Run
+// false), at the time it started.
 type Entry struct {
 	At                                time.Time
 	Session, Model, Workspace, Source string

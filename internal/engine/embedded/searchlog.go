@@ -109,7 +109,12 @@ func (l *searchLog) add(records []searchRecord) error {
 	return nil
 }
 
+// snapshot is the log's records; a nil log, a provider's without web
+// search, has none.
 func (l *searchLog) snapshot() []searchRecord {
+	if l == nil {
+		return nil
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 

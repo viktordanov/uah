@@ -191,6 +191,7 @@ func inputs(cmd *cli.Command) app.Inputs {
 		EffortUpdates:      os.Getenv(app.EnvEffortUpdates),
 		RequestUserInput:   os.Getenv(app.EnvRequestUserInput),
 		ToolBridge:         os.Getenv(app.EnvToolBridge),
+		Advisor:            os.Getenv(app.EnvAdvisor),
 		Tools:              toolsFlag(cmd),
 		DenyTools:          toolpolicy.Parse(cmd.String(flagDenyTools)),
 		NoSkills:           cmd.Bool("no-skills"),

@@ -203,7 +203,8 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 	if err := w.effortUpdates(ctx, sw, s, req); err != nil {
 		return nil, err
 	}
-	operations := w.commands.wrap(withPolicyOperations(operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newShellJobs(runCtx, &w.e.shells, w.shellSession, string(s.id), filepath.Join(w.l.SessionsDir, "operations", string(s.id), "shells")), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx)), w.opAllowed))
+	advisor := w.advisorJobs(runCtx, sw, req, string(s.id))
+	operations := w.commands.wrap(withPolicyOperations(operation.NewLocalOperationManager(runCtx, newMCPJobs(runCtx, w.e.cfg.MCP), newAgentJobs(runCtx, w.e.cfg.Subagents, string(s.id)), newShellJobs(runCtx, &w.e.shells, w.shellSession, string(s.id), filepath.Join(w.l.SessionsDir, "operations", string(s.id), "shells")), newPatchJobs(runCtx), newQuestionJobs(runCtx), newGoalJobs(runCtx), advisor), w.opAllowed))
 	first := compaction.Trigger("")
 	switch {
 	case opts.Clear:
@@ -240,7 +241,7 @@ func (w *wiring) start(ctx context.Context, opts engine.Options) (*agent, error)
 		LLM:                   comp,
 		Tools:                 registry,
 		Operations:            operations,
-		Wake:                  wakePolicy(w.e.cfg.WakeHold, w.e.cfg.MaxWait, w.e.cfg.Subagents),
+		Wake:                  wakePolicy(w.e.cfg.WakeHold, w.e.cfg.MaxWait, w.e.cfg.Advisor.timeout(), w.e.cfg.Subagents),
 		EffortUpdate:          sw.effortUpdate,
 		Continue:              continueWith(opts.Continue),
 	})

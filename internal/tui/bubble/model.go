@@ -460,7 +460,7 @@ func trimmed(s string) string { return strings.TrimSpace(s) }
 // needsSession reports whether an effect talks to the open session.
 func needsSession(e state.Effect) bool {
 	switch e.(type) {
-	case state.EffSubmit, state.EffSteer, state.EffSteerQueued, state.EffSetSettings, state.EffShell:
+	case state.EffSubmit, state.EffSteer, state.EffSteerQueued, state.EffSetSettings, state.EffShell, state.EffAdvisor:
 		return true
 	}
 

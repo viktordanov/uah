@@ -175,10 +175,13 @@ func orDefault(n, d int) int {
 	return n
 }
 
+// noneText is how `uah config` shows a limit or a model that is not set.
+const noneText = "none"
+
 // limitText is a limit as `uah config` shows it: the duration, or "none".
 func limitText(d time.Duration) string {
 	if d == 0 {
-		return "none"
+		return noneText
 	}
 
 	return d.String()
@@ -188,7 +191,7 @@ func limitText(d time.Duration) string {
 // "none".
 func limitCount(n int64) any {
 	if n == 0 {
-		return "none"
+		return noneText
 	}
 
 	return n

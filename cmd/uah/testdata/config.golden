@@ -19,6 +19,14 @@ adaptive_effort                                   off                           
 context_preparation                               true                          default
 tools.experimental_request_user_input.enabled     true                          default
 tools.bridge.enabled                              true                          default
+advisor.model                                     none                          default
+advisor.effort                                    the session's                 default
+advisor.command                                   none                          default
+advisor.input                                     text                          default
+advisor.max_input_tokens                          150000                        default
+advisor.timeout                                   10m0s                         default
+advisor.max_uses                                  5                             default
+advisor.subagents                                 false                         default
 model_verbosity                                   low                           default
 permission_mode                                   read-only                     env
 sandbox_mode                                      read-only                     env

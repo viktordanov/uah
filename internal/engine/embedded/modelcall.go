@@ -26,8 +26,9 @@ import (
 // scanner (sse.go) report to. See docs/design/streaming.md.
 
 // The kinds of model request: the coordinator's turns, and direct calls
-// (a compaction summary, an auto-review), which report only their retries.
-const kindTurn, kindDirect, kindReview = "turn", "direct", "review"
+// (a compaction summary, an auto-review, an advisor call), which report
+// only their retries.
+const kindTurn, kindDirect, kindReview, kindAdvisor = "turn", "direct", "review", "advisor"
 
 // callKey carries a request's modelCall to the transport.
 type callKey struct{}
@@ -123,11 +124,14 @@ func (s *switcher) observe(ctx context.Context, kind string) (context.Context, f
 	if id := s.latestResponse.Load(); id != nil {
 		c.parentResponse = *id
 	}
-	if kind != kindReview {
+	if kind != kindReview && kind != kindAdvisor { // neither continues the session's responses
 		c.latestResponse = &s.latestResponse
 	}
-	if kind == kindTurn {
+	switch kind {
+	case kindTurn:
 		c.text, c.log = s.text, s.searches
+	case kindAdvisor: // the advisor reads the searches the agent saw; it runs none
+		c.log = s.searches
 	}
 	c.remote, _ = ctx.Value(remoteCallKey{}).(*remoteCall)
 	s.callsMu.Lock()

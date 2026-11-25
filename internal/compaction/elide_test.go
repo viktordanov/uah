@@ -44,6 +44,14 @@ func TestElidable(t *testing.T) {
 		calls(5, func(int) int { return 200 }),
 	)
 	assert.NotContains(t, rules.Elidable(skill, nil), "s", "a skill's body stays")
+
+	advice := history(
+		[]llm.Item{toolCall("a", "advisor", map[string]any{}), result("a", strings.Repeat("a", 40_000))},
+		calls(5, func(int) int { return 200 }),
+	)
+	assert.NotContains(t, rules.Elidable(advice, nil), "a", "the advisor's advice stays")
+	_, stubbed, _ := compaction.ElideToFit(advice, 2_000)
+	assert.Contains(t, stubbed, "a", "a history over the window may still stub it")
 }
 
 func TestElide_StubsAndStaysPut(t *testing.T) {

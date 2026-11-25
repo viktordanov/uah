@@ -1,6 +1,7 @@
 package render
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
@@ -214,7 +215,7 @@ func (st *Styles) detailedNotes(it state.Item, w int) []string {
 	indent := strings.Repeat(" ", 2+1+1+ansi.StringWidth(it.Name)+2) // "  ✓ Bash  "
 	var out []string
 	for _, n := range st.toolNotes(it) {
-		out = append(out, styleLines(wrapPrefixed(n.text, w, indent, indent), n.style)...)
+		out = append(out, styleLines(wrapPrefixed(cmp.Or(n.full, n.text), w, indent, indent), n.style)...)
 	}
 
 	return out

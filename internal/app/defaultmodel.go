@@ -2,9 +2,12 @@ package app
 
 import (
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/models"
 	"github.com/viktordanov/uah/internal/session"
 )
@@ -72,4 +75,40 @@ func effortNotice(c models.Catalog, s session.Settings) string {
 	}
 
 	return fmt.Sprintf("%s does not list effort %s (it lists %s); the provider may refuse it", s.Model, s.Effort, strings.Join(m.ReasoningLevels, ", "))
+}
+
+// advisorNotices are the warnings about the advisor: its model is set but
+// the session's provider cannot run it, so it is off, the provider's list
+// lacks the model, or PATH lacks its command.
+func advisorNotices(c models.Catalog, r Resolved) []string {
+	a := r.Advisor
+	switch {
+	case a.Off:
+		return nil
+	case len(a.Command) > 0:
+		return advisorCommandNotices(a.Command[0])
+	case a.Model == "":
+		return nil
+	case !embedded.AdvisorProvider(r.Settings.Provider):
+		return []string{fmt.Sprintf("advisor.model is set, but the advisor needs the %s provider and this session uses %s; the advisor is off", CodexProvider, r.Settings.Provider)}
+	}
+	if err := c.Check(a.Model); err != nil {
+		return []string{fmt.Sprintf("advisor.model: %v; the advisor's calls may fail", err)}
+	}
+
+	return nil
+}
+
+// advisorCommandNotices warns when the advisor's command is a program
+// name that PATH does not have; its calls would fail, and the agent go on
+// without advice. A path is not checked.
+func advisorCommandNotices(program string) []string {
+	if strings.ContainsRune(program, filepath.Separator) {
+		return nil
+	}
+	if _, err := exec.LookPath(program); err != nil {
+		return []string{fmt.Sprintf("advisor.command: %s is not in PATH; the advisor's calls will fail", program)}
+	}
+
+	return nil
 }

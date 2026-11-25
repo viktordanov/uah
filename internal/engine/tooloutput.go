@@ -27,7 +27,7 @@ const outputKeep = 4096
 
 // ToolOutput is what a finished call left for its line in the transcript:
 // the end of a failed shell command's output (its stderr, else its
-// stdout), or an MCP call's result or error. The runner's ToolFinished
+// stdout), an MCP call's result or error, or an advisor call's advice. The runner's ToolFinished
 // carries only the exit code or the operation's status. The embedded
 // engine adds it when the session stores the call's finished operation,
 // and session.Load adds it to a loaded transcript, from the same item.
@@ -37,8 +37,8 @@ type ToolOutput struct {
 	// Output is the last 4 KB of a failed command's stderr, or of its
 	// stdout when stderr is empty, or its terminal error.
 	Output string
-	// Result is the first 4 KB of an MCP call's result text, and Size its
-	// length in bytes.
+	// Result is the first 4 KB of an MCP call's result text, or an
+	// advisor call's advice whole, and Size its length in bytes.
 	Result string
 	Size   int
 	// Error is a failed MCP call's error.
@@ -56,22 +56,25 @@ type toolStatusItem struct {
 		CallID     string
 		Operations []struct {
 			Type, Status string
-			State        struct {
-				Plan   struct{ Type string }
-				Result *struct {
-					Out, Err string
-					ExitCode int
-				}
-				TerminalError  string
-				TerminalResult string
-			}
+			State        opState
 		}
 	}
 }
 
+// opState is the part of an operation's state ToolOutputFromItem reads.
+type opState struct {
+	Plan   struct{ Type string }
+	Result *struct {
+		Out, Err string
+		ExitCode int
+	}
+	TerminalError  string
+	TerminalResult string
+}
+
 // ToolOutputFromItem reads a session item, one line of the session file as
 // the runner writes it, and returns the output of a shell command that
-// failed or of an MCP call that finished.
+// failed, or of an MCP or advisor call that finished.
 func ToolOutputFromItem(line []byte) (ToolOutput, bool) {
 	if !bytes.Contains(line, []byte(`"tool_call_status"`)) || !mayHaveOutput(line) {
 		return ToolOutput{}, false
@@ -83,6 +86,13 @@ func ToolOutputFromItem(line []byte) (ToolOutput, bool) {
 	out := ToolOutput{At: item.RecordedAt, CallID: item.Data.CallID}
 	for _, op := range item.Data.Operations {
 		st := op.State
+		if op.Type == remoteJob {
+			if jobOutput(op.Status, st, &out) {
+				return out, true
+			}
+
+			continue
+		}
 		switch {
 		case op.Type == "shell" && st.TerminalError != "":
 			out.Output = st.TerminalError
@@ -95,27 +105,42 @@ func ToolOutputFromItem(line []byte) (ToolOutput, bool) {
 			}
 
 			return out, true
-		case op.Type == remoteJob && st.Plan.Type == MCPPlanType && op.Status == opCompleted:
-			out.Result, out.Size = head(st.TerminalResult), len(st.TerminalResult)
-
-			return out, true
-		case op.Type == remoteJob && st.Plan.Type == MCPPlanType && st.TerminalError != "":
-			out.Error = st.TerminalError
-
-			return out, true
 		}
 	}
 
 	return ToolOutput{}, false
 }
 
+// jobOutput puts what a remote job left in out: a finished MCP call's
+// result or error, or an advisor call's advice, whole, for the detailed
+// view, or why it got none, with what the agent read then. It is false
+// for any other job.
+func jobOutput(status string, st opState, out *ToolOutput) bool {
+	switch {
+	case st.Plan.Type == MCPPlanType && status == opCompleted:
+		out.Result, out.Size = head(st.TerminalResult), len(st.TerminalResult)
+	case st.Plan.Type == AdvisorPlanType && status == opCompleted:
+		out.Result, out.Size = st.TerminalResult, len(st.TerminalResult)
+	case st.Plan.Type == MCPPlanType && st.TerminalError != "":
+		out.Error = st.TerminalError
+	case st.Plan.Type == AdvisorPlanType && st.TerminalError != "":
+		// a call that got no advice: why, and the command's stderr after it
+		out.Error, out.Result, out.Size = st.TerminalError, st.TerminalResult, len(st.TerminalResult)
+	default:
+		return false
+	}
+
+	return true
+}
+
 // mayHaveOutput tells, without parsing, whether an item as encoding/json
-// writes it can have a ToolOutput: an MCP call's plan type, a terminal
+// writes it can have a ToolOutput: an MCP or advisor call's plan type, a terminal
 // error, or a nonzero exit code (a JSON number never starts 0 unless it is
 // 0). Most status items are of commands running or done well, with their
 // whole output, which a parse would copy for nothing.
 func mayHaveOutput(line []byte) bool {
-	return bytes.Contains(line, []byte(MCPPlanType)) || followedByOther(line, `"TerminalError":"`, '"') || followedByOther(line, `"ExitCode":`, '0')
+	return bytes.Contains(line, []byte(MCPPlanType)) || bytes.Contains(line, []byte(AdvisorPlanType)) ||
+		followedByOther(line, `"TerminalError":"`, '"') || followedByOther(line, `"ExitCode":`, '0')
 }
 
 // followedByOther reports whether a byte other than b follows any key in line.

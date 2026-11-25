@@ -4,9 +4,11 @@
 package app
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -91,6 +93,9 @@ type Inputs struct {
 	RequestUserInput string
 	// ToolBridge is UAH_TOOL_BRIDGE, on or off ("": unset).
 	ToolBridge string
+	// Advisor is UAH_ADVISOR, on or off ("": unset): off turns the
+	// advisor off.
+	Advisor string
 	// Tools is --tools, the only tools the model may use (nil: unset; an
 	// empty list allows none), and DenyTools is --deny-tools. They narrow
 	// [tools] allow and deny, never widen them.
@@ -172,6 +177,8 @@ type Resolved struct {
 	// NoSkillMentions keeps "$name" in a message from loading the skill
 	// ([tui] skill_mentions = false).
 	NoSkillMentions bool
+	// Advisor is the [advisor] table with its defaults (pickAdvisor).
+	Advisor embedded.Advisor
 }
 
 // UsageError is an error in what the user asked for, such as an invalid
@@ -273,7 +280,75 @@ func Resolve(in Inputs, resumed session.Info, cfg config.Config) (Resolved, erro
 		Sandbox: policy, Env: envPolicy, Compaction: compact, CompactPromptFile: promptFile, Approval: approvalPolicy, Rules: configured,
 		ApprovalsReviewer: reviewer, Review: reviewCfg, Agents: agentSettings, WebSearch: webSearch, Verbosity: verbosity, DefaultModel: defaulted,
 		Goals: tools.goals, Tools: tools.policy, NoSkills: tools.noSkills, NoSkillMentions: !cfg.TUI.SkillMentionsOn(), NoToolBridge: !tools.bridge,
+		Advisor: tools.advisor,
 	}, nil
+}
+
+// pickAdvisor is the [advisor] table, checked, with uah's defaults: a
+// call waits at most 10 minutes and a run makes at most 5, and a command
+// reads text cut to 150,000 tokens. UAH_ADVISOR=off turns it off. One
+// backend at most: model, or command, which takes no effort (the command
+// sets its own, such as claude's --effort).
+func pickAdvisor(in Inputs, cfg config.Config) (embedded.Advisor, error) {
+	a := cfg.Advisor
+	on, err := pickOnOff(in.Advisor, EnvAdvisor, true)
+	if err != nil {
+		return embedded.Advisor{}, err
+	}
+	out := embedded.Advisor{
+		Model: a.Model, Effort: a.Effort, Command: a.Command, Input: cmp.Or(a.Input, engine.AdvisorInputText), MaxInputTokens: engine.DefaultAdvisorMaxInputTokens,
+		Timeout: engine.DefaultAdvisorTimeout, MaxUses: engine.DefaultAdvisorMaxUses, Off: !on,
+	}
+	if err := checkAdvisorBackend(a); err != nil {
+		return embedded.Advisor{}, usage(err)
+	}
+	if len(a.Command) == 0 {
+		out.Command = nil // an empty list drops an earlier file's command
+	}
+	if a.MaxInputTokens != nil {
+		out.MaxInputTokens = *a.MaxInputTokens
+	}
+	if a.Timeout != "" {
+		d, err := time.ParseDuration(a.Timeout)
+		if err != nil || d <= 0 {
+			return embedded.Advisor{}, usage(fmt.Errorf("invalid advisor.timeout %q (want a duration above 0, such as 10m)", a.Timeout))
+		}
+		out.Timeout = d
+	}
+	if a.MaxUses != nil {
+		if *a.MaxUses < 1 {
+			return embedded.Advisor{}, usage(fmt.Errorf("invalid advisor.max_uses %d (want 1 or more)", *a.MaxUses))
+		}
+		out.MaxUses = *a.MaxUses
+	}
+	out.Subagents = a.Subagents != nil && *a.Subagents
+
+	return out, nil
+}
+
+// checkAdvisorBackend checks the merged [advisor] backend keys: one
+// backend at most, a known effort for a model, and for a command a
+// program, a known input, and a token limit of 1 or more.
+func checkAdvisorBackend(a config.Advisor) error {
+	switch {
+	case a.Model != "" && len(a.Command) > 0:
+		return errors.New("advisor.model and advisor.command are both set; set one")
+	case a.Effort != "" && len(a.Command) > 0:
+		return errors.New("advisor.effort is for advisor.model; a command sets its own effort, such as claude's --effort")
+	case len(a.Command) > 0 && strings.TrimSpace(a.Command[0]) == "":
+		return errors.New("advisor.command starts with an empty program name")
+	case len(a.Command) > 0 && strings.ContainsRune(a.Command[0], filepath.Separator) && !filepath.IsAbs(a.Command[0]):
+		return fmt.Errorf("advisor.command: %q is a relative path, which would run a file the agent can change, outside the sandbox; "+
+			"give a program in PATH or an absolute path outside the workspace", a.Command[0])
+	case a.Input != "" && a.Input != engine.AdvisorInputText && a.Input != engine.AdvisorInputJSON:
+		return fmt.Errorf("invalid advisor.input %q (want text or json)", a.Input)
+	case a.MaxInputTokens != nil && *a.MaxInputTokens < 1:
+		return fmt.Errorf("invalid advisor.max_input_tokens %d (want 1 or more)", *a.MaxInputTokens)
+	case a.Effort != "" && !slices.Contains(session.Efforts, a.Effort):
+		return fmt.Errorf("invalid advisor.effort %q (want one of %s)", a.Effort, strings.Join(session.Efforts, ", "))
+	}
+
+	return nil
 }
 
 // pickToolPolicy narrows [tools] allow and deny with the resumed session's
@@ -298,10 +373,11 @@ type toolSettings struct {
 	goals     goal.Settings
 	policy    toolpolicy.Policy
 	noSkills  bool
+	advisor   embedded.Advisor
 }
 
 // pickTools is whether the question tool is on, the goal settings, the
-// tool policy, and whether skills are off. The default prompt names
+// tool policy, whether skills are off, and the advisor. The default prompt names
 // request_user_input only when the policy lets the agent have it.
 func pickTools(in Inputs, resumed session.Info, cfg config.Config) (toolSettings, error) {
 	questions, err := pickOnOff(in.RequestUserInput, EnvRequestUserInput, cfg.RequestUserInputEnabled())
@@ -320,10 +396,14 @@ func pickTools(in Inputs, resumed session.Info, cfg config.Config) (toolSettings
 	if err != nil {
 		return toolSettings{}, err
 	}
+	advisor, err := pickAdvisor(in, cfg)
+	if err != nil {
+		return toolSettings{}, err
+	}
 
 	return toolSettings{
 		questions: questions && policy.Allows(engine.QuestionToolName), bridge: bridge, goals: goals, policy: policy,
-		noSkills: in.NoSkills || !cfg.SkillsEnabled(),
+		noSkills: in.NoSkills || !cfg.SkillsEnabled(), advisor: advisor,
 	}, nil
 }
 
@@ -359,14 +439,20 @@ func pickContextPreparation(in Inputs, cfg config.Config) (bool, error) {
 	return pickOnOff(in.ContextPreparation, EnvContextPreparation, cfg.ContextPreparationEnabled())
 }
 
+// The values of an on-or-off variable (pickOnOff).
+const (
+	valueOn  = "on"
+	valueOff = "off"
+)
+
 // pickOnOff is value, on or off from the variable env, else configured.
 func pickOnOff(value, env string, configured bool) (bool, error) {
 	switch value {
 	case "":
 		return configured, nil
-	case "on":
+	case valueOn:
 		return true, nil
-	case "off":
+	case valueOff:
 		return false, nil
 	}
 

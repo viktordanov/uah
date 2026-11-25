@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -74,10 +75,12 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 	if in.Workspace, err = filepath.Abs(workspaceFor(in, resumed)); err != nil {
 		return Result{}, fmt.Errorf("failed to resolve workspace: %w", err)
 	}
-	cfg, _, err := config.Load(in.ConfigPath, in.Workspace)
+	layers, err := config.LoadLayers(in.ConfigPath, in.Workspace)
 	if err != nil {
 		return Result{}, usage(err)
 	}
+	cfg := layers.Merged()
+	opts.Notices = append(opts.Notices, layers.Notices...)
 	opts.Notices = append(opts.Notices, openNotices(in.Workspace)...)
 	r, err := Resolve(in, resumed, cfg)
 	if err != nil {
@@ -108,7 +111,9 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 		return Result{}, err
 	}
 	opts.Settings, opts.Yolo, opts.Goals, opts.Tools = r.Settings, in.Yolo, r.Goals, r.Tools
-	opts.Notices = append(opts.Notices, modelNotices(catalog.Cached(r.Settings.Provider), r)...)
+	cached := catalog.Cached(r.Settings.Provider)
+	opts.Notices = append(opts.Notices, modelNotices(cached, r)...)
+	opts.Notices = append(opts.Notices, advisorNotices(cached, r)...)
 	// The session's own files go to runDir; the model cache stays shared.
 	runDir := cmp.Or(in.RunStateDir, stateDir)
 	opts.SessionsDir = filepath.Join(runDir, "sessions")
@@ -116,6 +121,10 @@ func Setup(ctx context.Context, in Inputs, logOutput io.Writer) (Result, error) 
 		return Result{}, err
 	}
 	r.Sandbox = absPolicy(r.Sandbox, in.Workspace)
+	var refused string
+	if r.Advisor, refused = pinAdvisorProgram(r.Advisor, r.Sandbox); refused != "" {
+		opts.Notices = append(opts.Notices, refused)
+	}
 	// The sandbox scripts run outside the sandbox, so they live in the
 	// state directory, never in runDir (an ephemeral run's is under
 	// $TMPDIR, which sandboxed commands write), and stay read-only to
@@ -188,6 +197,7 @@ func newEngine(r Resolved, stateDir, sandboxDir string, logger *slog.Logger, p p
 		Compaction: r.Compaction, ContextWindow: r.Settings.ContextWindow, StreamIdleTimeout: r.StreamIdle, ResponsesWebSocket: r.WebSocket,
 		BeforeCompact: preCompactHook(opts.Hooks, r.Settings), Subagents: p.subagents, AskUser: p.askUser,
 		Goals: !r.Goals.Disabled, ReturnMemory: true, Tools: r.Tools, NoSkills: r.NoSkills, NoSkillMentions: r.NoSkillMentions, NoToolBridge: r.NoToolBridge,
+		Advisor: r.Advisor,
 	}
 
 	return embedded.New(ecfg)
@@ -255,6 +265,49 @@ func shellNotice(sh shellenv.Shell) string {
 	}
 
 	return ""
+}
+
+// pinAdvisorProgram is the advisor with Program, the path its command's
+// program runs as: found in PATH once, here, so a later PATH lookup cannot
+// pick another, and with its symlinks resolved, so no link on the way can
+// be swapped later. Command[0] stays the name the command sees. A program
+// the agent could change (sandbox.Policy.Changeable: in the workspace, a
+// writable root, or the temporary directory, as the workspace-write mode
+// has it, also when the session starts in another), checked by the path
+// found and by its real path, turns the command backend off, since the
+// command runs outside the sandbox: a link the agent could change picks
+// the program as surely as the file does. refused is the notice that says
+// so. The engine checks the real path again at each call, with the
+// session's grants. A program PATH lacks has no Program, and the engine
+// runs nothing (advisorCommandNotices warns of it).
+func pinAdvisorProgram(a embedded.Advisor, p sandbox.Policy) (pinned embedded.Advisor, refused string) {
+	if a.Off || len(a.Command) == 0 {
+		return a, ""
+	}
+	program := a.Command[0]
+	if !filepath.IsAbs(program) {
+		found, err := exec.LookPath(program)
+		if err != nil {
+			return a, "" // the notice warns of it, and the engine runs no name
+		}
+		if program, err = filepath.Abs(found); err != nil {
+			return a, ""
+		}
+	}
+	resolved := sandbox.ResolvePath(program)
+	p.Mode = sandbox.WorkspaceWrite
+	for _, path := range []string{program, resolved} {
+		if p.Changeable(path) {
+			a.Command = nil
+			a.Refused = fmt.Sprintf("its program, %s, is where the agent's commands can write", path)
+
+			return a, fmt.Sprintf("advisor.command: %s is where the agent's commands can write, and the advisor runs outside the sandbox, "+
+				"so the advisor is off; put the program, and any link to it, outside the workspace and the writable roots", path)
+		}
+	}
+	a.Program = resolved
+
+	return a, ""
 }
 
 // absPolicy makes the policy's paths absolute: the workspace, and writable

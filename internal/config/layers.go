@@ -48,6 +48,9 @@ type Layers struct {
 	// Trusted reports whether the user file and the layers trust the
 	// workspace.
 	Trusted bool
+	// Notices are the warnings about what the files set: the keys of the
+	// project file that were ignored.
+	Notices []string
 }
 
 // Layer is one configuration file between the user file and the project
@@ -94,6 +97,9 @@ func LoadLayers(userPath, workspace string) (Layers, error) {
 	if err != nil {
 		return Layers{}, err
 	}
+	if err := validateAdvisor(userPath, l.User.Advisor); err != nil {
+		return Layers{}, err
+	}
 	if found {
 		l.UserFile = userPath
 	}
@@ -121,6 +127,17 @@ func LoadLayers(userPath, workspace string) (Layers, error) {
 	}
 	if len(l.Project.Projects) > 0 {
 		return Layers{}, fmt.Errorf("%s: [projects] belongs in the user file or a layer only", path)
+	}
+	if a := &l.Project.Advisor; a.Command != nil || a.Input != "" || a.MaxInputTokens != nil {
+		// The command runs outside the sandbox, and a checkout or a pull
+		// changes the project file: only the user's files set it.
+		a.Command, a.Input, a.MaxInputTokens = nil, "", nil
+		l.Notices = append(l.Notices, path+": [advisor] command, input, and max_input_tokens are ignored: "+
+			"the advisor's command runs outside the sandbox, so only the user file or a layer sets them")
+	}
+	// Checked once the ignored keys are gone, so a model beside them works.
+	if err := validateAdvisor(path, l.Project.Advisor); err != nil {
+		return Layers{}, err
 	}
 	tagHooks(l.Project.Hooks, hooks.SourceProject)
 	l.ProjectFile = path
@@ -154,6 +171,9 @@ func loadExtra() ([]Layer, error) {
 		x := &out[i]
 		found, err := decode(x.Path, &x.Config)
 		if err != nil {
+			return nil, err
+		}
+		if err := validateAdvisor(x.Path, x.Config.Advisor); err != nil {
 			return nil, err
 		}
 		if !found {
@@ -195,6 +215,23 @@ func validateTools(path string, t Tools) error {
 	}
 	if err := toolpolicy.Validate(append(slices.Clone(names), t.Deny...)); err != nil {
 		return fmt.Errorf("%s: [tools]: %w", path, err)
+	}
+
+	return nil
+}
+
+// validateAdvisor checks that a file's [advisor] sets one backend's keys:
+// the model backend's model and effort, or the command backend's command,
+// input, and max_input_tokens. Across files, a later backend replaces an
+// earlier one (mergeAdvisor).
+func validateAdvisor(path string, a Advisor) error {
+	model := a.Model != "" || a.Effort != ""
+	command := len(a.Command) > 0 || a.Input != "" || a.MaxInputTokens != nil
+	switch {
+	case a.Model != "" && len(a.Command) > 0:
+		return fmt.Errorf("%s: [advisor] sets both model and command; set one: model for a model on the openai-codex subscription, command for a program", path)
+	case model && command:
+		return fmt.Errorf("%s: [advisor] mixes the two backends' keys: model and effort are the model backend's; command, input, and max_input_tokens the command backend's", path)
 	}
 
 	return nil

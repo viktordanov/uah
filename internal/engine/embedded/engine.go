@@ -154,6 +154,9 @@ type Config struct {
 	// hears when the user interrupts a run; the engine closes it when it is
 	// an io.Closer.
 	Subagents engine.Subagents
+	// Advisor configures the advisor tool (advisor.go); its zero value
+	// has none.
+	Advisor Advisor
 }
 
 // Engine runs the agent in process.
@@ -168,8 +171,9 @@ type Engine struct {
 	// models is cfg.Models, or a catalog of the bundled list.
 	models *models.Manager
 	// cacheKeys are the sessions whose prompt cache key is not their ID;
-	// scopes the sessions with a Scope (engine.Scoper).
-	cacheKeys, scopes sync.Map
+	// scopes the sessions with a Scope (engine.Scoper); advisors the
+	// session trees whose advisor /advisor changed (advisorcmd.go).
+	cacheKeys, scopes, advisors sync.Map
 	// transports are the model clients' connections, shared by every run.
 	transports transports
 	// sockets are the sessions' Responses WebSockets, by session and base
@@ -184,15 +188,17 @@ type Engine struct {
 }
 
 // Forget drops what the engine kept for a session that closed: the
-// auto-reviewer's transcript, the last request for /context, and a cache
-// key or scope it may have (engine.Forgetter), and its Responses
-// WebSocket, and stops its background shells.
+// auto-reviewer's transcript, the last request for /context and the
+// advisor, a cache key, scope, or /advisor choice it may have
+// (engine.Forgetter), and its Responses WebSocket, and stops its
+// background shells.
 func (e *Engine) Forget(sessionID string) {
 	e.shells.forget(sessionID)
 	e.bridges.forget(sessionID)
 	e.transcripts.Delete(sessionID)
 	e.cacheKeys.Delete(sessionID)
 	e.scopes.Delete(sessionID)
+	e.advisors.Delete(sessionID)
 	e.last.forget(sessionID)
 	e.forgetSockets(sessionID)
 }

@@ -246,7 +246,7 @@ func (l *lastRequests) rewind(sessionID string, n int, first string, used int64)
 
 		return
 	}
-	last.req.Input, last.input = slices.Clone(last.req.Input[:at]), used
+	last.req.Input, last.input, last.output = slices.Clone(last.req.Input[:at]), used, nil
 	l.sessions[sessionID] = last
 }
 

@@ -151,3 +151,105 @@ func TestConfigLayers_ToolPolicy(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, cfg.ToolPolicy().Restricted(), "unset everywhere: every tool")
 }
+
+// TestConfigLayers_Advisor: a project file never sets the advisor's
+// command, trusted or not, and a trusted one's is ignored with a notice;
+// a file's backend replaces the files' before it, an empty command drops
+// an earlier one, and a file that mixes the two backends' keys is an
+// error.
+func TestConfigLayers_Advisor(t *testing.T) {
+	t.Run("an untrusted project's command is ignored", func(t *testing.T) {
+		user, ws := layerHome(t)
+		write(t, user, "[advisor]\nmodel = \"gpt-6.1-sol\"\n")
+		write(t, config.ProjectFile(ws), "[advisor]\ncommand = [\"./advise.sh\"]\n")
+
+		cfg, files, err := config.Load(user, ws)
+
+		require.NoError(t, err)
+		assert.Nil(t, cfg.Advisor.Command)
+		assert.Equal(t, "gpt-6.1-sol", cfg.Advisor.Model)
+		assert.Equal(t, []string{user}, files, "the project file is not read")
+	})
+
+	t.Run("a trusted project's command is ignored, with a notice", func(t *testing.T) {
+		user, ws := layerHome(t)
+		write(t, user, "[advisor]\nmodel = \"gpt-6.1-sol\"\neffort = \"xhigh\"\n[projects.\""+ws+"\"]\ntrusted = true\n")
+		write(t, config.ProjectFile(ws), "[advisor]\ncommand = [\"./advise.sh\", \"--fast\"]\ninput = \"json\"\ntimeout = \"5m\"\n")
+
+		l, err := config.LoadLayers(user, ws)
+
+		require.NoError(t, err)
+		assert.Equal(t, config.Advisor{Model: "gpt-6.1-sol", Effort: "xhigh", Timeout: "5m"}, l.Merged().Advisor, "the user's model stays; the project's other keys apply")
+		require.Len(t, l.Notices, 1)
+		assert.Contains(t, l.Notices[0], config.ProjectFile(ws)+": [advisor] command, input, and max_input_tokens are ignored")
+	})
+
+	t.Run("a trusted project's model beside an ignored key applies", func(t *testing.T) {
+		user, ws := layerHome(t)
+		write(t, user, "[advisor]\ncommand = [\"claude\", \"-p\"]\n[projects.\""+ws+"\"]\ntrusted = true\n")
+		write(t, config.ProjectFile(ws), "[advisor]\nmodel = \"gpt-6.1-sol\"\nmax_input_tokens = 9000\n")
+
+		l, err := config.LoadLayers(user, ws)
+
+		require.NoError(t, err, "the ignored key does not mix the backends")
+		assert.Equal(t, config.Advisor{Model: "gpt-6.1-sol"}, l.Merged().Advisor, "the project's model replaces the user's command")
+		assert.Len(t, l.Notices, 1)
+	})
+
+	t.Run("a trusted project's empty command does not drop the user's", func(t *testing.T) {
+		user, ws := layerHome(t)
+		write(t, user, "[advisor]\ncommand = [\"claude\", \"-p\"]\n[projects.\""+ws+"\"]\ntrusted = true\n")
+		write(t, config.ProjectFile(ws), "[advisor]\ncommand = []\n")
+
+		l, err := config.LoadLayers(user, ws)
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"claude", "-p"}, l.Merged().Advisor.Command)
+		assert.Len(t, l.Notices, 1)
+	})
+
+	t.Run("a later model replaces an earlier command", func(t *testing.T) {
+		user, ws := layerHome(t)
+		write(t, user, "[advisor]\ncommand = [\"claude\", \"-p\"]\ninput = \"json\"\nmax_input_tokens = 9000\n")
+		write(t, filepath.Join(config.LayerDir(), "a.toml"), "[advisor]\nmodel = \"gpt-6.1-sol\"\n")
+
+		cfg, _, err := config.Load(user, ws)
+
+		require.NoError(t, err)
+		assert.Equal(t, config.Advisor{Model: "gpt-6.1-sol"}, cfg.Advisor)
+	})
+
+	t.Run("an empty command drops an earlier command, not a model", func(t *testing.T) {
+		user, ws := layerHome(t)
+		write(t, user, "[advisor]\ncommand = [\"claude\", \"-p\"]\n")
+		write(t, filepath.Join(config.LayerDir(), "a.toml"), "[advisor]\ncommand = []\n")
+
+		cfg, _, err := config.Load(user, ws)
+
+		require.NoError(t, err)
+		assert.Empty(t, cfg.Advisor.Command)
+
+		write(t, user, "[advisor]\nmodel = \"gpt-6.1-sol\"\neffort = \"high\"\n")
+		cfg, _, err = config.Load(user, ws)
+		require.NoError(t, err)
+		assert.Equal(t, "gpt-6.1-sol", cfg.Advisor.Model)
+		assert.Equal(t, "high", cfg.Advisor.Effort)
+	})
+
+	for name, table := range map[string]string{
+		"model and command":      "model = \"m\"\ncommand = [\"claude\"]\n",
+		"effort and command":     "effort = \"high\"\ncommand = [\"claude\"]\n",
+		"model and input":        "model = \"m\"\ninput = \"json\"\n",
+		"effort and token limit": "effort = \"high\"\nmax_input_tokens = 100\n",
+	} {
+		t.Run("a file with "+name, func(t *testing.T) {
+			user, ws := layerHome(t)
+			write(t, user, "[advisor]\n"+table)
+
+			_, _, err := config.Load(user, ws)
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), user+": [advisor]")
+		})
+	}
+}

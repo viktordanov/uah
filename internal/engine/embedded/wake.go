@@ -27,20 +27,23 @@ const waitSlack = 30 * time.Second
 // wakePolicy is the coordinator's wake policy: the model is not woken just
 // to hear that a call is still running. A turn's results wait until every
 // call it issued has finished, or a call has run for hold (wakeHold when
-// 0). A wait_shell or wait_agent call is held for its own timeout
-// (waitHold).
-func wakePolicy(hold, maxWait time.Duration, agents engine.Subagents) coordinator.WakePolicy {
+// 0). A wait_shell or wait_agent call is held for its own timeout, and an
+// advisor call for the advisor's (waitHold).
+func wakePolicy(hold, maxWait, advisor time.Duration, agents engine.Subagents) coordinator.WakePolicy {
 	hold = cmp.Or(hold, wakeHold)
 
-	return coordinator.WakePolicy{Hold: hold, CallHold: waitHold(hold, maxWait, agents), Progress: progress}
+	return coordinator.WakePolicy{Hold: hold, CallHold: waitHold(hold, maxWait, advisor, agents), Progress: progress}
 }
 
-// waitHold holds a wait that may last longer than hold until its timeout
-// passes, plus waitSlack, so the model is not woken only to wait again;
-// any other call keeps hold (0).
-func waitHold(hold, maxWait time.Duration, agents engine.Subagents) func(llm.ToolCall) time.Duration {
+// waitHold holds a call that may last longer than hold until its timeout
+// passes, plus waitSlack, so the model is not woken only to wait again: a
+// wait, or an advisor call; any other call keeps hold (0).
+func waitHold(hold, maxWait, advisor time.Duration, agents engine.Subagents) func(llm.ToolCall) time.Duration {
 	return func(call llm.ToolCall) time.Duration {
 		timeout, ok := shellWaitTimeout(call, maxWait)
+		if !ok {
+			timeout, ok = advisorHold(call, advisor)
+		}
 		if !ok && agents != nil {
 			timeout, ok = agents.WaitTimeout(call.Name, json.RawMessage(call.Arguments))
 		}

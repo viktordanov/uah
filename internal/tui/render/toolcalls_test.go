@@ -251,3 +251,47 @@ func TestToolCalls_Copy(t *testing.T) {
 	assert.Equal(t, "RAN    fail    git diff -- api/rest/server.go; diff api/rest/server.go api/rest/server.go.orig  exit 2\n"+
 		"               diff: api/rest/server.go.orig: No such file or directory", text)
 }
+
+// TestToolCalls_Advisor: an advisor call reads ADVISE with its time and
+// the advice's first line under it; the detailed view shows the advice
+// whole, line by line.
+func TestToolCalls_Advisor(t *testing.T) {
+	advice := "1. Check the empty input.\n2. Run go test ./... before you finish."
+	s := base()
+	evs := []any{core.RunStarted{At: t0, RunID: "20260924-120000-3f2a1b2c"}}
+	evs = append(evs, call{id: "a1", name: engine.AdvisorToolName, args: "{}", ok: true, detail: "completed", took: 12 * time.Second, output: &engine.ToolOutput{Result: advice, Size: len(advice)}}.events()...)
+	s = apply(s, evs...)
+
+	plain := strings.Split(plainScreen(galleryScreen(s, render.Amber)), "\n")
+	at := index(t, plain, 0, "ADVISE 12.0s   advisor")
+	assert.Equal(t, "                 1. Check the empty input.", plain[at+1], "the first line")
+
+	s.Details = true
+	plain = strings.Split(plainScreen(galleryScreen(s, render.Amber)), "\n")
+	at = index(t, plain, 0, "advisor")
+	assert.Contains(t, plain[at+1], "1. Check the empty input.")
+	assert.Contains(t, plain[at+2], "2. Run go test ./... before you finish.")
+}
+
+// TestToolCalls_AdvisorFailed: a call that got no advice shows why under
+// it; the detailed view shows what the agent read, the command's stderr
+// included.
+func TestToolCalls_AdvisorFailed(t *testing.T) {
+	read := "The advisor is unavailable (the command uah failed with exit status 2: unknown key); go on without it.\n" +
+		"config: line 3: unknown key"
+	s := base()
+	evs := []any{core.RunStarted{At: t0, RunID: "20260924-120000-3f2a1b2c"}}
+	evs = append(evs, call{id: "a1", name: engine.AdvisorToolName, args: "{}", detail: "failed", took: time.Second,
+		output: &engine.ToolOutput{Error: "the command uah failed with exit status 2: unknown key", Result: read}}.events()...)
+	s = apply(s, evs...)
+
+	plain := strings.Split(plainScreen(galleryScreen(s, render.Amber)), "\n")
+	at := index(t, plain, 0, "advisor")
+	assert.Contains(t, plain[at+1], "the command uah failed with exit status 2: unknown key")
+	assert.NotContains(t, strings.Join(plain, "\n"), "config: line 3")
+
+	s.Details = true
+	text := plainScreen(galleryScreen(s, render.Amber))
+	assert.Contains(t, text, "The advisor is unavailable (the command uah failed")
+	assert.Contains(t, text, "config: line 3: unknown key")
+}

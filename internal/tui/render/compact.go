@@ -106,6 +106,7 @@ var toolLabels = map[string]string{
 	"close_agent": "CLOSE", "resume_agent": "RESUME",
 	"apply_patch": "EDIT",
 	"web_search":  "WEB",
+	"advisor":     "ADVISE",
 }
 
 // toolLabel is a tool's column label: RAN for commands, MCP for a server's

@@ -235,8 +235,8 @@ func (m policyOperations) Add(op operation.Operation) error {
 
 // operationAllowed reports whether the policy allows the tool an operation
 // runs: shell for Bash, view_image, skill_use, and the remote jobs by their
-// plans, an MCP call by its identity in the run's table and a resource
-// request by its server. The goal and question jobs carry a result the
+// plans, an MCP call by its identity in the run's table, a resource
+// request by its server, and an advisor call by its tool. The goal and question jobs carry a result the
 // session already applied, and a value operation runs nothing.
 func operationAllowed(p toolpolicy.Policy, mcpAllowed []mcp.Tool, servers func(string) bool) func(operation.Operation) bool {
 	identities := map[[2]string]bool{}
@@ -283,6 +283,8 @@ func operationAllowed(p toolpolicy.Policy, mcpAllowed []mcp.Tool, servers func(s
 			return p.Allows(patch.ToolName)
 		case shellPlanType:
 			return shellPlanAllowed(p, state.Plan.Data)
+		case advisorPlanType:
+			return p.Allows(toolAdvisor)
 		}
 
 		return true

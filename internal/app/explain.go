@@ -15,6 +15,7 @@ import (
 
 	"github.com/viktordanov/uah/internal/compaction"
 	"github.com/viktordanov/uah/internal/config"
+	"github.com/viktordanov/uah/internal/engine"
 	"github.com/viktordanov/uah/internal/engine/embedded"
 	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/models"
@@ -41,6 +42,9 @@ const (
 	// EnvToolBridge is on or off: off stops commands from calling the
 	// session's tools with `uah tool`.
 	EnvToolBridge = "UAH_TOOL_BRIDGE"
+	// EnvAdvisor is on or off: off turns the advisor off, so a command
+	// that runs uah as an advisor does not advise itself.
+	EnvAdvisor = engine.EnvAdvisor
 	// EnvModelVerbosity is --model-verbosity's variable.
 	EnvModelVerbosity = "UAH_MODEL_VERBOSITY"
 	// EnvMaxAttempts is the runner's variable for the attempt limit.
@@ -113,7 +117,7 @@ type Origins struct {
 // files, and explains the effective configuration. It builds no engine.
 func Inspect(ctx context.Context, in Inputs) (Report, error) {
 	o := Origins{Env: map[string]string{}}
-	for _, name := range []string{EnvProvider, EnvModel, EnvSandbox, EnvAsk, EnvMaxAttempts, EnvAdaptiveEffort, EnvContextPreparation, EnvRequestUserInput, EnvToolBridge, EnvModelVerbosity} {
+	for _, name := range []string{EnvProvider, EnvModel, EnvSandbox, EnvAsk, EnvMaxAttempts, EnvAdaptiveEffort, EnvContextPreparation, EnvRequestUserInput, EnvToolBridge, EnvAdvisor, EnvModelVerbosity} {
 		o.Env[name] = os.Getenv(name)
 	}
 	var err error
@@ -219,6 +223,18 @@ func sessionSettings(in Inputs, o Origins, r Resolved, cfg config.Config) []Sett
 			overrides(l, func(c config.Config) any { return c.Tools.ExperimentalRequestUserInput.Enabled }), FromDefault)),
 		one("tools.bridge.enabled", !r.NoToolBridge, pick(input(in.ToolBridge, EnvToolBridge, env),
 			overrides(l, func(c config.Config) any { return c.Tools.Bridge.Enabled }), FromDefault)),
+		one("advisor.model", advisorModelText(r.Advisor), pick(input(offOnly(in.Advisor), EnvAdvisor, env),
+			advisorSource(r.Advisor.Model != "", l, func(c config.Config) any { return c.Advisor.Model }), FromDefault)),
+		one("advisor.effort", first(r.Advisor.Effort, "the session's"), pick(advisorSource(r.Advisor.Effort != "", l,
+			func(c config.Config) any { return c.Advisor.Effort }), FromDefault)),
+		one("advisor.command", advisorCommandText(r.Advisor), pick(input(offOnly(in.Advisor), EnvAdvisor, env),
+			advisorSource(len(r.Advisor.Command) > 0, l, func(c config.Config) any { return len(c.Advisor.Command) > 0 }), FromDefault)),
+		one("advisor.input", r.Advisor.Input, pick(advisorSource(len(r.Advisor.Command) > 0, l, func(c config.Config) any { return c.Advisor.Input }), FromDefault)),
+		one("advisor.max_input_tokens", r.Advisor.MaxInputTokens, pick(advisorSource(len(r.Advisor.Command) > 0, l,
+			func(c config.Config) any { return c.Advisor.MaxInputTokens }), FromDefault)),
+		overridden(l, "advisor.timeout", r.Advisor.Timeout.String(), func(c config.Config) any { return c.Advisor.Timeout }),
+		overridden(l, "advisor.max_uses", r.Advisor.MaxUses, func(c config.Config) any { return c.Advisor.MaxUses }),
+		overridden(l, "advisor.subagents", r.Advisor.Subagents, func(c config.Config) any { return c.Advisor.Subagents }),
 		one("model_verbosity", modelVerbosity(o, r), pick(input(in.ModelVerbosity, EnvModelVerbosity, env),
 			overrides(l, func(c config.Config) any { return c.ModelVerbosity }), FromDefault)),
 		one("permission_mode", string(s.Mode), modeSource(in, o)),
@@ -452,4 +468,59 @@ func setIn(c config.Config, get func(config.Config) any, src Source) Source {
 	}
 
 	return src
+}
+
+// advisorModelText is advisor.model as `uah config` shows it: the model,
+// "none", or "off" under UAH_ADVISOR=off.
+func advisorModelText(a embedded.Advisor) string {
+	switch {
+	case a.Off:
+		return valueOff
+	case a.Model == "":
+		return noneText
+	}
+
+	return a.Model
+}
+
+// advisorCommandText is advisor.command as `uah config` shows it: the
+// program and its arguments, each quoted where it needs it, "none", or
+// "off" under UAH_ADVISOR=off.
+func advisorCommandText(a embedded.Advisor) string {
+	switch {
+	case a.Off:
+		return valueOff
+	case len(a.Command) == 0:
+		return noneText
+	}
+	words := make([]string, len(a.Command))
+	for i, w := range a.Command {
+		words[i] = w
+		if w == "" || strings.ContainsAny(w, " \t\n\"'\\") {
+			words[i] = strconv.Quote(w)
+		}
+	}
+
+	return strings.Join(words, " ")
+}
+
+// advisorSource is the file whose advisor key wins, when the backend it
+// belongs to is on (on): a later file's other backend drops it
+// (config.mergeAdvisor), so a file that set it is not its source then.
+func advisorSource(on bool, l config.Layers, get func(config.Config) any) Source {
+	if !on {
+		return ""
+	}
+
+	return overrides(l, get)
+}
+
+// offOnly is UAH_ADVISOR when it turns the advisor off, the one value that
+// changes advisor.model, else "".
+func offOnly(v string) string {
+	if v == valueOff {
+		return v
+	}
+
+	return ""
 }

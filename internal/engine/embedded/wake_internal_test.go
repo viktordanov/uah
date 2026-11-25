@@ -12,7 +12,7 @@ import (
 )
 
 func TestWakePolicyHolds(t *testing.T) {
-	p := wakePolicy(0, time.Hour, nil)
+	p := wakePolicy(0, time.Hour, 10*time.Minute, nil)
 	assert.Equal(t, wakeHold, p.Hold)
 	assert.NotNil(t, p.CallHold)
 	assert.NotNil(t, p.Progress)
@@ -37,7 +37,7 @@ func (waitingAgents) WaitTimeout(tool string, args json.RawMessage) (time.Durati
 // and 30 seconds; a short wait, another tool, or bad arguments keep the
 // hold.
 func TestWaitHold(t *testing.T) {
-	hold := waitHold(5*time.Minute, time.Hour, waitingAgents{})
+	hold := waitHold(5*time.Minute, time.Hour, 10*time.Minute, waitingAgents{})
 	for _, tc := range []struct {
 		name, tool, args string
 		want             time.Duration
@@ -55,5 +55,5 @@ func TestWaitHold(t *testing.T) {
 	} {
 		assert.Equal(t, tc.want, hold(llm.ToolCall{Name: tc.tool, Arguments: tc.args}), tc.name)
 	}
-	assert.Zero(t, waitHold(5*time.Minute, time.Hour, nil)(llm.ToolCall{Name: "wait_agent", Arguments: `{"targets":["a"],"timeout_ms":1800000}`}), "no subagents")
+	assert.Zero(t, waitHold(5*time.Minute, time.Hour, 10*time.Minute, nil)(llm.ToolCall{Name: "wait_agent", Arguments: `{"targets":["a"],"timeout_ms":1800000}`}), "no subagents")
 }

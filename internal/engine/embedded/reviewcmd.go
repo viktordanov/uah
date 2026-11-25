@@ -89,17 +89,26 @@ func runReviewCommand(ctx context.Context, shell, command, dir string) (string, 
 	return out.String(), 0, nil
 }
 
-// capped keeps the first max bytes written to it and drops the rest.
+// capped keeps the first max bytes written to it and drops the rest;
+// cut says some were dropped. The buffer is not embedded: io.Copy, as
+// os/exec copies a command's output, would call its ReadFrom and skip the
+// cap.
 type capped struct {
-	bytes.Buffer
-
+	buf bytes.Buffer
 	max int
+	cut bool
 }
 
 func (c *capped) Write(p []byte) (int, error) {
-	if room := c.max - c.Len(); room > 0 {
-		c.Buffer.Write(p[:min(len(p), room)])
+	room := c.max - c.buf.Len()
+	if room > 0 {
+		c.buf.Write(p[:min(len(p), room)])
+	}
+	if len(p) > room {
+		c.cut = true
 	}
 
 	return len(p), nil
 }
+
+func (c *capped) String() string { return c.buf.String() }

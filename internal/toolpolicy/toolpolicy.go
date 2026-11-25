@@ -28,6 +28,7 @@ var Builtins = []string{
 	"wait_shell", "kill_shell",
 	goal.GetToolName, goal.CreateToolName, goal.UpdateToolName,
 	mcp.ListResourcesTool, mcp.ListResourceTemplatesTool, mcp.ReadResourceTool,
+	advisorTool,
 }
 
 // The names of the tools defined in packages that depend on this one.
@@ -35,6 +36,7 @@ const (
 	webSearch    = "web_search"
 	questionTool = "request_user_input"
 	spawnAgent   = "spawn_agent"
+	advisorTool  = "advisor"
 )
 
 // aliases are names other tools use for uah's, so a policy that names one

@@ -362,6 +362,18 @@ func (s *Session) ContextUsage() (contextusage.Usage, bool) {
 	return r.ContextUsage(s.id)
 }
 
+// Advisor applies /advisor's argument and says what the session's advisor
+// is then (engine.Advisor); ok is false when the engine has none.
+func (s *Session) Advisor(arg string) (status string, ok bool, err error) {
+	a, ok := s.eng.(engine.Advisor)
+	if !ok {
+		return "", false, nil
+	}
+	status, err = a.Advisor(s.id, s.current.Load().Provider, arg)
+
+	return status, true, err
+}
+
 // Close interrupts a live run, waits for it to end, and closes Events. It
 // then closes the engine when it holds resources between runs, such as MCP
 // servers.
