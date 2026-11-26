@@ -286,12 +286,13 @@ The agent called you at this point. Give your advice now.
 
 #### Examples of an advisor command
 
-**Claude advising GPT, on your Claude subscription** (checked with Claude Code 2.1.331):
+**Claude advising GPT, on your Claude subscription** (checked with Claude Code 2.1.331, and `--effort` with 2.1.332; the guide has [the setup steps](guide.md#claude-code-as-the-advisor)):
 
 ```toml
 [advisor]
 command = [
   "claude", "-p", "--model", "opus",
+  "--effort", "high",           # low, medium, high, xhigh, or max; leave it out for claude's default
   "--tools", "",                # no built-in tools
   "--strict-mcp-config",        # no MCP servers, claude.ai connectors included
   "--setting-sources", "",      # no settings files: no hooks and no CLAUDE.md
@@ -307,6 +308,9 @@ command = [
 - **Not `--bare`:** `--bare` takes only `ANTHROPIC_API_KEY` or an `apiKeyHelper`, never the subscription login.
 - **Size:** a 187 KB transcript took 11.5 s with opus.
 - **Inside Claude Code:** if you start uah from a Claude Code session, the command gets that session's `CLAUDECODE` and `CLAUDE_CODE_*` variables. Start uah from a plain shell.
+- **Sign in first:** `claude auth login`. The command gets uah's environment, and with `ANTHROPIC_API_KEY` set, claude bills that key instead of your subscription: `claude auth status --text` then shows `API key: ANTHROPIC_API_KEY`. Unset it in the shell you start uah from.
+- **Not in `~`:** Claude Code installs `claude` in `~/.local/bin`, as a link to `~/.local/share/claude/versions/<version>`. In a session started in `~`, the agent's commands can change both, so uah turns the advisor off, with a warning, and `/advisor` says why. Start uah in a project folder.
+- **Updates:** a session runs the program by the real path it found when it opened, the version's file; a session opened after Claude Code updates runs the new version. When an update removes the old version, the old session's calls fail until you restart uah.
 
 **uah advising uah:**
 

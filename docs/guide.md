@@ -457,6 +457,20 @@ The agent can ask for advice: before it commits to an approach, when it is stuck
 
 The [advisor design](design/advisor.md) has how Claude Code's advisor works and what uah does differently.
 
+#### Claude Code as the advisor
+
+`claude -p` lets a Claude model on your Claude subscription advise the agent, on any provider.
+
+1. Install Claude Code and sign in: `claude auth login`. In the shell you start uah from, `claude auth status --text` shows your Claude account as the login method. If it shows `API key: ANTHROPIC_API_KEY`, the calls bill that key, not your subscription: unset `ANTHROPIC_API_KEY` in that shell.
+2. Copy the `claude -p` block from the [examples](configuration.md#examples-of-an-advisor-command) into `~/.uah/config.toml`, or into a file of its own, such as `~/.uah/config.d/advisor.toml` (a layer's name ends in `.toml`). A project's config file cannot set a command.
+3. Pick the model and the effort in the block: `--model opus` (or another alias, such as `fable` or `sonnet`, or a full model name) and `--effort high` (low, medium, high, xhigh, or max).
+4. Start uah from a plain shell, in a project folder:
+   - not from a Claude Code session, whose `CLAUDECODE` and `CLAUDE_CODE_*` variables the command would get;
+   - not in `~`: `claude` is in `~/.local/bin`, which the agent's commands can change there, so uah turns the advisor off, with a warning.
+5. Check it: `/advisor` shows `advisor: the command claude, which reads the transcript as text; ...`. Then ask "call the advisor once and tell me its first sentence". The call shows as `ADVISE advisor`, with the advice under it. A failed call shows why, and ctrl+t shows claude's stderr.
+
+A session runs the program it found when it opened, by its real path, `~/.local/share/claude/versions/<version>`; a session opened after Claude Code updates runs the new version. When an update removes the old version, the old session's calls fail: restart uah.
+
 <sub>[↑ Back to top](#using-uah)</sub>
 
 ---
