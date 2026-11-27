@@ -29,6 +29,34 @@ func TestExecReadsThePromptFromStdin(t *testing.T) {
 	assert.Equal(t, []string{"first line\nsecond line"}, lastRequest(t, llm).UserTexts, "one message, not one per line")
 }
 
+// TestExecFlagsAfterDash: flags after a lone - apply, as before it;
+// urfave/cli v3.13.0 dropped them, v3.14.0 reads them.
+func TestExecFlagsAfterDash(t *testing.T) {
+	t.Parallel()
+	llm := fakellm.New(t, fakellm.Reply{Text: "read it"})
+	e, env := modelEnv(t, llm)
+
+	res := uahWith(t, env, "the prompt\n", "exec", "-", "-C", e.Workspace, "-e", "xhigh")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	req := lastRequest(t, llm)
+	assert.Equal(t, []string{"the prompt"}, req.UserTexts)
+	assert.Equal(t, "xhigh", req.Effort, "the flag after - applies")
+}
+
+// TestExecDashInThePrompt: after a word such as -1, the parser keeps the
+// line whole, so a later - is the prompt's text, sent as typed.
+func TestExecDashInThePrompt(t *testing.T) {
+	t.Parallel()
+	llm := fakellm.New(t, fakellm.Reply{Text: "3"})
+	e, env := modelEnv(t, llm)
+
+	res := uahWith(t, env, "", "exec", "-C", e.Workspace, "explain", "-1", "-", "2")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, []string{"explain -1 - 2"}, lastRequest(t, llm).UserTexts)
+}
+
 func TestExecPromptErrors(t *testing.T) {
 	t.Parallel()
 	_, env := fakeEnv(t)

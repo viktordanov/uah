@@ -21,7 +21,7 @@ require (
 	github.com/rivo/uniseg v0.4.7
 	github.com/sahilm/fuzzy v0.1.3
 	github.com/stretchr/testify v1.12.1
-	github.com/urfave/cli/v3 v3.13.0
+	github.com/urfave/cli/v3 v3.14.0
 	github.com/viktordanov/uagent v0.9.2
 	github.com/viktordanov/uah-core v0.11.0
 	github.com/yuin/goldmark v1.8.6

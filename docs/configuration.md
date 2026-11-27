@@ -326,11 +326,11 @@ command = [
   "--no-skills", "--no-instructions", "--no-context-preparation",
   "--ephemeral",                # no session in sessions/, runs/, or the index
   "-q",                         # the answer only
-  "-",                          # the transcript on stdin is the prompt: last, as uah reads no flag after it
+  "-",                          # the transcript on stdin is the prompt: last, as uah v1.17.2 and earlier read no flag after it
 ]
 ```
 
-- **`-` comes last:** uah reads no argument after a lone `-`, and refuses a command line that goes on after it. Before that check, a `-` first dropped every flag after it, so the inner run had its tools, instructions, and a saved session.
+- **`-` comes last:** uah v1.17.2 and earlier (urfave/cli v3.13.0) drop every argument after a lone `-`, so an inner uah of those versions with the `-` first ran with its tools, instructions, a saved session, and your default model. Later versions read flags on both sides of it; the example keeps the `-` last for any version.
 - **`--ephemeral`:** the inner session stays out of `sessions/`, `runs/`, and the index, in a temporary directory it removes at exit. A call that is stopped or times out kills it, so that copy, the transcript included, stays under `$TMPDIR/uah-ephemeral-*`.
 - **No advisor inside:** uah sets `UAH_ADVISOR=off` for the command, so the inner run offers no `advisor` tool.
 - **What it leaves out:** every tool, skills, AGENTS.md and CLAUDE.md files, and the prepared context. Its answer goes to stdout, which is the advice.

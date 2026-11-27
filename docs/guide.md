@@ -688,7 +688,7 @@ uah exec --json "..."                             # JSONL events for scripts, wi
 uah exec --ephemeral -o answer.md "..."           # keep no session; write the final answer to a file
 ```
 
-- **`-` comes last:** `uah exec -` and `uah review -` read no argument after the `-`, so put the flags before it (`uah exec -m gpt-6.2-astra -`); a command line that goes on after it is refused. For a `-` in a prompt, quote the prompt or put `--` before it.
+- **Flags after `-`** apply as they do before it. uah v1.17.2 and earlier dropped every argument after a lone `-`, so a command line that an older uah may run, such as an advisor command, keeps the `-` last.
 - **`--last`** continues this directory's most recent session, one `uah exec` started too, but never a subagent's or a reviewer's.
 - **`--ephemeral`** keeps nothing: the session runs in a temporary directory that uah removes at exit, so `sessions/`, `runs/`, and the index do not change and `uah sessions` does not list it. The model cache and the small scripts that start the sandbox stay in the state directory, because sandboxed commands can write the temporary directory, and a script there could be swapped for one that runs outside the sandbox. It starts a new session, so it cannot be used with `--last` or `--session`.
 - **`-o`** (`--output-last-message`) writes the last run's answer to the file at exit; with no answer, it writes an empty file and warns on stderr.

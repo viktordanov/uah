@@ -107,9 +107,6 @@ func reviewAction(ctx context.Context, cmd *cli.Command) error {
 // Codex refuses it: one target at most, --title only with --commit, and
 // no empty instructions.
 func reviewTarget(cmd *cli.Command, stdin io.Reader) (codereview.Target, error) {
-	if err := argsAfterDash(cmd); err != nil {
-		return codereview.Target{}, err
-	}
 	text := strings.TrimSpace(strings.Join(cmd.Args().Slice(), " "))
 	if text == "-" {
 		data, err := io.ReadAll(stdin)
