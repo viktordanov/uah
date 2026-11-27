@@ -55,7 +55,7 @@ Contents:
 
 ---
 
-<!-- memoria:section id="usage" files="cmd/uah/main.go cmd/uah/models.go cmd/uah/run.go cmd/uah/review.go cmd/uah/reviewtext.go cmd/uah/resume.go cmd/uah/sessions.go cmd/uah/sessionsrm.go internal/app/sessionid.go cmd/uah/tui.go cmd/uah/tuiconfig.go cmd/uah/print.go cmd/uah/completion.go cmd/uah/doctor.go internal/app/doctor.go internal/app/doctorchecks.go cmd/uah/flags.go cmd/uah/prompts.go internal/images/images.go internal/images/store.go internal/images/paths.go internal/images/clipboard/clipboard.go internal/images/clipboard/macos.go internal/images/clipboard/linux.go internal/images/clipboard/write.go internal/app/usershell.go internal/usershell/usershell.go internal/usershell/record.go internal/usershell/capture.go cmd/uah/usage.go internal/app/planusage.go cmd/uah/exit.go cmd/uah/exit_internal_test.go internal/codereview/codereview.go internal/codereview/output.go internal/codereview/display.go internal/gitdiff/diff.go internal/gitdiff/refs.go internal/history/history.go internal/history/recorder.go" -->
+<!-- memoria:section id="usage" files="cmd/uah/main.go cmd/uah/models.go cmd/uah/run.go cmd/uah/review.go cmd/uah/reviewtext.go cmd/uah/resume.go cmd/uah/sessions.go cmd/uah/sessionsrm.go internal/app/sessionid.go cmd/uah/tui.go cmd/uah/tuiconfig.go cmd/uah/print.go cmd/uah/completion.go cmd/uah/doctor.go internal/app/doctor.go internal/app/doctorchecks.go cmd/uah/flags.go cmd/uah/prompts.go internal/images/images.go internal/images/store.go internal/images/paths.go internal/images/clipboard/clipboard.go internal/images/clipboard/macos.go internal/images/clipboard/linux.go internal/images/clipboard/write.go internal/app/usershell.go internal/usershell/usershell.go internal/usershell/record.go internal/usershell/capture.go cmd/uah/usage.go internal/app/planusage.go cmd/uah/exit.go internal/codereview/codereview.go internal/codereview/output.go internal/codereview/display.go internal/gitdiff/diff.go internal/gitdiff/refs.go internal/history/history.go internal/history/recorder.go" -->
 ## Where to start
 
 - **Trying uah for the first time:** [Get started](#get-started), then the [keys](#keys).
@@ -189,7 +189,7 @@ The [context preparation guide](docs/context-preparation.md) explains the module
 
 ---
 
-<!-- memoria:section id="configuration" files="internal/config/config.go internal/config/layers.go internal/config/merge.go cmd/uah/flags.go cmd/uah/config.go internal/app/resolve.go internal/app/setup.go internal/app/explain.go internal/app/explain_files.go internal/app/compaction.go internal/app/configedit.go internal/app/websearch.go internal/config/edit.go internal/config/legacy.go internal/home/home.go internal/home/migrate/migrate.go .uah/config.toml internal/toolpolicy/toolpolicy.go" -->
+<!-- memoria:section id="configuration" files="internal/config/config.go internal/config/layers.go internal/config/merge.go cmd/uah/flags.go cmd/uah/config.go cmd/uah/configupdate.go internal/config/keys.go internal/config/newsettings.go internal/config/update.go internal/app/resolve.go internal/app/setup.go internal/app/explain.go internal/app/explain_files.go internal/app/compaction.go internal/app/configedit.go internal/app/websearch.go internal/config/edit.go internal/config/legacy.go internal/home/home.go internal/home/migrate/migrate.go .uah/config.toml internal/toolpolicy/toolpolicy.go" -->
 ## Configuration
 
 Everything uah reads and writes lives in `~/.uah`, as Codex keeps `~/.codex`: the configuration, `AGENTS.md`, agents, prompts, skills, hook trust, MCP credentials, sessions, run records, the session index, pasted images, the model cache, and logs. `UAH_HOME` names another home; `--config` (`UAH_CONFIG`) and `--state-dir` (`UAH_STATE_DIR`) move just the user file or the state.
@@ -244,6 +244,8 @@ args = ["-y", "@example/docs-mcp"]
 [projects."/Users/me/code/proj"]
 trusted = true   # apply this workspace's .uah/config.toml
 ```
+
+After an update, the first TUI session names each setting the update added, once, and `uah config update` adds those your user file does not set as comments, with examples to uncomment ([new settings](docs/configuration.md#15-new-settings-after-an-update)).
 
 This repository's own [.uah/config.toml](.uah/config.toml) is a working project file: its `[approvals] forbid` rules keep the agent from `rm -rf /`, force pushes, and `git reset --hard`.
 <!-- /memoria:section -->

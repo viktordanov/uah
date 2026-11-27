@@ -7,6 +7,7 @@ uah reads its configuration from TOML files and combines it with flags, the envi
    - [1.2 Precedence](#12-precedence)
    - [1.3 Merge rules](#13-merge-rules)
    - [1.4 Trusted projects: `[projects]`](#14-trusted-projects-projects)
+   - [1.5 New settings after an update](#15-new-settings-after-an-update)
 2. [Model and requests](#2-model-and-requests)
    - [2.1 Provider, model, and effort](#21-provider-model-and-effort)
    - [2.2 Model requests and the disk limit](#22-model-requests-and-the-disk-limit)
@@ -64,7 +65,7 @@ Everything uah reads and writes lives in its home, `~/.uah`, as Codex keeps `~/.
 
 | File | What it holds | Applies when |
 | --- | --- | --- |
-| `~/.uah/config.toml` | The user file: every key | Always. `--config` or `UAH_CONFIG` names another file |
+| `~/.uah/config.toml` | The user file: every key | Always. `--config` or `UAH_CONFIG` names another file; an empty `UAH_CONFIG` counts as unset |
 | `~/.uah/config.d/*.toml` | Layers: every key, `[projects]` included | Always, each in lexical order after the user file. Files that do not end in `.toml` are skipped |
 | The file `UAH_EXTRA_CONFIG` names | A layer: every key, `[projects]` included | When the variable is set, after `config.d`. A relative path is relative to the current directory, and a missing file is an error |
 | `<workspace>/.uah/config.toml` | The project file: every key except `[projects]` | The user file or a layer has `[projects."<workspace>"]` with `trusted = true`. The path is the absolute workspace path, symlinks not resolved |
@@ -79,6 +80,7 @@ Everything uah reads and writes lives in its home, `~/.uah`, as Codex keeps `~/.
 | `~/.uah/AGENTS.md`, `$CODEX_HOME/AGENTS.md` | User instructions; see [AGENTS.md and skills](guide.md#11-agentsmd-and-skills) | Unless `--no-instructions` or `[instructions] enabled = false` |
 | `~/.uah/skills`, `$CODEX_HOME/skills`, `.agents/skills` | Skills; see [AGENTS.md and skills](guide.md#11-agentsmd-and-skills) | Always |
 | `~/.uah/skills/.system/` | uah's built-in skills, such as `uah-customization`, written by uah when a session starts | After every other skill folder, so a skill of the same name elsewhere wins; uah rewrites it, do not edit |
+| `~/.uah/settings-seen` | The keys of the settings uah has named to you, as comment lines under a header, and `settings-seen.lock` beside it ([new settings](#15-new-settings-after-an-update)) | Read and written by the TUI's first session; a file there without the header is left alone. Do not edit |
 | `$CODEX_HOME/auth.json` (`~/.codex/auth.json`, or `OPENAI_CODEX_AUTH_FILE`) | The ChatGPT login from `codex login`. uah refreshes its token as Codex does and writes it back (0600), with a lock file beside it, `.auth.json.uah-lock`; see [the design](design/codex-auth.md) | openai-codex, unless `OPENAI_CODEX_ACCESS_TOKEN` is set, which uah never refreshes |
 
 - **Errors:** a missing file is not an error, except the file `UAH_EXTRA_CONFIG` names. An unknown key is, in any file, so a typo fails loudly. A project file with a `[projects]` table is an error.
@@ -138,6 +140,25 @@ Each layer, then the project file, merges into the files before it key by key, i
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `trusted` | bool | false | Apply the workspace's `.uah/config.toml` and `.uah/rules/*.rules` |
+
+<sub>[↑ Back to top](#configuration-reference)</sub>
+
+### 1.5 New settings after an update
+
+uah never changes your user file on its own. When an update adds a setting, the first TUI session afterwards names it once, as information under the welcome box, with what to do:
+
+```text
+New setting [advisor]: The agent can ask a stronger model, or a program such as Claude Code, for advice before it commits to an approach
+and before it says it is done. `uah config update --config /home/me/.uah/config.toml` adds it to /home/me/.uah/config.toml, commented out,
+if it is not there yet; or ask the agent: "How do I set up the advisor?"
+```
+
+- **`uah config update`** appends each setting uah describes that your user file does not set yet, as TOML comments: what it does, where its keys are documented (the docs of the uah version that wrote it), and examples to uncomment. Only comments go in, so the file means the same to any uah, an older one too. It adds a block once, also when two runs overlap (it locks the file, and looks for the block's last line, `# uah config update: [<table>] ends`, so a block cut short is added again), skips a table your file sets (in any case, as uah reads it), leaves a file that is not valid TOML alone, and creates a missing file. It appends and rewrites nothing, so a save that replaces the file meanwhile stays and is reported (run it again). Do not edit the file while it runs: an editor that writes in place at that very moment can interleave with the append, and a `/config` or `uah mcp add` save in another uah can drop the block. A symlinked file stays a link (a link to a file that does not exist yet creates that file), and the file keeps its permissions; anything but a regular file, such as a device, is left alone. In a file with no other settings, a setting `/config` saves later goes above the block, so uncommenting the block leaves it where it was. `--config` after `update`, or `UAH_CONFIG`, names another user file, and a different `--config` before `update` is refused; `--dry-run` prints the blocks and leaves the file as it is, though, as with any command, uah's first start without `~/.uah` moves an old uagent home there first ([moving from uagent](#11-files)).
+- **What counts as new:** the keys of this version that `~/.uah/settings-seen` lacks; the TUI's first session then writes them all there. A home with no record that was used before (the user file exists, or the state directory has `sessions/` or `uah.db`) was last run by v1.17.2 or earlier, which kept none, so it compares with v1.17.2's keys. A new home has seen every key. Keys, not versions, so a source build and a release that share a home do not name a setting twice.
+- **Who names them:** only the TUI. `uah exec`, `uah review`, and subagents neither show nor record them, so a script cannot use the notice up. The record is written once a session has opened, so each session the TUI opens names them until one does, and under a lock, so two TUIs that start at once keep each other's keys. A record that cannot be locked or read names nothing, rather than the same settings at every start; one that cannot be written names them again, and the TUI's log says why. The command it suggests names the file by its absolute path, since `--config`, `UAH_CONFIG`, `UAH_HOME`, or `HOME` may have picked it for that one command; a path that needs quoting (a space, a quote, a backslash) gets none, as bash, fish, and PowerShell each quote their own way. A `--config` that ends in a separator names a folder and is refused.
+- **Asking the agent:** the built-in `uah-customization` skill describes each such setting, with the same examples, and asks before it writes your configuration.
+
+The [new settings design](design/new-settings.md) has what Codex and Claude Code do and the options weighed.
 
 <sub>[↑ Back to top](#configuration-reference)</sub>
 
@@ -309,7 +330,7 @@ command = [
 - **Not `--bare`:** `--bare` takes only `ANTHROPIC_API_KEY` or an `apiKeyHelper`, never the subscription login.
 - **Size:** a 187 KB transcript took 11.5 s with opus.
 - **Inside Claude Code:** if you start uah from a Claude Code session, the command gets that session's `CLAUDECODE` and `CLAUDE_CODE_*` variables. Start uah from a plain shell.
-- **Sign in first:** `claude auth login`. The command gets uah's environment, and with `ANTHROPIC_API_KEY` set, claude bills that key instead of your subscription: `claude auth status --text` then shows `API key: ANTHROPIC_API_KEY`. Unset it in the shell you start uah from, and `ANTHROPIC_BASE_URL` too unless you mean the conversation to go to the endpoint it names.
+- **Sign in first:** `claude auth login`. The command gets uah's environment, and with `ANTHROPIC_API_KEY` set, claude bills that key instead of your subscription: `claude auth status --text` then shows `API key: ANTHROPIC_API_KEY`. Unset it in the shell you start uah from, and `ANTHROPIC_BASE_URL` too unless you mean the conversation to go to the endpoint it names; `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` there sends it to that cloud instead.
 - **Not in `~`:** Claude Code installs `claude` in `~/.local/bin`, as a link to `~/.local/share/claude/versions/<version>`. In a session started in `~`, the agent's commands can change both, so uah turns the advisor off, with a warning, and `/advisor` says why. Start uah in a project folder.
 - **Updates:** a session runs the program by the real path it found when it opened, the version's file; a session opened after Claude Code updates runs the new version. When an update removes the old version, the old session's calls fail until you restart uah.
 

@@ -10,7 +10,7 @@ A rebuildable SQLite index of the run records makes session listing, full-text s
 The [state storage record](../../docs/design/state.md) explains why the files stay authoritative and how the index differs from the first design.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="index" files="store.go query.go copy.go store_test.go" -->
+<!-- memoria:section id="index" files="store.go query.go copy.go" -->
 ## How it works
 
 1. `Open` creates `uah.db` in WAL mode, so several uah processes can share it, and drops and recreates the tables when the schema version changed.

@@ -128,7 +128,6 @@ cache 86% · missed 119k: effort switches 72k, cold start 9k, other 38k · ≈20
 - **Days** are the range's days in `Now`'s location, stepped at local noon, since where a clock change skips midnight, midnight plus a day can land on the same date: the active ones (with any entry), their totals' mean, median, nearest-rank 90th percentile, and maximum with its day, and the streak of active days up to today, or up to yesterday while today has none yet. A run counts on the day it started. The report also has the total per run and per session and each model's share.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="development" files="parse_test.go headers_test.go fetch_test.go reader_test.go rows_test.go probe_test.go testdata/pro_weekly_only.json testdata/plus_two_windows.json cachestats/attribute_test.go tokstats/stats_test.go tokstats/collect_test.go" -->
 ## Tests and the probe
 
 `testdata/pro_weekly_only.json` is the response that a Pro login received on 2026-09-24, with the identifiers replaced. `plus_two_windows.json` is synthetic and has two windows, an additional limit, and a reached limit. The header tests use the header names that a real `/responses` call returned. `Fetch` is tested against a loopback server, for the headers, the path, and errors that contain no secrets. The reader is tested against a loopback server with a test clock: the cache, one request for many callers, the context, errors that keep the last snapshot, and unsupported providers. `uah usage`, `uah doctor`, and the TUI are tested against loopback servers too; no test calls the real backend.
@@ -142,4 +141,3 @@ cache 86% · missed 119k: effort switches 72k, cold start 9k, other 38k · ≈20
 ```sh
 go test -tags probe -run TestProbe -v ./internal/usage/
 ```
-<!-- /memoria:section -->

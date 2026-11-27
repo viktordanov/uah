@@ -66,7 +66,7 @@ var builtinPrompts = []builtinPrompt{
 // cleans the user's context overrides.
 func promptsCommand() *cli.Command {
 	configFlag := func() cli.Flag {
-		return &cli.StringFlag{Name: flagConfig, Usage: usageConfig + "; the prompts are in its folder", Value: config.UserFile(), Sources: cli.EnvVars(home.EnvConfig), TakesFile: true}
+		return &cli.StringFlag{Name: flagConfig, Usage: usageConfig + "; the prompts are in its folder", Value: config.UserFile(), Sources: cli.NewValueSourceChain(nonEmptyEnv(home.EnvConfig)), TakesFile: true}
 	}
 
 	return &cli.Command{
@@ -86,7 +86,7 @@ func promptsCommand() *cli.Command {
 			},
 			{
 				Name: "prune", Usage: "delete the context overrides that are identical to the built-in, so later versions' text reaches you",
-				Flags:        []cli.Flag{configFlag(), &cli.BoolFlag{Name: "dry-run", Usage: "print what would be deleted, and delete nothing"}},
+				Flags:        []cli.Flag{configFlag(), &cli.BoolFlag{Name: flagDryRun, Usage: "print what would be deleted, and delete nothing"}},
 				OnUsageError: onUsageError, Action: promptsPrune,
 			},
 		},
@@ -341,7 +341,7 @@ func promptsPrune(_ context.Context, cmd *cli.Command) error {
 		return cli.Exit("prompts prune takes no arguments (see --help)", exitUsage)
 	}
 	dir := promptsDir(cmd.String(flagConfig))
-	dry := cmd.Bool("dry-run")
+	dry := cmd.Bool(flagDryRun)
 	var deleted, kept int
 	for _, o := range contextprep.Overrides(dir) {
 		if !o.Pinned {

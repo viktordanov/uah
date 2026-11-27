@@ -158,8 +158,20 @@ func CutTables(data []byte, prefix ...string) (out []byte, cut bool, err error) 
 		if i+1 < len(doc.tables) {
 			end = trimTail(data, doc.tables[i+1].start)
 		}
-		spans = append(spans, [2]int{t.start, end})
+		// A block uah config update added after the table stays; a key of the
+		// table below it goes too, as comments do not end a table.
+		block := doc.updateBlock(data[:end], t.start)
+		spans = append(spans, [2]int{t.start, block})
+		if block == end {
+			continue // no block in the table: nothing below it to cut
+		}
+		for _, kv := range doc.values {
+			if kv.table == i && kv.start >= block && kv.start < end {
+				spans = append(spans, [2]int{bytes.LastIndexByte(data[:kv.start], '\n') + 1, lineEnd(data, kv.end)})
+			}
+		}
 	}
+	slices.SortFunc(spans, func(a, b [2]int) int { return a[0] - b[0] })
 	for _, sp := range slices.Backward(spans) {
 		data = append(data[:sp[0]:sp[0]], data[sp[1]:]...)
 	}

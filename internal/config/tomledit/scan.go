@@ -136,7 +136,9 @@ func (d document) insertAt(data []byte, tableKeys []string, leaf string) (at int
 }
 
 // rootInsert is where a new root key goes: after the last root key, else
-// before the first table and the comments above it, else at the end.
+// before the first table and the comments above it, else before the first
+// block `uah config update` added (config.NewSetting.Marker), whose
+// commented table would take the key once uncommented, else at the end.
 func (d document) rootInsert(data []byte) int {
 	at := -1
 	for _, kv := range d.values {
@@ -146,10 +148,58 @@ func (d document) rootInsert(data []byte) int {
 	}
 	switch {
 	case at >= 0:
-		return at
+		return min(at, d.updateBlock(data, 0)) // a root key someone put below the block
 	case len(d.tables) > 0:
 		return trimTail(data, d.tables[0].start)
 	}
 
+	return d.updateBlock(data, 0)
+}
+
+// updateBlock is where the first line at or after from that begins a block
+// `uah config update` added starts, else the end of data; a line inside a
+// value, such as a multiline string, is the value's.
+func (d document) updateBlock(data []byte, from int) int {
+	for start := from; start < len(data); start = lineEnd(data, start) {
+		line := bytes.TrimLeft(bytes.TrimPrefix(data[start:], []byte("\uFEFF")), " \t") // indented, or after a BOM, as the update matches it
+		if bytes.HasPrefix(line, []byte(updateMarker)) && !d.inValue(start) {
+			return start
+		}
+	}
+
 	return len(data)
+}
+
+// inValue reports whether off lies within a key's value.
+func (d document) inValue(off int) bool {
+	for _, kv := range d.values {
+		if off > kv.start && off < kv.end {
+			return true
+		}
+	}
+
+	return false
+}
+
+// updateMarker begins each block `uah config update` adds.
+const updateMarker = "# uah config update: ["
+
+// CommentLines returns where each line of data starts that is exactly
+// comment, indented or after a BOM, and not text inside a value, such as a
+// multiline string: a comment line, found in one scan.
+func CommentLines(data []byte, comment string) ([]int, error) {
+	body := bytes.TrimPrefix(data, []byte("\uFEFF")) // the parser takes no BOM; the loader does
+	shift := len(data) - len(body)
+	doc, err := scan(body)
+	if err != nil {
+		return nil, err
+	}
+	var at []int
+	for start := 0; start < len(body); start = lineEnd(body, start) {
+		if string(bytes.TrimSpace(body[start:lineEnd(body, start)])) == comment && !doc.inValue(start) {
+			at = append(at, start+shift)
+		}
+	}
+
+	return at, nil
 }

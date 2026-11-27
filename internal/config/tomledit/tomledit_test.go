@@ -3,6 +3,7 @@ package tomledit_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -169,4 +170,53 @@ func TestSetQuotesStrings(t *testing.T) {
 	got, err = tomledit.Set(nil, []string{"projects", "/my ws", "trusted"}, true)
 	require.NoError(t, err)
 	assert.Equal(t, "[projects.\"/my ws\"]\ntrusted = true\n", string(got))
+}
+
+// TestSetBeforeUpdateBlock: in a file with only comments, a new root key
+// goes before the first block uah config update added, not after it, where
+// uncommenting the block's table would take it.
+func TestSetBeforeUpdateBlock(t *testing.T) {
+	data := []byte("# mine\n\n# uah config update: [advisor], added commented out\n# [advisor]\n# model = \"m\"\n")
+	out, err := tomledit.Set(data, []string{"effort"}, "high")
+	require.NoError(t, err)
+	assert.Equal(t, "# mine\n\neffort = \"high\"\n# uah config update: [advisor], added commented out\n# [advisor]\n# model = \"m\"\n", string(out))
+
+	below := []byte("# uah config update: [advisor], added commented out\n# [advisor]\nmodel = \"m\"\n")
+	out, err = tomledit.Set(below, []string{"effort"}, "high")
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(string(out), "effort = \"high\"\n# uah config update"), "above the block, also when a root key is below it: %q", out)
+}
+
+// TestCutTablesKeepsUpdateBlock: cutting the last table stops at a block
+// uah config update added after it.
+func TestCutTablesKeepsUpdateBlock(t *testing.T) {
+	block := "# uah config update: [advisor], added commented out\n# [advisor]\n# uah config update: [advisor] ends\n"
+	data := []byte("[mcp_servers.demo]\ncommand = \"x\"\n\n" + block)
+	out, cut, err := tomledit.CutTables(data, "mcp_servers", "demo")
+	require.NoError(t, err)
+	assert.True(t, cut)
+	assert.Equal(t, block, string(out))
+
+	below := []byte("[mcp_servers.demo]\ncommand = \"x\"\n\n" + block + "args = [\"-y\"]\n")
+	out, _, err = tomledit.CutTables(below, "mcp_servers", "demo")
+	require.NoError(t, err)
+	assert.Equal(t, block, string(out), "a key of the table below the block goes too")
+
+	inString := []byte("[mcp_servers.demo]\nargs = [\"\"\"\n# uah config update: [advisor] ends\n\"\"\"]\n")
+	out, _, err = tomledit.CutTables(inString, "mcp_servers", "demo")
+	require.NoError(t, err)
+	assert.Empty(t, string(out), "a marker inside a value is the value's")
+
+	indented := []byte("[mcp_servers.demo]\ncommand = \"x\"\n  " + block)
+	out, _, err = tomledit.CutTables(indented, "mcp_servers", "demo")
+	require.NoError(t, err)
+	assert.Equal(t, "  "+block, string(out), "an indented block stays too")
+}
+
+// TestCommentLines finds a comment line, not the same text in a value.
+func TestCommentLines(t *testing.T) {
+	data := []byte("\uFEFF# mark\nprompt = \"\"\"\n# mark\n\"\"\"\n  # mark\n")
+	at, err := tomledit.CommentLines(data, "# mark")
+	require.NoError(t, err)
+	assert.Len(t, at, 2, "after a BOM and indented, not the one in the string")
 }

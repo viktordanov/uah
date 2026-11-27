@@ -120,7 +120,7 @@ go run ./tools/agentbench -harness uah -mode auto -effort high -owner-env \
 ```
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tasks" files="bench/task.go bench/fixture.go bench/dry.go bench/harness.go bench/run.go bench/mcp_internal_test.go testdata/mcp/incidents.py" -->
+<!-- memoria:section id="tasks" files="bench/task.go bench/fixture.go bench/dry.go bench/harness.go bench/run.go testdata/mcp/incidents.py" -->
 ## Tasks
 
 A task is a folder in `testdata/tasks/`:
@@ -342,11 +342,9 @@ The estimate is uncached input, cached input, and output tokens at the `-price-*
 As a scale, each smoke pass (two tasks, both harnesses, effort low, 4 runs) took 40 to 95 s a run, about 510,000 input tokens (85% cached) and 3,000 to 5,000 output tokens in all: under $0.20 at the default rates. A full pass of 35 tasks × 2 harnesses × 3 repeats is 210 runs (raise `-max-runs`): at low effort about 27 million input tokens, $10, and 4 hours at `-parallel 1`; at high effort expect two to four times the tokens and the time.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="test" files="bench/bench_test.go bench/variant_test.go bench/followup_test.go bench/turns_test.go bench/failures_test.go bench/agentuse_test.go bench/ownerenv_test.go bench/ownerenv_internal_test.go bench/cachesessions_test.go bench/testdata/uah.jsonl bench/testdata/codex.jsonl" -->
 ## The test
 
 `go test ./tools/agentbench/...` makes no model calls. It parses a recorded uah stream and a stamped Codex stream of the same prompt (two commands in parallel, then an answer) and checks the requests, calls, tokens, and metrics; checks the metrics' arithmetic and the `behavior` counts, the cache split by effort included, on synthetic timelines; reads a request's effort and its reason from a `model_attempt` line; loads every task; dry-runs every task not tagged `slow` (about 5 s with a warm build cache, which it keeps in `$TMPDIR/uah-agentbench-test`; `-short` skips it); checks the plan's order, a variant's keys, its configuration file, and the report's variant table; checks that a `uah-only` task has no Codex run and that follow-ups need that tag; runs a task with two follow-ups against a fake `uah` script that answers each message and goes idle, to see each sent after the run before it ended; parses compactions from a synthetic stream; and, on a synthetic session of two turns, checks each request's turn, the per-turn split, and the replay's cache model under each rule and across a compaction. It builds the owner's environment from a given one and checks what it keeps, drops, and sets, and that only the harness gets it; parses a login shell from `dscl` and `getent`; and counts the failures of a synthetic main session and subagent session (a fish error, a build cache denial, a here-document's temporary file, a network error, a reviewer's denial, a wrapped command, a truncated output read again), classifies sample command outputs, and finds the files a read command reads. It counts the subagent use of a synthetic main session and child: a wait that times out, a message to the working child, a notification, a second wait, and a close.
-<!-- /memoria:section -->
 
 ## History
 

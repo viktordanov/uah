@@ -30,7 +30,7 @@ func sessionsRmCommand(stateDir cli.Flag) *cli.Command {
 			stateDir,
 			&cli.BoolFlag{Name: flagJSON, Usage: "print the removed paths as JSON"},
 			&cli.BoolFlag{Name: "force", Usage: "remove the session even while a run holds its lock"},
-			&cli.BoolFlag{Name: "dry-run", Usage: "print what would be removed, and remove nothing"},
+			&cli.BoolFlag{Name: flagDryRun, Usage: "print what would be removed, and remove nothing"},
 		},
 		OnUsageError: onUsageError,
 		Action:       removeSession,
@@ -57,7 +57,7 @@ func removeSession(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	defer unlock()
-	dry := cmd.Bool("dry-run")
+	dry := cmd.Bool(flagDryRun)
 	if !dry {
 		if err := r.Remove(); err != nil {
 			return err

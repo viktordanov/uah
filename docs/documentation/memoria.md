@@ -9,6 +9,7 @@ A README covers every selected file in its own folder and below it. It stops cov
 The root README links every other README, so each module's README alone covers the module's files. A nested README without that link makes both READMEs pending for an edit there, and `memoria status` reports it as `handoff_absent`.
 `docs/README.md` covers all of `docs/`. The design records and the documentation rules have no Memoria markers, so they are not tracked documents. A marker in one of them would make it a tracked document of its own.
 A section's `files=` must name files that its README covers, never another README or a file in a handed-off folder.
+Tests (`*_test.go`) and their fixtures (`testdata/`) are not selected (`ignore` in `memoria.toml`), so a change to them asks no review, and a section never names them. agentbench's task definitions (`testdata/tasks/*/task.json`), their setup and input generators (`setup.sh`, `gen.py`), the services its tasks start (`testdata/tasks/*/service/`), and its MCP server (`testdata/mcp/`) are selected (`include`): they are what the benchmark runs.
 
 ## When CI fails
 

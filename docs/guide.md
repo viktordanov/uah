@@ -129,6 +129,7 @@ uah context --show         # lists the context modules for this workspace and pr
 - **Saving:** each change is saved to your user file, keeping its comments, and applies to the running session where it can; compaction settings apply from the next session.
 - **Precedence:** a flag, a configuration layer, or a trusted project file that sets the same key still wins, and `/config` says so.
 - **`uah config`** shows each setting's value and where it came from, and `uah doctor` checks that everything works.
+- **After an update:** the first session names each setting the update added, once. `uah config update` adds them to your user file as comments, with examples to uncomment, and the agent can set one up for you ([new settings](configuration.md#15-new-settings-after-an-update)).
 - **In your home directory:** uah runs in `~`, and in `~/.uah` itself, though its state lies inside; `uah doctor` names it, and runs do not warn about it. The state directory's `.ignore`, which uah writes, keeps `rg`, `fd`, and `ag` out of its sessions; `block_state_in_workspace = true` refuses such a session instead, as earlier versions did.
 - **Colors:** on a terminal the listings (`uah config`, `uah context`, `uah sessions`, `uah hooks`, `uah mcp list`, `uah doctor`, `uah models`, `uah usage`) use the TUI's colors: what is on or applies plain or green, what is off, a default, or does not apply dim, what needs a look yellow, what is broken red. A pipe, a file, or `NO_COLOR` gets plain text.
 

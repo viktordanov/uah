@@ -71,8 +71,6 @@ Skills are Codex's `<name>/SKILL.md` folders. The embedded engine (`internal/eng
 A name found in a more specific folder wins.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="instructions_test.go include_test.go default_prompt_test.go environment_test.go" -->
 ## Tests
 
 `instructions_test.go` pins discovery (override, fallback, root markers, the user file), assembly with the size cap, `include_test.go` the includes (in place, relative and `~/` paths, nesting, a missing file, a loop, a repeat, an instruction file, a fenced line, the depth limit, and the cap), the host prompt with and without a base and an environment, and the embedded Codex prompt. `default_prompt_test.go` applies `default_prompt.diff` to `CodexPrompt` and requires `DefaultPrompt` exactly, so the prompt cannot drift from the documented hunks. `environment_test.go` pins the block against Codex's render test and the time zone rules. `internal/app/setup_test.go` pins the default prompt and the environment from Setup, `internal/app/agents_parity_test.go` the default prompt in the model request and a subagent's, and `internal/app/systemprompt_test.go` `model_instructions_file` from Setup to the model request, a subagent's request, and `/context`. `internal/engine/embedded/skills_test.go` pins the skill folders.
-<!-- /memoria:section -->

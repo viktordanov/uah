@@ -97,10 +97,7 @@ func sessionFlags() []cli.Flag {
 			},
 		},
 		&cli.BoolFlag{Name: "allow-dotenv", Usage: "run even if the workspace .env sets risky variables"},
-		&cli.StringFlag{
-			Name: flagConfig, Usage: "user configuration file", Value: config.UserFile(),
-			Sources: cli.EnvVars(home.EnvConfig), TakesFile: true,
-		},
+		userFileFlag(),
 		&cli.BoolFlag{Name: "no-instructions", Usage: "do not load AGENTS.md or CLAUDE.md files"},
 		&cli.BoolFlag{
 			Name:  flagNoContextPreparation,
@@ -252,3 +249,29 @@ func sandboxModes() []string {
 
 	return out
 }
+
+// userFileFlag is --config, the user configuration file: UAH_CONFIG, else
+// config.toml in uah's home. An empty UAH_CONFIG counts as unset, so every
+// command, a session, `uah config`, and `uah config update`, reads the same
+// file.
+func userFileFlag() cli.Flag {
+	return &cli.StringFlag{
+		Name: flagConfig, Usage: "user configuration file", Value: config.UserFile(),
+		Sources: cli.NewValueSourceChain(nonEmptyEnv(home.EnvConfig)), TakesFile: true,
+	}
+}
+
+// nonEmptyEnv is the environment variable key as a flag's source, unset
+// when it is empty.
+type nonEmptyEnv string
+
+func (e nonEmptyEnv) Lookup() (string, bool) {
+	v := os.Getenv(string(e))
+
+	return v, v != ""
+}
+
+func (e nonEmptyEnv) IsFromEnv() bool  { return true }
+func (e nonEmptyEnv) Key() string      { return string(e) }
+func (e nonEmptyEnv) String() string   { return fmt.Sprintf("environment variable %q", string(e)) }
+func (e nonEmptyEnv) GoString() string { return fmt.Sprintf("nonEmptyEnv(%q)", string(e)) }

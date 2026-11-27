@@ -59,6 +59,9 @@ type Options struct {
 	SessionsDir string
 	// Notices are shown after SessionOpened, such as configuration warnings.
 	Notices []string
+	// Infos are shown after the notices as information, not warnings, such
+	// as the settings new since the user last ran uah.
+	Infos []string
 	// Source (SourceTUI or SourceRun) is recorded in a new session's sidecar
 	// in SessionsDir when set.
 	Source string
@@ -209,7 +212,7 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 	runCtx, stop := context.WithCancel(ctx)
 	s := &Session{
 		id: id, eng: eng, priority: eng.Priority(), yolo: opts.Yolo,
-		in: make(chan any, eventBuffer), out: make(chan core.Event, eventBuffer+queuedRoom(sc)+len(sc.Grants)),
+		in: make(chan any, eventBuffer), out: make(chan core.Event, eventBuffer+queuedRoom(sc)+len(sc.Grants)+len(opts.Notices)+len(opts.Infos)),
 		ctx: runCtx, stop: stop, done: make(chan struct{}),
 		settings: opts.Settings, state: StateIdle, sent: map[string]bool{}, afterTool: map[string]bool{},
 		hooks:       hookState{runner: opts.Hooks, resumed: opts.Resumed, tools: map[string]core.ToolCalled{}},
@@ -241,6 +244,9 @@ func Open(ctx context.Context, eng engine.Engine, opts Options) (*Session, error
 	s.openGoal(opts.Goals, opts.Parent == "" && opts.Source != SourceSubagent)
 	for _, n := range opts.Notices {
 		s.out <- Notice{At: time.Now(), Level: LevelWarning, Message: n}
+	}
+	for _, n := range opts.Infos {
+		s.out <- Notice{At: time.Now(), Level: LevelInfo, Message: n}
 	}
 	s.startHooks(opts.Resumed)
 	if opts.Interactive {

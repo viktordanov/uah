@@ -130,8 +130,6 @@ Asked one at a time, a second command that the new rule covers would not have be
 3. The policy from `--ask`, `UAH_ASK`, or `approval_policy`.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="approval_test.go mode_test.go typed_test.go withdraw_test.go" -->
 ## Tests
 
 `approval_test.go` pins the decision table: each rule decision, escalation with and without a sandbox, the policies, headless denial, and "don't ask again"; `Forbidden`, which sees only forbid rules, also in a command that does not split; and `ApproveGrant`, the only answer that returns a directory. `internal/engine/embedded/grants_test.go` runs the grants end to end: a patch and an escalated command into a sibling worktree in Auto mode without a review, a later command writing there, no grant for an unrelated repository, a plain directory, or the home directory, the workspace-mode choice, an auto-reviewer's approval that grants nothing, and a forbid rule that still refuses. `mode_test.go` pins the modes' sandboxes, who decides, and the cycle. `typed_test.go` pins `DecideTyped`. `withdraw_test.go` pins that "don't ask again" on one prompt settles a concurrent one with `ErrNowAllowed`, and `AskUnless` without a change. `internal/engine/embedded/approval_test.go` runs the pipeline end to end on the embedded engine with `testing/fakellm`, including PermissionRequest hooks and auto-review, and `internal/engine/embedded/mode_test.go` the modes: a live switch to read only, and Auto mode deciding without the user.
-<!-- /memoria:section -->

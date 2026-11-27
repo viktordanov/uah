@@ -51,6 +51,7 @@ Design:
 33. [Program status](design/program-status.md): OSC 7501, the program status protocol: what the TUI reports for the session and each subagent (idle, working, blocked on an approval, a question, or a login, done, error), how a report goes out in the frame's write, and what was left out (progress, feature detection, tmux).
 34. [Token statistics](design/token-stats.md): `uah stats`, the tokens of every session by day, week, month, model, workspace, or source, with descriptive statistics; what uah records, what TokScale does, the gaps (runs across midnight, auto-review), and the open decisions.
 35. [The advisor](design/advisor.md): how Claude Code's advisor tool works (the server tool, what it forwards, the system prompt's section on when to call it), and uah's `advisor`: a stronger model on the openai-codex subscription, or any program that reads the conversation on stdin, such as `claude -p` or `uah exec -`; the limits, the trust rules, and what the real runs found
+36. [New settings after an update](design/new-settings.md): how Codex and Claude Code record what they showed, the options for telling people about a new setting, and what uah does: a one-time notice in the TUI, `uah config update` adding the setting commented out, and the customization skill
 
 Reference:
 

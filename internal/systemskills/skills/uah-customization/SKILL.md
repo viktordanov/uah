@@ -12,7 +12,7 @@ Check the live state before you answer; these commands only read:
 - `uah prompts status`: the user's prompt files, context overrides (it flags copies identical to the built-in), and the user's own modules.
 - `uah config`: each setting's value and where it came from. `uah hooks`: the hooks and whether each runs.
 
-The full guide is `docs/context-preparation.md` in the uah repository (github.com/viktordanov/uah); the keys are in `docs/configuration.md`, with every setting the installed version has (`uah --version` names it: read the docs at that tag, or, for a source build such as `v1.17.3-0.20261126150259-1eaff5074e24`, at the commit its last part names; for `dev` or a version with `+dirty`, in the checkout it was built from). uah never adds a new setting to the user's `config.toml`: when the user asks what a version can do or how to turn a feature on, read `docs/configuration.md` and offer the keys, as below for the advisor. `~/.uah` below is `$UAH_HOME` when that is set. Files under `~/.uah` are outside the workspace, so writing them needs the user's approval; change them only when the user asks.
+The full guide is `docs/context-preparation.md` in the uah repository (github.com/viktordanov/uah); the keys are in `docs/configuration.md`, with every setting the installed version has (`uah --version` names it: read the docs at that tag, or, for a source build such as `v1.17.3-0.20261126150259-1eaff5074e24`, at the commit its last part names; for `dev` or a version with `+dirty`, in the checkout it was built from). uah never changes the user's `config.toml` on its own: the first TUI session after an update names each new setting once, and `uah config update` adds those the file does not set as comments, with examples to uncomment (`--dry-run` shows them first). When the user asks what a version can do or how to turn a feature on, read `docs/configuration.md` and offer the keys or `uah config update --config <the user file the session reads>`, as below for the advisor. `~/.uah` below is `$UAH_HOME` when that is set. Files under `~/.uah` are outside the workspace, so writing them needs the user's approval; change them only when the user asks.
 
 ## Context preparation
 
@@ -108,7 +108,7 @@ command = [
 ]
 ```
 
-Writing `[advisor]` changes the user's configuration: show the block and ask first. A file of its own, such as `~/.uah/config.d/advisor.toml`, is easy to remove later. uah reads the configuration when it starts, so the session that wrote the file still has the old advisor: tell the user to restart uah and check it in the new session.
+Writing `[advisor]` changes the user's configuration: show the block and ask first, or offer `uah config update --config <file>`, with the user file the session reads (`uah config` names it; ask when unsure), as a new shell does not get the session's `--config`: it adds both of the first two kinds of example commented out for the user to uncomment. A file of its own, such as `~/.uah/config.d/advisor.toml`, is easy to remove later. uah reads the configuration when it starts, so the session that wrote the file still has the old advisor: tell the user to restart uah and check it in the new session.
 
 ## Other customization points
 

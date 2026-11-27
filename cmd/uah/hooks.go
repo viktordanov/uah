@@ -10,7 +10,6 @@ import (
 
 	"github.com/viktordanov/uah/internal/app"
 	"github.com/viktordanov/uah/internal/config"
-	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/hooks"
 )
 
@@ -18,7 +17,7 @@ import (
 func hooksCommand() *cli.Command {
 	flags := []cli.Flag{
 		&cli.StringFlag{Name: flagWorkspace, Aliases: []string{"C"}, Usage: "the workspace whose hooks to show", DefaultText: "the current directory", TakesFile: true},
-		&cli.StringFlag{Name: flagConfig, Usage: "user configuration file", Value: config.UserFile(), Sources: cli.EnvVars(home.EnvConfig), TakesFile: true},
+		userFileFlag(),
 	}
 
 	return &cli.Command{

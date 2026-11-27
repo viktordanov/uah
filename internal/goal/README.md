@@ -56,8 +56,6 @@ The prompt files are Codex's, byte for byte, with Codex's `{{ name }}` placehold
 `Indicator` is the footer's text, with Codex's words: `Pursuing goal (12.5K / 50K)` with a budget, else the time, `Goal paused (/goal resume)`, `Goal stalled (/goal resume)`, `Goal unmet (63.9K / 50K tokens)` or `Goal unmet (50 / 50 continuations)`, and `Goal achieved (…)`. `Summary` is `/goal status`: the status, objective, time, tokens, budget, continuations, why a guard stopped it, and the commands that apply. `Line` is the goal in one line, for a notice and `uah exec`. `Elapsed` and `Tokens` are Codex's compact forms (`1h 30m`, `12.5K`); `Usage` is the command's synopsis.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="goal_test.go" -->
 ## Tests
 
 `goal_test.go` pins each text against Codex's prompt files (every line kept but the plan paragraph and the placeholders, the objective escaped), the `user_goal` record and its 700-byte limit, `Parse` on each kind and on look-alikes, the checks with Codex's errors, the token delta, the tools' schemas, `Result`'s JSON, and the footer's words. The loop itself is tested end to end in `internal/app/goal_test.go` ([sessions](../session/README.md#goals)).
-<!-- /memoria:section -->

@@ -95,8 +95,6 @@ These files change what the model sees. They never remove an item from the sessi
 - `Item.Decode` and `Output.Decode` decode the data into `Input`, `Turn`, `ModelResponse`, `ToolCallStatus`, `Fork`, `Message`, `Reasoning`, or `ToolCall`. `Operation` reads an operation snapshot.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="sessionfile_test.go testdata/recorded.session.jsonl" -->
 ## Tests
 
 `sessionfile_test.go` reads `testdata/recorded.session.jsonl`, a file the embedded engine recorded, by these rules. It finds the user's messages, the Bash call with its result, the reasoning summary, and the answers, pages by `Sequence`, and finds the last item past operation records and a line without its newline. It also reads the same file with the runner's own store and compares the items. `internal/app/sessionfile_test.go` records a new session on the embedded engine at the runner version in `go.mod` and reads it by the same rules, so a change in the runner's format fails a uah test.
-<!-- /memoria:section -->

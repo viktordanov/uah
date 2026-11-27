@@ -27,9 +27,10 @@ func configCommand() *cli.Command {
 			"each key's value and its source (flag, env, session, project file, UAH_EXTRA_CONFIG,\n" +
 			"config.d/<file>, user file, or default).\n" +
 			"Keys whose files add up list every file that set them. The reference is docs/configuration.md.",
-		Flags:        append(sessionFlags(), &cli.BoolFlag{Name: flagJSON, Usage: "print JSON"}),
+		Flags:        append(sessionFlags(), &cli.BoolFlag{Name: flagJSON, Usage: "print JSON", Local: true}),
 		OnUsageError: onUsageError,
 		Action:       configAction,
+		Commands:     []*cli.Command{configUpdateCommand()},
 	}
 }
 

@@ -31,7 +31,7 @@ func mcpCommand() *cli.Command {
 	common := func(extra ...cli.Flag) []cli.Flag {
 		return append([]cli.Flag{
 			&cli.StringFlag{Name: flagWorkspace, Aliases: []string{"C"}, Usage: "the workspace whose servers to use (a trusted project file adds servers)", DefaultText: usageCurrent, TakesFile: true},
-			&cli.StringFlag{Name: flagConfig, Usage: usageConfig, Value: config.UserFile(), Sources: cli.EnvVars(home.EnvConfig), TakesFile: true},
+			&cli.StringFlag{Name: flagConfig, Usage: usageConfig, Value: config.UserFile(), Sources: cli.NewValueSourceChain(nonEmptyEnv(home.EnvConfig)), TakesFile: true},
 		}, extra...)
 	}
 	jsonFlag := &cli.BoolFlag{Name: flagJSON, Usage: usagePrintJSON}

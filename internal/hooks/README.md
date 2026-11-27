@@ -116,8 +116,6 @@ Hooks in the user file and in the configuration layers (`~/.uah/config.d/*.toml`
 An untrusted hook is skipped and reported once per command. The file is written atomically.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="hooks_test.go trust_test.go" -->
 ## Tests
 
 `hooks_test.go` pins the exit codes, the stdin payload, PreToolUse decisions, timeouts, validation, the subagent rules (`TestRun_Subagents`), failing closed (`TestRun_FailClosed`), a stopped hook (`TestRun_Canceled`), and a hook whose background process holds its output (`TestRun_BackgroundProcessKeepsOutput`); `internal/app`'s `TestSetup_SubagentHooks` runs every event through a real session with a subagent. `trust_test.go` pins script hashing, commands without a script and their workspace scope, old entries, and the "script changed" report. The session's event handling is tested in `internal/session/hooks_test.go`, and PreToolUse and PermissionRequest in `internal/engine/embedded`.
-<!-- /memoria:section -->

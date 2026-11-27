@@ -1,8 +1,16 @@
 version = 3
 
-# Source, tests, fixtures, and configuration stay covered. go.sum files are redundant dependency lockfiles.
-ignore = ["go.sum", "bench/tui/go.sum"]
-include = []
+# Source and configuration stay covered. Tests and their fixtures are not documented, so a change to
+# them asks no README review. go.sum files are redundant dependency lockfiles.
+ignore = ["go.sum", "bench/tui/go.sum", "**/*_test.go", "**/testdata/**"]
+# agentbench runs its task definitions, their setup and input generators, the services its tasks
+# start, and its MCP server from testdata: they are the benchmark, not fixtures. Each task's
+# repository, check, and solution stay out.
+include = [
+  "tools/agentbench/testdata/tasks/*/task.json", "tools/agentbench/testdata/tasks/*/setup.sh",
+  "tools/agentbench/testdata/tasks/*/gen.py", "tools/agentbench/testdata/tasks/*/service/**",
+  "tools/agentbench/testdata/mcp/**",
+]
 
 [documentation]
 guidance = []

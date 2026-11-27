@@ -151,7 +151,6 @@ A project module is untrusted until `uah context trust` approves it, like a proj
 `uah context` lists every module (built-in, library, user, project, and files that failed) with its block, source, state (`on`, `off`, `untrusted`, `error`), and whether it applies to a new main session in the workspace and why, such as `when.shell: zsh is not fish` or `files: none of go.mod in the workspace` (`Modules.Explain`). A pinned replacement's source says it is identical to the built-in. The session's facts come from the same settings a session would use (`app.PreviewContext`). `--show` prints the context a new main session and a read-only subagent would get, and `--json` prints the list (and with `--show` the two contexts) as JSON. `uah context trust` trusts the workspace's project modules as they are now.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="prepare_test.go agentfiles_test.go environment_test.go sandbox_test.go module_test.go round1_test.go" -->
 ## Tests
 
 | Test | Pins |
@@ -176,4 +175,3 @@ A project module is untrusted until `uah context trust` approves it, like a proj
 | `TestDefaultsMatchRound1` | With the built-ins alone, each block and the whole message equal what round 1's code wrote (`testdata/round1.json`, recorded from that code): 124 cases over every shell family, macOS, Linux, FreeBSD, Windows, each sandbox mode with and without network, the agent files, and the harness |
 
 `internal/app/context_test.go` pins `uah context`'s preview (the user's and project's modules, `[context] modules`, trust and a changed file) and a check in the real read-only sandbox, which cannot write the workspace; `cmd/uah/context_test.go` the command's table, `--json`, `--show`, and `trust`; `cmd/uah/prompts_test.go` that `uah prompts init` writes the modules to `context.defaults` and no replacement, `uah prompts show context/<path>` prints one, and `uah prompts status` and `prune` list and delete the replacements identical to the built-in. `TestUserGuide` keeps [the user guide](../../docs/context-preparation.md) complete: a library table row for each library module, and every key and placeholder; `internal/systemskills` holds the `uah-customization` skill to the same schema.
-<!-- /memoria:section -->

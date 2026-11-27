@@ -11,6 +11,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/history"
 	"github.com/viktordanov/uah/internal/home"
 	"github.com/viktordanov/uah/internal/images"
@@ -44,6 +45,9 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 	if !isTerminal(os.Stdin) || !isTerminal(os.Stdout) {
 		return cli.Exit("the TUI needs a terminal; for scripts and pipes use uah exec", exitUsage)
 	}
+	// Before the first session creates the files it looks for.
+	userFile := cmd.String(flagConfig)
+	usedBefore := config.UsedBefore(userFile, cmd.String("state-dir"))
 	st, err := setupFor(ctx, cmd, os.Stderr, launch.sessionRef) // validates flags before the screen takes over
 	if err != nil {
 		return err
@@ -67,6 +71,13 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 
 		return notes
 	}
+	// The settings new since this home last ran a TUI; uah exec, reviews,
+	// and subagents leave them unseen.
+	newSettings := &pendingSettings{log: logFile, load: func() ([]string, func() error) {
+		unseen, record := config.Unseen(config.SeenFile(), usedBefore)
+
+		return config.NewSettingsNotice(unseen, userFile, updateCommand(userFile)), record
+	}}
 	first := "" // a session to resume first; --session-id names a new one
 	if st.Options.Resumed {
 		first = st.Options.ID
@@ -116,11 +127,15 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 			}
 			setup.Options.Source, setup.Options.Interactive, setup.Options.Stream = session.SourceTUI, true, true
 			setup.Options.Notices = append(setup.Options.Notices, startupNotes()...) // the first session shows them
+			infos, seen := newSettings.take()
+			setup.Options.Infos = append(setup.Options.Infos, infos...)
 			s, err := session.Open(context.WithoutCancel(ctx), setup.Engine, setup.Options)
 			if err != nil {
 				return nil, nil, err
 			}
 			if !setup.Options.Resumed {
+				seen()
+
 				return s, nil, nil
 			}
 			history, err := store.Load(ctx, setup.StateDir, s.ID())
@@ -129,6 +144,8 @@ func openTUI(ctx context.Context, cmd *cli.Command, launch tuiLaunch) error {
 
 				return nil, nil, err
 			}
+
+			seen()
 
 			return s, history, nil
 		},

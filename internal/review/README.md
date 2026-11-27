@@ -50,8 +50,6 @@ The breaker opens after 3 denials in a row or 10 in the last 50 reviews, as in C
 - **No conversation.** A `Request` without a `Conversation` starts anew each time, as before.
 <!-- /memoria:section -->
 
-<!-- memoria:section id="tests" files="review_test.go prompt_test.go probe_test.go testdata/prompt.golden" -->
 ## Tests
 
 `review_test.go` pins the outcomes, the fail-closed paths (a bad answer, a timeout), the retry, the breaker, the conversation (a later review sends only the delta after the earlier request as its prefix, with the reminder once), a parallel review forking without changing what the next review continues, a failure starting anew, and the reviewer's commands. `prompt_test.go` checks the rendered prompt and a delta against `testdata/prompt.golden`, the numbered transcript, the dropped-entry count, the template with and without commands, and the budget. `probe_test.go` runs only by hand: `TestProbe` makes two real reviews in one conversation, the second of an `rm -rf` the reviewer may inspect first (`go test -tags probe -run 'TestProbe$' -v ./internal/review/`); `TestProbeReplay` replays a recorded `uah exec --json` session (`UAH_PROBE_STREAM`) through the real reviewer with and without the conversation and logs both totals.
-<!-- /memoria:section -->
