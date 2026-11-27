@@ -54,7 +54,7 @@ Design:
 
 Reference:
 
-1. [Using uah](guide.md): one task guide per feature, grouped by area: setup (AGENTS.md and skills, MCP servers, hooks, prompts, `/config`, the shell), models and requests (model and effort, adaptive effort, plan usage, retries), working in a session (questions, goals, subagents, images, shell mode, web search, `/diff` and `/review`, compaction, background shells, scripted tool calls), permissions, sessions and history, and headless `uah exec` (events, exit codes, tool policy).
+1. [Using uah](guide.md): one task guide per feature, grouped by area: setup (AGENTS.md and skills, MCP servers, hooks, prompts, `/config`, the shell), models and requests (model and effort, adaptive effort, plan usage, retries), working in a session (questions, goals, subagents, images, shell mode, web search, `/diff` and `/review`, compaction, background shells, scripted tool calls, the advisor and setting up `claude -p` as one), permissions, sessions and history, and headless `uah exec` (events, exit codes, tool policy).
 2. [Configuration](configuration.md): every configuration key with its type, default, flag, and merge rule; the home `~/.uah` and its files, the configuration layers, the precedence, and complete examples.
 3. [Context preparation](context-preparation.md): the message every new session starts with, its blocks, the module format and when a module applies, placeholders, where modules come from, the library, security, the commands, recipes, and troubleshooting.
 

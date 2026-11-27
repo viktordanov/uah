@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/viktordanov/uah/internal/config"
 	"github.com/viktordanov/uah/internal/contextprep"
 	"github.com/viktordanov/uah/internal/hooks"
 	"github.com/viktordanov/uah/internal/systemskills"
@@ -133,4 +134,33 @@ func mtime(t *testing.T, file string) time.Time {
 	require.NoError(t, err)
 
 	return info.ModTime()
+}
+
+// TestCustomizationSkillAdvisorCommands: the skill carries the advisor
+// commands of the configuration reference as written, since a release
+// install has no docs to copy them from; each loads as a user file, reads
+// text, and uah exec's ends with its -.
+func TestCustomizationSkillAdvisorCommands(t *testing.T) {
+	data, err := systemskills.File("uah-customization")
+	require.NoError(t, err)
+	reference, err := os.ReadFile(filepath.Join("..", "..", "docs", "configuration.md"))
+	require.NoError(t, err)
+	blocks := regexp.MustCompile("(?s)```toml\n(\\[advisor\\]\ninput.*?)```").FindAllStringSubmatch(string(data), -1)
+	require.Len(t, blocks, 2, "claude -p and uah exec -")
+
+	t.Setenv("UAH_HOME", t.TempDir())
+	t.Setenv("UAH_EXTRA_CONFIG", "")
+	for _, b := range blocks {
+		assert.Contains(t, string(reference), "```toml\n"+b[1]+"```", "as docs/configuration.md has it")
+		file := filepath.Join(t.TempDir(), "config.toml")
+		require.NoError(t, os.WriteFile(file, []byte(b[1]), 0o600))
+		cfg, _, err := config.Load(file, t.TempDir())
+		require.NoError(t, err)
+		argv := cfg.Advisor.Command
+		require.NotEmpty(t, argv)
+		assert.Equal(t, "text", cfg.Advisor.Input)
+		if argv[0] == "uah" {
+			assert.Equal(t, "-", argv[len(argv)-1], "uah exec reads no flag after its -")
+		}
+	}
 }

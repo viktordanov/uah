@@ -290,6 +290,7 @@ The agent called you at this point. Give your advice now.
 
 ```toml
 [advisor]
+input = "text"                  # the conversation as plain text, also over a layer that set json
 command = [
   "claude", "-p", "--model", "opus",
   "--effort", "high",           # low, medium, high, xhigh, or max; leave it out for claude's default
@@ -304,11 +305,11 @@ command = [
 
 - **What it leaves out:** the built-in tools; MCP servers, with the claude.ai connectors (without `--strict-mcp-config` they connect); your user, project, and local settings files, with their hooks; every CLAUDE.md file, the user's and the project's (without `--setting-sources ""`, print mode read `~/.claude/CLAUDE.md` and a trusted project's `CLAUDE.local.md`; with it, neither); skills and slash commands; the saved session; and Claude Code's default system prompt.
 - **How to check it:** add `--output-format stream-json --verbose` and run it by hand. Its first event, `system` `init`, lists the tools, MCP servers, slash commands, and skills: with these flags, none of each, and `apiKeySource` is `none` (the subscription login). Without them, it listed 97 tools and the connected MCP servers.
-- **What stays:** your Claude login, so the calls use your subscription; Claude Code's built-in plugins, which add no hooks; and managed (administrator) settings. Claude Code still fetches the list of your claude.ai connectors when it starts, but it does not connect to them.
+- **What stays:** your Claude login, so the calls use your subscription; Claude Code's built-in plugins, which add no hooks; and managed (administrator) settings, whose hooks, where an administrator set some, still run. Claude Code still fetches the list of your claude.ai connectors when it starts, but it does not connect to them.
 - **Not `--bare`:** `--bare` takes only `ANTHROPIC_API_KEY` or an `apiKeyHelper`, never the subscription login.
 - **Size:** a 187 KB transcript took 11.5 s with opus.
 - **Inside Claude Code:** if you start uah from a Claude Code session, the command gets that session's `CLAUDECODE` and `CLAUDE_CODE_*` variables. Start uah from a plain shell.
-- **Sign in first:** `claude auth login`. The command gets uah's environment, and with `ANTHROPIC_API_KEY` set, claude bills that key instead of your subscription: `claude auth status --text` then shows `API key: ANTHROPIC_API_KEY`. Unset it in the shell you start uah from.
+- **Sign in first:** `claude auth login`. The command gets uah's environment, and with `ANTHROPIC_API_KEY` set, claude bills that key instead of your subscription: `claude auth status --text` then shows `API key: ANTHROPIC_API_KEY`. Unset it in the shell you start uah from, and `ANTHROPIC_BASE_URL` too unless you mean the conversation to go to the endpoint it names.
 - **Not in `~`:** Claude Code installs `claude` in `~/.local/bin`, as a link to `~/.local/share/claude/versions/<version>`. In a session started in `~`, the agent's commands can change both, so uah turns the advisor off, with a warning, and `/advisor` says why. Start uah in a project folder.
 - **Updates:** a session runs the program by the real path it found when it opened, the version's file; a session opened after Claude Code updates runs the new version. When an update removes the old version, the old session's calls fail until you restart uah.
 
@@ -316,19 +317,25 @@ command = [
 
 ```toml
 [advisor]
+input = "text"                  # the conversation as plain text, also over a layer that set json
 command = [
-  "uah", "exec", "-",           # the transcript is the prompt
+  "uah", "exec",
+  "--provider", "openai-codex", "--base-url", "",  # its endpoint, not an inherited UAH_LLM_BASE_URL
   "-m", "gpt-6.2-astra", "-e", "high",
   "--tools", "",                # no tools: built-ins, MCP tools, and web search
   "--no-skills", "--no-instructions", "--no-context-preparation",
   "--ephemeral",                # no session in sessions/, runs/, or the index
   "-q",                         # the answer only
+  "-",                          # the transcript on stdin is the prompt: last, as uah reads no flag after it
 ]
 ```
 
+- **`-` comes last:** uah reads no argument after a lone `-`, and refuses a command line that goes on after it. Before that check, a `-` first dropped every flag after it, so the inner run had its tools, instructions, and a saved session.
+- **`--ephemeral`:** the inner session stays out of `sessions/`, `runs/`, and the index, in a temporary directory it removes at exit. A call that is stopped or times out kills it, so that copy, the transcript included, stays under `$TMPDIR/uah-ephemeral-*`.
 - **No advisor inside:** uah sets `UAH_ADVISOR=off` for the command, so the inner run offers no `advisor` tool.
 - **What it leaves out:** every tool, skills, AGENTS.md and CLAUDE.md files, and the prepared context. Its answer goes to stdout, which is the advice.
-- **What stays:** your user file and its layers, so their hooks run, and the MCP servers they configure, whose tools `--tools ""` does not offer. `--config` with a small file of the advisor's own leaves out the user file's; the layers in `config.d` and the file `UAH_EXTRA_CONFIG` names still load.
+- **Not isolated:** the inner uah loads your user file, its layers, and in a trusted workspace the project's file, as any session there would. Their hooks run with each call, a project's once `uah hooks trust` approved them (a `UserPromptSubmit` hook gets the whole transcript), their MCP servers start (`--tools ""` only hides their tools), and a `model_instructions_file` replaces its prompt (`--no-instructions` only skips AGENTS.md files). `--config` with a small file of the advisor's own, by an absolute path outside the workspace and the writable roots (written out in full, such as `/home/me/.uah/advisor-config.toml`, since no shell expands `~` in `command`; the inner uah reads it as a user file, so its hooks run unasked), leaves out the user file's; the layers in `config.d` and the file `UAH_EXTRA_CONFIG` names still load, with a project's file that one of them trusts. So `claude -p` (but for managed settings) or the model backend is the isolated choice.
+- **What it inherits:** your environment, `UAH_HOME`, `UAH_CONFIG`, and `UAH_EXTRA_CONFIG` included, but not the session's flags: a session started with `--config` runs an inner uah on the default user file unless the command passes `--config` too. The command runs in the session's workspace, so a relative path in those variables or in `--config` names a file there (a relative `UAH_HOME` puts `config.d` there, whose hooks run as yours); use absolute paths, outside where the agent's commands can write. `--provider openai-codex` keeps the model on its provider when your default provider is another, and `--base-url ""` keeps its endpoint when `UAH_LLM_BASE_URL` names another.
 - **The same uah:** the inner uah reads the same configuration, the `UAH_EXTRA_CONFIG` layer included, since it gets your environment. So it must be a uah that has the advisor. An older one stops at `[advisor]`, and every call fails with `unknown key "advisor"`.
 
 <sub>[↑ Back to top](#configuration-reference)</sub>
