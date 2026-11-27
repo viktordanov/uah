@@ -23,6 +23,9 @@ const (
 // execPrompt is the first message: the arguments, or all of stdin for a
 // prompt of "-", as `codex exec -` reads it.
 func execPrompt(cmd *cli.Command, stdin io.Reader) (string, error) {
+	if err := argsAfterDash(cmd); err != nil {
+		return "", err
+	}
 	args := cmd.Args().Slice()
 	if len(args) != 1 || args[0] != "-" {
 		return strings.TrimSpace(strings.Join(args, " ")), nil
